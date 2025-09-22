@@ -261,14 +261,14 @@ const AppNavigator = () => {
     case 'signin':
       return (
         <SignInScreen
-          onSignInSuccess={() => navigate('home')}
+          onSignInSuccess={() => navigate('notes')}
           onBackToWelcome={() => navigate('welcome')}
         />
       );
     case 'signup':
       return (
         <SignUpScreen
-          onSignUpSuccess={() => navigate('home')}
+          onSignUpSuccess={() => navigate('notes')}
           onBackToWelcome={() => navigate('welcome')}
         />
       );
