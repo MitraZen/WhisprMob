@@ -30,23 +30,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     );
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert('Account Deleted', 'Your account has been deleted.');
-            onNavigate('welcome');
-          }
-        },
-      ]
-    );
-  };
 
   const handleExportData = () => {
     Alert.alert('Export Data', 'Your data export will be sent to your email address.');
@@ -275,19 +258,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         </View>
       </View>
 
-      {/* Danger Zone */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Danger Zone</Text>
-        <View style={styles.sectionContent}>
-          <SettingItem
-            title="Delete Account"
-            subtitle="Permanently delete your account and all data"
-            onPress={handleDeleteAccount}
-            isDestructive={true}
-            rightComponent={<Text style={styles.chevron}>›</Text>}
-          />
-        </View>
-      </View>
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>

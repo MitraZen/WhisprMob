@@ -4,6 +4,7 @@ import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils
 import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
+import { useAuth } from '@/store/AuthContext';
 
 interface ProfileScreenProps {
   onNavigate: (screen: string) => void;
@@ -11,6 +12,7 @@ interface ProfileScreenProps {
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }) => {
+  const { logout } = useAuth();
   // Comprehensive list of countries
   const countries = [
     'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
@@ -56,6 +58,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
     }
   }, [user?.id]);
 
+  // Refresh profile data when component comes into focus
+  useEffect(() => {
+    const refreshProfile = () => {
+      if (user?.id) {
+        loadProfileData();
+      }
+    };
+
+    // Refresh profile data every time the component mounts
+    refreshProfile();
+  }, []);
+
   const loadProfileData = async () => {
     setIsLoadingProfile(true);
     try {
@@ -66,13 +80,43 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       const stats = await BuddiesService.getUserStats(user.id);
       
       if (profile) {
+        // Calculate age from date_of_birth if available
+        let ageDisplay = 'Not specified';
+        if (profile.date_of_birth) {
+          try {
+            const birthDate = new Date(profile.date_of_birth);
+            const today = new Date();
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+            ageDisplay = `${age} years old`;
+          } catch (error) {
+            console.error('Error calculating age:', error);
+          }
+        } else if (profile.age) {
+          ageDisplay = profile.age;
+        }
+
+        // Format gender display
+        const formatGender = (gender: string) => {
+          switch (gender) {
+            case 'male': return 'Male';
+            case 'female': return 'Female';
+            case 'other': return 'Other';
+            default: return 'Not specified';
+          }
+        };
+
         const profileData = {
-          displayName: profile.display_name || 'Anonymous User',
-          username: profile.username || '@anonymous',
+          displayName: profile.display_name || profile.anonymous_id || 'Anonymous User',
+          username: profile.username || `@${profile.anonymous_id || 'anonymous'}`,
           bio: profile.bio || 'No bio yet',
-          age: profile.age || 'Not specified',
-          location: profile.location || 'Not specified',
-          gender: profile.gender || 'Not specified',
+          age: ageDisplay,
+          location: profile.country || profile.location || 'Not specified',
+          gender: formatGender(profile.gender),
           mood: profile.mood || 'happy',
           joinDate: new Date(profile.created_at),
         };
@@ -82,8 +126,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       } else {
         // Set default profile if none exists
         const defaultProfile = {
-          displayName: 'Anonymous User',
-          username: '@anonymous',
+          displayName: user.anonymousId || 'Anonymous User',
+          username: `@${user.anonymousId || 'anonymous'}`,
           bio: 'No bio yet',
           age: 'Not specified',
           location: 'Not specified',
@@ -100,8 +144,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       console.error('Error loading profile data:', error);
       // Set default profile on error
       const defaultProfile = {
-        displayName: 'Anonymous User',
-        username: '@anonymous',
+        displayName: user.anonymousId || 'Anonymous User',
+        username: `@${user.anonymousId || 'anonymous'}`,
         bio: 'No bio yet',
         age: 'Not specified',
         location: 'Not specified',
@@ -146,7 +190,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         updateData.location = profileData.location;
       }
       if (profileData.gender && profileData.gender !== 'Not specified') {
-        updateData.gender = profileData.gender;
+        // Convert display gender back to database value
+        const genderMap: { [key: string]: string } = {
+          'Male': 'male',
+          'Female': 'female',
+          'Other': 'other',
+        };
+        updateData.gender = genderMap[profileData.gender] || profileData.gender.toLowerCase();
       }
       
       console.log('Updating profile with data:', updateData);
@@ -195,15 +245,58 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
+      'Are you sure you want to delete your account? This will permanently delete all your data, messages, and connections. This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Delete', 
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Account Deleted', 'Your account has been deleted.');
-            onNavigate('welcome');
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              console.log('=== PROFILE SCREEN: Starting account deletion ===');
+              console.log('User object:', user);
+              console.log('User ID:', user?.id);
+              
+              if (!user?.id) {
+                throw new Error('User ID not found. Please sign in again.');
+              }
+              
+              // Delete the user account and all associated data
+              console.log('Calling BuddiesService.deleteUserAccount...');
+              const deleteResult = await BuddiesService.deleteUserAccount(user.id);
+              console.log('Delete result:', deleteResult);
+              
+              if (deleteResult) {
+                console.log('Account deleted successfully, logging out...');
+                
+                // Logout the user
+                await logout();
+                
+                Alert.alert(
+                  'Account Deleted', 
+                  'Your account and all associated data have been permanently deleted.',
+                  [
+                    { 
+                      text: 'OK', 
+                      onPress: () => onNavigate('welcome') 
+                    }
+                  ]
+                );
+              } else {
+                throw new Error('Account deletion returned false');
+              }
+            } catch (error) {
+              console.error('=== PROFILE SCREEN: Error deleting account ===');
+              console.error('Error details:', error);
+              console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
+              setIsLoading(false);
+              Alert.alert(
+                'Deletion Failed', 
+                `Failed to delete your account: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again or contact support if the problem persists.`,
+                [{ text: 'OK' }]
+              );
+            }
           }
         },
       ]
@@ -249,7 +342,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
 
   // Handle gender selection
   const handleGenderSelect = (gender: string) => {
-    setProfileData(prev => ({ ...prev, gender }));
+    // Convert database value to display value
+    const genderMap: { [key: string]: string } = {
+      'male': 'Male',
+      'female': 'Female',
+      'other': 'Other',
+    };
+    const displayGender = genderMap[gender] || gender;
+    setProfileData(prev => ({ ...prev, gender: displayGender }));
     setShowGenderModal(false);
     setEditingField(null);
   };
@@ -489,11 +589,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       <View style={styles.dangerZone}>
         <Text style={styles.dangerTitle}>Danger Zone</Text>
         <TouchableOpacity 
-          style={styles.deleteButton}
+          style={[styles.deleteButton, isLoading && styles.deleteButtonDisabled]}
           onPress={handleDeleteAccount}
+          disabled={isLoading}
         >
-          <Text style={styles.deleteButtonText}>Delete Account</Text>
+          {isLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.deleteButtonText}>Delete Account</Text>
+          )}
           </TouchableOpacity>
+          
         </View>
       
         {/* Bottom Navigation Menu */}
@@ -675,7 +781,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Gender</Text>
-            {['Not specified', 'Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'].map((gender) => (
+            {['Not specified', 'Male', 'Female', 'Other'].map((gender) => (
               <TouchableOpacity
                 key={gender}
                 style={styles.genderOption}
@@ -1192,6 +1298,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
+  },
+  deleteButtonDisabled: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
   },
   deleteButtonText: {
     color: '#fff',
