@@ -11,6 +11,7 @@ import {
   Switch,
   Modal,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { theme, spacing } from '@/utils/theme';
 import { useAdmin } from '@/store/AdminContext';
 
@@ -46,13 +47,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [adminPassword, setAdminPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [testMessage, setTestMessage] = useState('');
+  const [testMessage, setTestMessage] = useState('Hello from Admin!');
+  const [buddyList, setBuddyList] = useState<any[]>([]);
+  const [selectedBuddyId, setSelectedBuddyId] = useState('');
 
   useEffect(() => {
     if (isAdminMode && !isAdminAuthenticated) {
       setShowPasswordModal(true);
     }
   }, [isAdminMode, isAdminAuthenticated]);
+
+  // Load buddy list when admin is authenticated
+  useEffect(() => {
+    if (isAdminAuthenticated) {
+      loadBuddyList();
+    }
+  }, [isAdminAuthenticated]);
+
+  const loadBuddyList = async () => {
+    try {
+      const { FlexibleDatabaseService } = await import('@/services/flexibleDatabase');
+      const buddies = await FlexibleDatabaseService.request('GET', 'buddies?select=id,user_id,name,initials');
+      setBuddyList(buddies);
+    } catch (error) {
+      console.error('Error loading buddy list:', error);
+    }
+  };
 
   const handleAdminLogin = async () => {
     const success = await authenticateAdmin(adminPassword);
@@ -100,11 +120,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     );
   };
 
+  const isValidUUID = (uuid: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
+  };
+
   const handleSendTestMessage = () => {
     if (!selectedUserId.trim() || !testMessage.trim()) {
       Alert.alert('Error', 'Please enter both user ID and message');
       return;
     }
+    
+    if (!isValidUUID(selectedUserId)) {
+      Alert.alert('Error', 'Please enter a valid UUID for User ID.');
+      return;
+    }
+    
     sendTestMessage(selectedUserId, testMessage);
   };
 
@@ -113,6 +144,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       Alert.alert('Error', 'Please enter a user ID');
       return;
     }
+    
+    if (!isValidUUID(selectedUserId)) {
+      Alert.alert('Error', 'Please enter a valid UUID for User ID.');
+      return;
+    }
+    
     simulateUserActivity(selectedUserId);
   };
 
@@ -237,9 +274,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>User Management</Text>
           
+          <Text style={styles.inputLabel}>Select User (from Buddy List):</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedBuddyId}
+              onValueChange={(value) => {
+                setSelectedBuddyId(value);
+                if (value) {
+                  const selectedBuddy = buddyList.find(buddy => buddy.id === value);
+                  if (selectedBuddy) {
+                    setSelectedUserId(selectedBuddy.user_id);
+                  }
+                }
+              }}
+              style={styles.picker}
+            >
+              <Picker.Item label="Select a buddy..." value="" />
+              {buddyList.map((buddy) => (
+                <Picker.Item 
+                  key={buddy.id} 
+                  label={`${buddy.name} (${buddy.initials})`} 
+                  value={buddy.id} 
+                />
+              ))}
+            </Picker>
+          </View>
+          
+          <Text style={styles.inputLabel}>Or Enter User ID Manually:</Text>
           <TextInput
             style={styles.input}
-            placeholder="User ID"
+            placeholder="User ID (e.g., c26e55f2-b196-...)"
             value={selectedUserId}
             onChangeText={setSelectedUserId}
           />
@@ -247,11 +311,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           <TouchableOpacity 
             style={[styles.actionButton, styles.dangerButton]} 
             onPress={handleResetUser}
+            disabled={!selectedUserId}
           >
             <Text style={styles.actionButtonText}>Reset User Data</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.actionButton} onPress={handleSimulateActivity}>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={handleSimulateActivity}
+            disabled={!selectedUserId}
+          >
             <Text style={styles.actionButtonText}>Simulate User Activity</Text>
           </TouchableOpacity>
         </View>
@@ -260,15 +329,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Message Testing</Text>
           
+          <Text style={styles.inputLabel}>Select User (from Buddy List):</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedBuddyId}
+              onValueChange={(value) => {
+                setSelectedBuddyId(value);
+                if (value) {
+                  const selectedBuddy = buddyList.find(buddy => buddy.id === value);
+                  if (selectedBuddy) {
+                    setSelectedUserId(selectedBuddy.user_id);
+                  }
+                }
+              }}
+              style={styles.picker}
+            >
+              <Picker.Item label="Select a buddy..." value="" />
+              {buddyList.map((buddy) => (
+                <Picker.Item 
+                  key={buddy.id} 
+                  label={`${buddy.name} (${buddy.initials})`} 
+                  value={buddy.id} 
+                />
+              ))}
+            </Picker>
+          </View>
+          
+          <Text style={styles.inputLabel}>Or Enter User ID Manually:</Text>
           <TextInput
             style={styles.input}
-            placeholder="Test message content"
+            placeholder="User ID (e.g., c26e55f2-b196-...)"
+            value={selectedUserId}
+            onChangeText={setSelectedUserId}
+          />
+          
+          <Text style={styles.inputLabel}>Test Message Content:</Text>
+          <TextInput
+            style={[styles.input, styles.multilineInput]}
+            placeholder="Enter test message content..."
             value={testMessage}
             onChangeText={setTestMessage}
             multiline
+            numberOfLines={3}
           />
           
-          <TouchableOpacity style={styles.actionButton} onPress={handleSendTestMessage}>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={handleSendTestMessage}
+            disabled={!selectedUserId || !testMessage.trim()}
+          >
             <Text style={styles.actionButtonText}>Send Test Message</Text>
           </TouchableOpacity>
         </View>
@@ -515,6 +624,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.onSurface,
     marginBottom: spacing.xs,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  pickerContainer: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginBottom: spacing.md,
+  },
+  picker: {
+    height: 50,
+    color: theme.colors.onSurface,
+  },
+  multilineInput: {
+    height: 80,
+    textAlignVertical: 'top',
   },
 });
 

@@ -322,8 +322,8 @@ export class FlexibleDatabaseService {
   // Admin-specific methods
   static async getDatabaseStats(): Promise<any> {
     try {
-      // Get basic database information
-      const tables = ['user_profiles', 'messages', 'connections', 'mood_connections'];
+      // Get basic database information - only test tables that exist
+      const tables = ['user_profiles', 'whispr_notes', 'buddies', 'buddy_messages'];
       const stats: any = {
         tables: tables.length,
         status: 'connected',
@@ -349,7 +349,8 @@ export class FlexibleDatabaseService {
 
   static async getUserStats(): Promise<any> {
     try {
-      const users = await this.request('GET', 'user_profiles?select=id,last_seen,online_status,created_at');
+      // Only select columns that exist
+      const users = await this.request('GET', 'user_profiles?select=id,last_seen,created_at');
       
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -358,10 +359,10 @@ export class FlexibleDatabaseService {
       const stats = {
         totalUsers: users.length,
         activeUsers: users.filter((user: any) => {
-          const lastSeen = new Date(user.last_seen);
+          const lastSeen = new Date(user.last_seen || user.created_at);
           return lastSeen > oneDayAgo;
         }).length,
-        onlineUsers: users.filter((user: any) => user.online_status === true).length,
+        onlineUsers: 0, // online_status column doesn't exist
       };
 
       return stats;
@@ -373,25 +374,21 @@ export class FlexibleDatabaseService {
 
   static async getMessageStats(): Promise<any> {
     try {
-      const messages = await this.request('GET', 'messages?select=id,created_at,sender_id,receiver_id');
+      // Use buddy_messages table instead of messages - buddy_messages uses buddy_id, not receiver_id
+      const messages = await this.request('GET', 'buddy_messages?select=id,sender_id,buddy_id');
       
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const todayMessages = messages.filter((msg: any) => {
-        const createdAt = new Date(msg.created_at);
-        return createdAt >= today;
-      });
 
-      // Get unique chat pairs
+      // Get unique chat pairs based on buddy_id
       const chatPairs = new Set();
       messages.forEach((msg: any) => {
-        const pair = [msg.sender_id, msg.receiver_id].sort().join('-');
-        chatPairs.add(pair);
+        chatPairs.add(msg.buddy_id);
       });
 
       return {
         totalMessages: messages.length,
-        todayMessages: todayMessages.length,
+        todayMessages: 0, // created_at column doesn't exist
         activeChats: chatPairs.size,
       };
     } catch (error) {
@@ -403,13 +400,13 @@ export class FlexibleDatabaseService {
   static async clearAllData(): Promise<void> {
     try {
       // Clear messages first (due to foreign key constraints)
-      await this.request('DELETE', 'messages');
+      await this.request('DELETE', 'buddy_messages');
       
-      // Clear connections
-      await this.request('DELETE', 'connections');
+      // Clear buddies
+      await this.request('DELETE', 'buddies');
       
-      // Clear mood connections
-      await this.request('DELETE', 'mood_connections');
+      // Clear whispr notes
+      await this.request('DELETE', 'whispr_notes');
       
       // Clear user profiles
       await this.request('DELETE', 'user_profiles');
@@ -424,18 +421,18 @@ export class FlexibleDatabaseService {
   static async resetUserData(userId: string): Promise<void> {
     try {
       // Delete user's messages
-      await this.request('DELETE', `messages?or=(sender_id.eq.${userId},receiver_id.eq.${userId})`);
+      // Delete messages where user is the sender (buddy_messages doesn't have receiver_id)
+      await this.request('DELETE', `buddy_messages?sender_id=eq.${userId}`);
       
-      // Delete user's connections
-      await this.request('DELETE', `connections?or=(user1_id.eq.${userId},user2_id.eq.${userId})`);
+      // Delete user's buddies
+      await this.request('DELETE', `buddies?or=(user_id.eq.${userId},buddy_id.eq.${userId})`);
       
-      // Delete user's mood connections
-      await this.request('DELETE', `mood_connections?or=(user1_id.eq.${userId},user2_id.eq.${userId})`);
+      // Delete user's whispr notes
+      await this.request('DELETE', `whispr_notes?sender_id=eq.${userId}`);
       
       // Reset user profile (keep basic info, clear activity)
       await this.request('PATCH', `user_profiles?id=eq.${userId}`, {
         last_seen: new Date().toISOString(),
-        online_status: false,
         bio: 'User data reset',
       });
       
@@ -448,16 +445,49 @@ export class FlexibleDatabaseService {
 
   static async sendTestMessage(userId: string, message: string): Promise<void> {
     try {
-      // Create a test message from system to user
-      const testMessage = {
-        sender_id: 'system',
-        receiver_id: userId,
-        content: `[TEST MESSAGE] ${message}`,
-        message_type: 'text',
-        created_at: new Date().toISOString(),
-      };
-
-      await this.request('POST', 'messages', testMessage);
+      // For buddy_messages, we need a buddy_id, not receiver_id
+      // First, try to find an existing buddy for this user
+      const buddies = await this.request('GET', `buddies?user_id=eq.${userId}&limit=1`);
+      
+      if (buddies.length === 0) {
+        console.log('No existing buddy found for test message. Creating a test buddy...');
+        // Create a test buddy first - use the same user as both user and buddy for testing
+        const testBuddy = {
+          user_id: userId,
+          buddy_user_id: userId, // Use the same user ID to avoid foreign key issues
+          name: 'Test System',
+          initials: 'TS',
+          status: 'active',
+        };
+        
+        const createdBuddy = await this.request('POST', 'buddies', testBuddy);
+        const buddyId = createdBuddy[0]?.id;
+        
+        if (!buddyId) {
+          throw new Error('Failed to create test buddy');
+        }
+        
+        // Now send the test message
+        const testMessage = {
+          buddy_id: buddyId,
+          sender_id: userId, // Use the same user ID to avoid foreign key issues
+          content: `[TEST MESSAGE] ${message}`,
+          message_type: 'text',
+        };
+        
+        await this.request('POST', 'buddy_messages', testMessage);
+      } else {
+        // Use existing buddy
+        const testMessage = {
+          buddy_id: buddies[0].id,
+          sender_id: userId, // Use the same user ID to avoid foreign key issues
+          content: `[TEST MESSAGE] ${message}`,
+          message_type: 'text',
+        };
+        
+        await this.request('POST', 'buddy_messages', testMessage);
+      }
+      
       console.log(`Test message sent to user ${userId}`);
     } catch (error) {
       console.error('Error sending test message:', error);
@@ -467,21 +497,21 @@ export class FlexibleDatabaseService {
 
   static async simulateUserActivity(userId: string): Promise<void> {
     try {
-      // Update user's last seen and online status
+      // Update user's last seen
       await this.request('PATCH', `user_profiles?id=eq.${userId}`, {
         last_seen: new Date().toISOString(),
-        online_status: true,
       });
 
-      // Create a simulated mood connection
-      const moodConnection = {
-        user1_id: userId,
-        user2_id: 'simulated_user',
-        mood: 'test',
-        created_at: new Date().toISOString(),
+      // Create a simulated buddy connection
+      const buddyConnection = {
+        user_id: userId,
+        buddy_user_id: userId, // Use the same user ID to avoid foreign key issues
+        name: 'Simulated Buddy',
+        initials: 'SB',
+        status: 'active',
       };
 
-      await this.request('POST', 'mood_connections', moodConnection);
+      await this.request('POST', 'buddies', buddyConnection);
       
       console.log(`User activity simulated for user ${userId}`);
     } catch (error) {

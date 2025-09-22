@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { BuddiesService, BuddyMessage } from '@/services/buddiesService';
 import { UserProfileView } from '@/components/UserProfileView';
@@ -16,6 +16,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
   const [isTyping, setIsTyping] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProfileView, setShowProfileView] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -27,10 +28,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
     }
   }, [buddy?.id]);
 
-  const loadMessages = async () => {
+  // Auto-refresh messages every 5 seconds
+  useEffect(() => {
+    if (!buddy?.id) return;
+
+    const interval = setInterval(() => {
+      loadMessages();
+    }, 5000); // Refresh every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [buddy?.id]);
+
+  const loadMessages = async (isRefresh = false) => {
     if (!buddy?.id) return;
     
-    setIsLoading(true);
+    if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
     
     try {
@@ -45,8 +61,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       console.error('Error loading messages:', err);
       setError(err instanceof Error ? err.message : 'Failed to load messages');
     } finally {
-      setIsLoading(false);
+      if (isRefresh) {
+        setIsRefreshing(false);
+      } else {
+        setIsLoading(false);
+      }
     }
+  };
+
+  const onRefresh = () => {
+    loadMessages(true);
   };
 
   const handleSendMessage = async () => {
@@ -145,6 +169,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
       >
         {isLoading ? (
           <View style={styles.loadingContainer}>
