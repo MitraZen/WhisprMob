@@ -28,6 +28,17 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     }
   }, [user?.id]);
 
+  // Auto-refresh notes every 15 seconds
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const interval = setInterval(() => {
+      loadNotes();
+    }, 15000); // Refresh every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   const loadNotes = async () => {
     if (!user?.id) return;
     

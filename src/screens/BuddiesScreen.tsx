@@ -21,6 +21,17 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     loadBuddies();
   }, [user?.id]);
 
+  // Auto-refresh buddies every 10 seconds
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const interval = setInterval(() => {
+      loadBuddies();
+    }, 10000); // Refresh every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   const loadBuddies = async () => {
     if (!user?.id) return;
     
