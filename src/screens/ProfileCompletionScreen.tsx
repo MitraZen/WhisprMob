@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
+import { useAuth } from '@/store/AuthContext';
+import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 
 interface ProfileCompletionScreenProps {
   onComplete: (profileData: ProfileData) => void;
@@ -20,6 +22,7 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
   const [country, setCountry] = useState('');
   const [bio, setBio] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { user, markProfileComplete } = useAuth();
 
   const genderOptions = [
     { value: 'male', label: 'Male' },
@@ -46,10 +49,26 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
         country,
         bio: bio.trim(),
       };
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      // Try to persist fields based on common column names
+      const update: Record<string, any> = {
+        gender: profileData.gender,
+        country: profileData.country,
+        bio: profileData.bio,
+        profile_completed: true,
+      };
+      // map dateOfBirth to likely column names
+      update['date_of_birth'] = profileData.dateOfBirth;
+
+      const ok = await FlexibleDatabaseService.updateUserProfile(user.id, update);
+      if (!ok) {
+        throw new Error('Failed to save profile');
+      }
+
+      markProfileComplete(true);
       onComplete(profileData);
     } catch (error) {
       Alert.alert('Error', 'Failed to complete profile. Please try again.');
