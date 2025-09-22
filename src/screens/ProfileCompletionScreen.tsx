@@ -1,5 +1,17 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  ScrollView, 
+  Alert, 
+  ActivityIndicator, 
+  Modal,
+  FlatList
+} from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { useAuth } from '@/store/AuthContext';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
@@ -7,37 +19,123 @@ import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 interface ProfileCompletionScreenProps {
   onComplete: (profileData: ProfileData) => void;
   onSkip: () => void;
+  user?: any;
+  onNavigate?: (screen: string) => void;
 }
 
 interface ProfileData {
-  gender: 'male' | 'female' | 'other' | 'prefer-not-to-say';
+  gender: 'male' | 'female' | 'other';
   dateOfBirth: string;
   country: string;
   bio: string;
 }
 
-export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = ({ onComplete, onSkip }) => {
+// Comprehensive country list
+const countries = [
+  'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
+  'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan',
+  'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi',
+  'Cambodia', 'Cameroon', 'Canada', 'Cape Verde', 'Central African Republic', 'Chad', 'Chile', 'China',
+  'Colombia', 'Comoros', 'Congo', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus', 'Czech Republic',
+  'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea',
+  'Eritrea', 'Estonia', 'Ethiopia', 'Fiji', 'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany',
+  'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras',
+  'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Jamaica',
+  'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Latvia',
+  'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Macedonia',
+  'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania',
+  'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco',
+  'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua',
+  'Niger', 'Nigeria', 'North Korea', 'Norway', 'Oman', 'Pakistan', 'Palau', 'Panama', 'Papua New Guinea',
+  'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda',
+  'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa', 'San Marino',
+  'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone',
+  'Singapore', 'Slovakia', 'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea',
+  'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Swaziland', 'Sweden', 'Switzerland',
+  'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga',
+  'Trinidad and Tobago', 'Tunisia', 'Turkey', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine',
+  'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Vanuatu',
+  'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe'
+];
+
+export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = ({ 
+  onComplete, 
+  onSkip, 
+  user, 
+  onNavigate 
+}) => {
   const [gender, setGender] = useState<ProfileData['gender'] | null>(null);
-  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [country, setCountry] = useState('');
+  const [countrySearch, setCountrySearch] = useState('');
+  const [showCountryModal, setShowCountryModal] = useState(false);
   const [bio, setBio] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { user, markProfileComplete } = useAuth();
+  const { markProfileComplete } = useAuth();
 
   const genderOptions = [
     { value: 'male', label: 'Male' },
     { value: 'female', label: 'Female' },
     { value: 'other', label: 'Other' },
-    { value: 'prefer-not-to-say', label: 'Prefer not to say' },
   ];
 
-  const countries = [
-    'United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Japan', 'India', 'Brazil', 'Mexico'
+  // Generate years (1900 to current year)
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: currentYear - 1899 }, (_, i) => currentYear - i);
+
+  // Generate months
+  const months = [
+    { value: 1, label: 'January' },
+    { value: 2, label: 'February' },
+    { value: 3, label: 'March' },
+    { value: 4, label: 'April' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'June' },
+    { value: 7, label: 'July' },
+    { value: 8, label: 'August' },
+    { value: 9, label: 'September' },
+    { value: 10, label: 'October' },
+    { value: 11, label: 'November' },
+    { value: 12, label: 'December' },
   ];
+
+  // Generate days based on selected month and year
+  const getDaysInMonth = (month: number, year: number) => {
+    return new Date(year, month, 0).getDate();
+  };
+
+  const getDays = () => {
+    if (!selectedMonth || !selectedYear) return [];
+    const daysInMonth = getDaysInMonth(selectedMonth, selectedYear);
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  };
+
+  // Filter countries based on search
+  const filteredCountries = countries.filter(country =>
+    country.toLowerCase().includes(countrySearch.toLowerCase())
+  );
 
   const handleComplete = async () => {
-    if (!gender || !dateOfBirth || !country) {
+    if (!gender || !selectedYear || !selectedMonth || !selectedDay || !country) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
+      return;
+    }
+
+    // Validate date
+    const dateOfBirth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
+    const birthDate = new Date(selectedYear, selectedMonth - 1, selectedDay);
+    const today = new Date();
+    
+    if (birthDate > today) {
+      Alert.alert('Invalid Date', 'Date of birth cannot be in the future.');
+      return;
+    }
+
+    const age = today.getFullYear() - selectedYear;
+    if (age < 13) {
+      Alert.alert('Age Restriction', 'You must be at least 13 years old to use this app.');
       return;
     }
 
@@ -49,33 +147,61 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
         country,
         bio: bio.trim(),
       };
-      if (!user) {
+
+      if (!user?.id) {
         throw new Error('No authenticated user');
       }
 
-      // Try to persist fields based on common column names
       const update: Record<string, any> = {
         gender: profileData.gender,
         country: profileData.country,
         bio: profileData.bio,
         profile_completed: true,
+        date_of_birth: profileData.dateOfBirth,
       };
-      // map dateOfBirth to likely column names
-      update['date_of_birth'] = profileData.dateOfBirth;
 
       const ok = await FlexibleDatabaseService.updateUserProfile(user.id, update);
       if (!ok) {
         throw new Error('Failed to save profile');
       }
 
-      markProfileComplete(true);
+      markProfileComplete();
       onComplete(profileData);
     } catch (error) {
+      console.error('Profile completion error:', error);
       Alert.alert('Error', 'Failed to complete profile. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  const selectCountry = (selectedCountry: string) => {
+    setCountry(selectedCountry);
+    setCountrySearch(selectedCountry);
+    setShowCountryModal(false);
+  };
+
+  const openCountryModal = () => {
+    setCountrySearch('');
+    setShowCountryModal(true);
+  };
+
+  const renderCountryItem = ({ item }: { item: string }) => (
+    <TouchableOpacity
+      style={[
+        styles.countryItem,
+        country === item && styles.selectedCountryItem
+      ]}
+      onPress={() => selectCountry(item)}
+    >
+      <Text style={[
+        styles.countryItemText,
+        country === item && styles.selectedCountryItemText
+      ]}>
+        {item}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -88,65 +214,101 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
         {/* Gender Selection */}
         <View style={styles.section}>
           <Text style={styles.label}>Gender *</Text>
-          <View style={styles.genderGrid}>
-            {genderOptions.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.genderButton,
-                  gender === option.value && styles.selectedGenderButton,
-                ]}
-                onPress={() => setGender(option.value as ProfileData['gender'])}
-                disabled={isLoading}
-              >
-                <Text style={[
-                  styles.genderButtonText,
-                  gender === option.value && styles.selectedGenderButtonText,
-                ]}>
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={gender}
+              onValueChange={(value) => setGender(value)}
+              style={styles.picker}
+            >
+              <Picker.Item label="Select Gender" value={null} />
+              {genderOptions.map((option) => (
+                <Picker.Item
+                  key={option.value}
+                  label={option.label}
+                  value={option.value}
+                />
+              ))}
+            </Picker>
           </View>
         </View>
 
         {/* Date of Birth */}
         <View style={styles.section}>
           <Text style={styles.label}>Date of Birth *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#9ca3af"
-            value={dateOfBirth}
-            onChangeText={setDateOfBirth}
-            keyboardType="numeric"
-            editable={!isLoading}
-          />
+          <View style={styles.dateContainer}>
+            {/* Year Picker */}
+            <View style={styles.datePickerContainer}>
+              <Text style={styles.dateLabel}>Year</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={selectedYear}
+                  onValueChange={(value) => setSelectedYear(value)}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Year" value={null} />
+                  {years.map((year) => (
+                    <Picker.Item key={year} label={year.toString()} value={year} />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
+            {/* Month Picker */}
+            <View style={styles.datePickerContainer}>
+              <Text style={styles.dateLabel}>Month</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={selectedMonth}
+                  onValueChange={(value) => setSelectedMonth(value)}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Month" value={null} />
+                  {months.map((month) => (
+                    <Picker.Item
+                      key={month.value}
+                      label={month.label}
+                      value={month.value}
+                    />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
+            {/* Day Picker */}
+            <View style={styles.datePickerContainer}>
+              <Text style={styles.dateLabel}>Day</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={selectedDay}
+                  onValueChange={(value) => setSelectedDay(value)}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Day" value={null} />
+                  {getDays().map((day) => (
+                    <Picker.Item key={day} label={day.toString()} value={day} />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+          </View>
         </View>
 
         {/* Country Selection */}
         <View style={styles.section}>
           <Text style={styles.label}>Country *</Text>
-          <ScrollView style={styles.countryList} nestedScrollEnabled>
-            {countries.map((countryName) => (
-              <TouchableOpacity
-                key={countryName}
-                style={[
-                  styles.countryButton,
-                  country === countryName && styles.selectedCountryButton,
-                ]}
-                onPress={() => setCountry(countryName)}
-                disabled={isLoading}
-              >
-                <Text style={[
-                  styles.countryButtonText,
-                  country === countryName && styles.selectedCountryButtonText,
-                ]}>
-                  {countryName}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <TouchableOpacity
+            style={styles.countrySelector}
+            onPress={openCountryModal}
+            disabled={isLoading}
+          >
+            <Text style={[
+              styles.countrySelectorText,
+              !country && styles.placeholderText
+            ]}>
+              {country || 'Select Country'}
+            </Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Bio */}
@@ -188,6 +350,45 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Country Selection Modal */}
+      <Modal
+        visible={showCountryModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowCountryModal(false)}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Country</Text>
+            <View style={styles.modalSpacer} />
+          </View>
+
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search countries..."
+              placeholderTextColor="#9ca3af"
+              value={countrySearch}
+              onChangeText={setCountrySearch}
+              autoFocus
+            />
+          </View>
+
+          <FlatList
+            data={filteredCountries}
+            keyExtractor={(item) => item}
+            renderItem={renderCountryItem}
+            style={styles.countryList}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -228,34 +429,54 @@ const styles = StyleSheet.create({
     color: theme.colors.onBackground,
     marginBottom: spacing.md,
   },
-  genderGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  genderButton: {
-    flex: 1,
-    minWidth: '45%',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
+  pickerContainer: {
     backgroundColor: '#f3f4f6',
     borderRadius: borderRadius.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
-  selectedGenderButton: {
-    backgroundColor: '#dbeafe',
-    borderColor: theme.colors.primary,
-  },
-  genderButtonText: {
-    fontSize: 14,
+  picker: {
+    height: 50,
     color: theme.colors.onBackground,
-    fontWeight: '500',
   },
-  selectedGenderButtonText: {
-    color: theme.colors.primary,
-    fontWeight: '600',
+  dateContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  datePickerContainer: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.onBackground,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  countrySelector: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  countrySelectorText: {
+    fontSize: 16,
+    color: theme.colors.onBackground,
+    flex: 1,
+  },
+  placeholderText: {
+    color: '#9ca3af',
+  },
+  chevron: {
+    fontSize: 18,
+    color: '#9ca3af',
+    fontWeight: 'bold',
   },
   input: {
     backgroundColor: '#f3f4f6',
@@ -265,34 +486,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.onBackground,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#e5e7eb',
   },
   bioInput: {
     height: 100,
     textAlignVertical: 'top',
-  },
-  countryList: {
-    maxHeight: 200,
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
-  },
-  countryButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.sm,
-    marginBottom: spacing.xs,
-  },
-  selectedCountryButton: {
-    backgroundColor: theme.colors.primary,
-  },
-  countryButtonText: {
-    fontSize: 14,
-    color: theme.colors.onBackground,
-  },
-  selectedCountryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
   },
   buttonContainer: {
     marginTop: spacing.xl,
@@ -323,7 +521,73 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalCloseButton: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  modalCloseText: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.onBackground,
+  },
+  modalSpacer: {
+    width: 60,
+  },
+  searchContainer: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  searchInput: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 16,
+    color: theme.colors.onBackground,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  countryList: {
+    flex: 1,
+  },
+  countryItem: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  selectedCountryItem: {
+    backgroundColor: '#dbeafe',
+  },
+  countryItemText: {
+    fontSize: 16,
+    color: theme.colors.onBackground,
+  },
+  selectedCountryItemText: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
 });
 
 export default ProfileCompletionScreen;
-

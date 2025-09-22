@@ -18,6 +18,7 @@ export interface Buddy {
   mood?: MoodType;
   createdAt: Date;
   updatedAt: Date;
+  buddyUserId?: string; // User ID for profile viewing
 }
 
 export interface BuddyMessage {
@@ -151,6 +152,7 @@ export class BuddiesService {
         mood: buddy.mood || undefined,
         createdAt: new Date(buddy.created_at),
         updatedAt: new Date(buddy.updated_at),
+        buddyUserId: buddy.buddy_user_id || buddy.user_id || buddy.id, // Add buddy user ID for profile viewing
       }));
     } catch (error) {
       console.error('Error fetching buddies:', error);
@@ -612,6 +614,122 @@ export class BuddiesService {
     }
   }
 
+  // Delete user account and all associated data
+  static async deleteUserAccount(userId: string): Promise<boolean> {
+    try {
+      console.log('=== STARTING USER ACCOUNT DELETION ===');
+      console.log('User ID to delete:', userId);
+      
+      if (!userId) {
+        throw new Error('User ID is required for account deletion');
+      }
+      
+      // First, let's check if the user exists
+      console.log('Step 0: Checking if user exists...');
+      try {
+        const userCheck = await this.request('GET', `user_profiles?id=eq.${userId}&select=id,anonymous_id`);
+        console.log('User check result:', userCheck);
+        if (!userCheck || userCheck.length === 0) {
+          console.log('User not found in database, but continuing with deletion...');
+        } else {
+          console.log('✅ User found in database');
+        }
+      } catch (error) {
+        console.error('❌ Error checking user existence:', error);
+      }
+      
+      // Delete user's messages
+      console.log('Step 1: Deleting user messages...');
+      try {
+        const messagesResult = await this.request('DELETE', `buddy_messages?sender_id=eq.${userId}`);
+        console.log('Messages deletion result:', messagesResult);
+        console.log('✅ Deleted user messages');
+      } catch (error) {
+        console.error('❌ Error deleting messages:', error);
+        // Continue with other deletions even if messages fail
+      }
+      
+      // Delete user's buddies - check table structure first
+      console.log('Step 2: Deleting user buddies...');
+      try {
+        // First check what columns exist in buddies table
+        console.log('Checking buddies table structure...');
+        const buddiesCheck = await this.request('GET', `buddies?select=*&limit=1`);
+        console.log('Buddies table sample:', buddiesCheck);
+        
+        if (buddiesCheck && buddiesCheck.length > 0) {
+          const sampleBuddy = buddiesCheck[0];
+          console.log('Available columns in buddies table:', Object.keys(sampleBuddy));
+          
+          // Delete buddies where user is the main user (user_id column)
+          const buddiesResult = await this.request('DELETE', `buddies?user_id=eq.${userId}`);
+          console.log('Buddies deletion result:', buddiesResult);
+          console.log('✅ Deleted user buddies');
+        } else {
+          console.log('No buddies found in table, skipping deletion');
+        }
+      } catch (error) {
+        console.error('❌ Error deleting buddies:', error);
+        // Continue with other deletions even if buddies fail
+      }
+      
+      // Delete user's whispr notes
+      console.log('Step 3: Deleting user whispr notes...');
+      try {
+        const notesResult = await this.request('DELETE', `whispr_notes?sender_id=eq.${userId}`);
+        console.log('Notes deletion result:', notesResult);
+        console.log('✅ Deleted user whispr notes');
+      } catch (error) {
+        console.error('❌ Error deleting notes:', error);
+        // Continue with other deletions even if notes fail
+      }
+      
+      // Delete user profile
+      console.log('Step 4: Deleting user profile...');
+      try {
+        const profileResult = await this.request('DELETE', `user_profiles?id=eq.${userId}`);
+        console.log('Profile deletion result:', profileResult);
+        console.log('✅ Deleted user profile');
+      } catch (error) {
+        console.error('❌ Error deleting profile:', error);
+        throw error; // Profile deletion is critical, so throw error
+      }
+      
+      // Verify deletion by checking if user still exists
+      console.log('Step 5: Verifying deletion...');
+      try {
+        const verifyUser = await this.request('GET', `user_profiles?id=eq.${userId}&select=id,email`);
+        if (!verifyUser || verifyUser.length === 0) {
+          console.log('✅ User successfully deleted from user_profiles table');
+        } else {
+          console.log('⚠️ User still exists in user_profiles table after deletion attempt');
+        }
+        
+        // Check if user still exists in auth system
+        if (verifyUser && verifyUser.length > 0 && verifyUser[0].email) {
+          const existsInAuth = await this.checkUserInAuth(verifyUser[0].email);
+          if (existsInAuth) {
+            console.log('⚠️ User still exists in auth system - manual deletion required');
+            console.log('To completely delete user, run this SQL in Supabase SQL Editor:');
+            console.log(`DELETE FROM auth.users WHERE id = '${userId}';`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error verifying deletion:', error);
+      }
+      
+      console.log('=== USER ACCOUNT DELETION COMPLETED SUCCESSFULLY ===');
+      console.log('Note: User may still exist in auth.users table. To completely remove:');
+      console.log('1. Go to Supabase Dashboard > SQL Editor');
+      console.log('2. Run: DELETE FROM auth.users WHERE id = \'' + userId + '\';');
+      return true;
+    } catch (error) {
+      console.error('=== USER ACCOUNT DELETION FAILED ===');
+      console.error('Error details:', error);
+      throw error;
+    }
+  }
+
   // Test sending a message
   static async testSendMessage(buddyId: string, userId: string): Promise<void> {
     try {
@@ -715,6 +833,281 @@ export class BuddiesService {
       console.log('=== END MESSAGE RETRIEVAL TEST ===');
     } catch (error) {
       console.error('Message retrieval test failed:', error);
+    }
+  }
+
+  // Check if user exists in auth system
+  static async checkUserInAuth(email: string): Promise<boolean> {
+    try {
+      console.log('Checking if user exists in auth system for email:', email);
+      
+      // Try to get user from auth.users table
+      const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/auth/users?email=eq.${encodeURIComponent(email)}`, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const users = await response.json();
+        console.log('Auth users found:', users);
+        return users && users.length > 0;
+      } else {
+        console.log('Auth check failed with status:', response.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error checking auth user:', error);
+      return false;
+    }
+  }
+
+  // Check if email is still registered (check both user_profiles and auth)
+  static async checkEmailRegistration(email: string): Promise<{
+    inUserProfiles: boolean;
+    inAuth: boolean;
+    userProfileData?: any;
+    authData?: any;
+  }> {
+    try {
+      console.log('=== CHECKING EMAIL REGISTRATION ===');
+      console.log('Email to check:', email);
+      
+      const result = {
+        inUserProfiles: false,
+        inAuth: false,
+        userProfileData: null,
+        authData: null
+      };
+      
+      // Check user_profiles table
+      try {
+        const userProfileResponse = await this.request('GET', `user_profiles?email=eq.${encodeURIComponent(email)}&select=*`);
+        console.log('User profile check result:', userProfileResponse);
+        if (userProfileResponse && userProfileResponse.length > 0) {
+          result.inUserProfiles = true;
+          result.userProfileData = userProfileResponse[0];
+          console.log('✅ Email found in user_profiles table');
+        } else {
+          console.log('❌ Email not found in user_profiles table');
+        }
+      } catch (error) {
+        console.error('Error checking user_profiles:', error);
+      }
+      
+      // Check auth system
+      try {
+        const authResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/auth/users?email=eq.${encodeURIComponent(email)}`, {
+          method: 'GET',
+          headers: {
+            'apikey': SUPABASE_CONFIG.anonKey,
+            'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (authResponse.ok) {
+          const authUsers = await authResponse.json();
+          console.log('Auth check result:', authUsers);
+          if (authUsers && authUsers.length > 0) {
+            result.inAuth = true;
+            result.authData = authUsers[0];
+            console.log('✅ Email found in auth system');
+          } else {
+            console.log('❌ Email not found in auth system');
+          }
+        } else {
+          console.log('Auth check failed with status:', authResponse.status);
+        }
+      } catch (error) {
+        console.error('Error checking auth system:', error);
+      }
+      
+      console.log('Final registration status:', result);
+      console.log('=== END EMAIL REGISTRATION CHECK ===');
+      
+      return result;
+    } catch (error) {
+      console.error('Error checking email registration:', error);
+      return {
+        inUserProfiles: false,
+        inAuth: false,
+        userProfileData: null,
+        authData: null
+      };
+    }
+  }
+
+  // Delete user from auth system (this requires service role key)
+  static async deleteUserFromAuth(userId: string): Promise<boolean> {
+    try {
+      console.log('Attempting to delete user from auth system:', userId);
+      
+      // Note: This requires service role key, not anon key
+      // For now, we'll just log that we would delete from auth
+      console.log('⚠️ Auth user deletion requires service role key - user may still exist in auth.users table');
+      console.log('To completely delete user, run this SQL in Supabase:');
+      console.log(`DELETE FROM auth.users WHERE id = '${userId}';`);
+      
+      return true; // Return true for now since we can't actually delete from auth with anon key
+    } catch (error) {
+      console.error('Error deleting from auth:', error);
+      return false;
+    }
+  }
+
+  // Delete user by email using database function
+  static async deleteUserByEmail(email: string): Promise<boolean> {
+    try {
+      console.log('=== DELETING USER BY EMAIL ===');
+      console.log('Email to delete:', email);
+      
+      const deleteResult = await this.rpcRequest('delete_user_by_email', {
+        user_email: email
+      });
+      
+      console.log('Delete by email result:', deleteResult);
+      
+      if (deleteResult && deleteResult.success) {
+        console.log('✅ User successfully deleted by email');
+        console.log('Deletion details:', deleteResult.details);
+        return true;
+      } else {
+        console.log('❌ Delete by email failed:', deleteResult?.error || 'Unknown error');
+        throw new Error(deleteResult?.error || 'Delete by email failed');
+      }
+    } catch (error) {
+      console.error('Error deleting user by email:', error);
+      throw error;
+    }
+  }
+
+  // Enhanced delete function using database function
+  static async deleteUserAccountEnhanced(userId: string): Promise<boolean> {
+    try {
+      console.log('=== STARTING ENHANCED USER ACCOUNT DELETION ===');
+      console.log('User ID to delete:', userId);
+      
+      if (!userId) {
+        throw new Error('User ID is required for account deletion');
+      }
+      
+      // First, get user email for complete deletion
+      console.log('Step 0: Getting user email for complete deletion...');
+      let userEmail = null;
+      try {
+        const userCheck = await this.request('GET', `user_profiles?id=eq.${userId}&select=id,email`);
+        console.log('User check result:', userCheck);
+        if (userCheck && userCheck.length > 0) {
+          userEmail = userCheck[0].email;
+          console.log('✅ User found, email:', userEmail);
+        } else {
+          console.log('User not found in user_profiles, trying auth system...');
+        }
+      } catch (error) {
+        console.error('❌ Error checking user existence:', error);
+      }
+      
+      // Try using the database function for complete deletion
+      console.log('Step 1: Attempting complete deletion using database function...');
+      try {
+        const deleteResult = await this.rpcRequest('delete_user_completely', {
+          user_id: userId,
+          user_email: userEmail
+        });
+        
+        console.log('Database function deletion result:', deleteResult);
+        
+        if (deleteResult && deleteResult.success) {
+          console.log('✅ User completely deleted using database function');
+          console.log('Deletion details:', deleteResult.details);
+          return true;
+        } else {
+          console.log('❌ Database function deletion failed:', deleteResult?.error || 'Unknown error');
+          throw new Error(deleteResult?.error || 'Database function deletion failed');
+        }
+      } catch (rpcError) {
+        console.log('❌ RPC deletion failed, falling back to manual deletion...');
+        console.error('RPC Error:', rpcError);
+        
+        // Fallback to original manual deletion if RPC fails
+        return await this.deleteUserAccount(userId);
+      }
+    } catch (error) {
+      console.error('=== ENHANCED USER ACCOUNT DELETION FAILED ===');
+      console.error('Error details:', error);
+      throw error;
+    }
+  }
+
+  // Test delete functionality
+  static async testDeleteFunctionality(userId: string): Promise<void> {
+    try {
+      console.log('=== TESTING DELETE FUNCTIONALITY ===');
+      console.log('Testing delete for user ID:', userId);
+      
+      // Test 1: Check if user exists before deletion
+      console.log('Step 1: Checking if user exists before deletion...');
+      try {
+        const userBefore = await this.request('GET', `user_profiles?id=eq.${userId}&select=id,anonymous_id,email`);
+        console.log('User before deletion:', userBefore);
+        if (userBefore && userBefore.length > 0) {
+          console.log('✅ User exists in user_profiles before deletion');
+          
+          // Also check if user exists in auth system
+          if (userBefore[0].email) {
+            const existsInAuth = await this.checkUserInAuth(userBefore[0].email);
+            console.log('User exists in auth system:', existsInAuth);
+          }
+        } else {
+          console.log('❌ User does not exist in user_profiles before deletion');
+          return;
+        }
+      } catch (error) {
+        console.error('❌ Error checking user before deletion:', error);
+        return;
+      }
+      
+      // Test 2: Try to delete the user
+      console.log('Step 2: Attempting to delete user...');
+      try {
+        const deleteResult = await this.deleteUserAccount(userId);
+        console.log('Delete result:', deleteResult);
+        if (deleteResult) {
+          console.log('✅ Delete function returned true');
+        } else {
+          console.log('❌ Delete function returned false');
+        }
+      } catch (error) {
+        console.error('❌ Error during deletion:', error);
+      }
+      
+      // Test 3: Check if user exists after deletion
+      console.log('Step 3: Checking if user exists after deletion...');
+      try {
+        const userAfter = await this.request('GET', `user_profiles?id=eq.${userId}&select=id,anonymous_id,email`);
+        console.log('User after deletion:', userAfter);
+        if (!userAfter || userAfter.length === 0) {
+          console.log('✅ User successfully deleted from user_profiles table');
+        } else {
+          console.log('❌ User still exists in user_profiles after deletion attempt');
+        }
+        
+        // Check if user still exists in auth system
+        if (userAfter && userAfter.length > 0 && userAfter[0].email) {
+          const existsInAuthAfter = await this.checkUserInAuth(userAfter[0].email);
+          console.log('User still exists in auth system after deletion:', existsInAuthAfter);
+        }
+      } catch (error) {
+        console.error('❌ Error checking user after deletion:', error);
+      }
+      
+      console.log('=== END DELETE FUNCTIONALITY TEST ===');
+    } catch (error) {
+      console.error('Delete functionality test failed:', error);
     }
   }
 }

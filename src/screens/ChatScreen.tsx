@@ -304,7 +304,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       <UserProfileView
         visible={showProfileView}
         onClose={() => setShowProfileView(false)}
-        userId={buddy.buddyUserId}
+        userId={buddy.buddyUserId || buddy.id}
         buddyName={buddy.name}
       />
     </KeyboardAvoidingView>

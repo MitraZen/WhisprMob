@@ -35,12 +35,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       const profile = await BuddiesService.getUserProfile(userId);
       
       if (profile) {
+        console.log('Profile data received:', profile);
         setProfileData({
-          displayName: profile.display_name || 'Anonymous User',
-          username: profile.username || '@anonymous',
+          displayName: profile.display_name || profile.name || 'Anonymous User',
+          username: profile.username || profile.anonymous_id || '@anonymous',
           bio: profile.bio || 'No bio available',
-          age: profile.age || 'Not specified',
-          location: profile.location || 'Not specified',
+          age: profile.age || profile.date_of_birth ? 
+            (new Date().getFullYear() - new Date(profile.date_of_birth).getFullYear()).toString() : 
+            'Not specified',
+          location: profile.location || profile.country || 'Not specified',
           gender: profile.gender || 'Not specified',
           mood: profile.mood || 'happy',
           joinDate: new Date(profile.created_at),
@@ -48,6 +51,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           lastSeen: profile.last_seen ? new Date(profile.last_seen) : null,
         });
       } else {
+        console.log('No profile data found for user:', userId);
         setError('Profile not found');
       }
     } catch (err) {
