@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { theme, spacing } from '@/utils/theme';
+import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
+import { useAuth } from '@/store/AuthContext';
 
 // Simple screens without Paper components
 const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => (
@@ -19,14 +21,14 @@ const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void })
         <View style={styles.buttonContainer}>
           <TouchableOpacity 
             style={styles.signUpButton} 
-            onPress={() => console.log('Sign Up pressed')}
+            onPress={() => onNavigate('signup')}
           >
             <Text style={styles.signUpButtonText}>Sign Up</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={styles.signInButton} 
-            onPress={() => console.log('Sign In pressed')}
+            onPress={() => onNavigate('signin')}
           >
             <Text style={styles.signInButtonText}>Sign In</Text>
           </TouchableOpacity>
@@ -210,6 +212,7 @@ const HomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) =>
 
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
+  const { isAuthenticated, isLoading } = useAuth();
 
   const navigate = (screen: string) => {
     setCurrentScreen(screen);
@@ -217,9 +220,35 @@ const AppNavigator = () => {
 
   console.log('AppNavigator - currentScreen:', currentScreen);
 
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <HomeScreen onNavigate={navigate} />;
+  }
+
   switch (currentScreen) {
     case 'welcome':
       return <WelcomeScreen onNavigate={navigate} />;
+    case 'signin':
+      return (
+        <SignInScreen
+          onSignInSuccess={() => navigate('home')}
+          onBackToWelcome={() => navigate('welcome')}
+        />
+      );
+    case 'signup':
+      return (
+        <SignUpScreen
+          onSignUpSuccess={() => navigate('home')}
+          onBackToWelcome={() => navigate('welcome')}
+        />
+      );
     case 'mood':
       return <MoodSelectionScreen onNavigate={navigate} />;
     case 'home':
