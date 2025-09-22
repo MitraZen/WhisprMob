@@ -39,3 +39,4 @@ FROM public.buddies
 ORDER BY created_at DESC 
 LIMIT 5;
 
+

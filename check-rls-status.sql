@@ -50,3 +50,4 @@ FROM public.whispr_notes;
 -- Test a simple query to see if REST API access works
 SELECT * FROM public.buddy_messages LIMIT 3;
 
+

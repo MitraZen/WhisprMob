@@ -85,3 +85,4 @@ WHERE schemaname = 'public'
 AND tablename IN ('user_profiles', 'buddies', 'buddy_messages', 'whispr_notes')
 ORDER BY tablename, policyname;
 
+
