@@ -9,6 +9,8 @@ interface AuthContextType extends AuthState {
   updateMood: (mood: string) => Promise<void>;
   testDatabaseConnection: () => Promise<boolean>;
   setAuthenticatedUser: (user: User) => Promise<void>;
+  isProfileComplete?: boolean;
+  markProfileComplete: (complete: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -59,6 +61,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const [isProfileComplete, setIsProfileComplete] = React.useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     checkAuthStatus();
@@ -79,6 +82,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Update user's online status
           await FlexibleDatabaseService.updateUserOnlineStatus(storedUser.id, true);
           dispatch({ type: 'LOGIN_SUCCESS', payload: dbUser });
+          // Check profile completeness
+          const complete = await FlexibleDatabaseService.isProfileComplete(dbUser.id);
+          setIsProfileComplete(complete);
         } else {
           // User no longer exists in database, clear local storage
           await StorageService.removeItem('user');
@@ -127,6 +133,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await StorageService.setItem('user', user);
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
+      const complete = await FlexibleDatabaseService.isProfileComplete(user.id);
+      setIsProfileComplete(complete);
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
     }
@@ -183,6 +191,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     updateMood,
     testDatabaseConnection,
     setAuthenticatedUser,
+    isProfileComplete,
+    markProfileComplete: (complete: boolean) => setIsProfileComplete(complete),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

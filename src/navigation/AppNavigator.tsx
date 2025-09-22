@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { theme, spacing } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
+import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
+import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
+import BuddiesScreen from '@/screens/BuddiesScreen';
+import ChatScreen from '@/screens/ChatScreen';
+import ProfileScreen from '@/screens/ProfileScreen';
+import SettingsScreen from '@/screens/SettingsScreen';
 import { useAuth } from '@/store/AuthContext';
 
 // Simple screens without Paper components
@@ -212,9 +218,11 @@ const HomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) =>
 
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
-  const { isAuthenticated, isLoading } = useAuth();
+  const [currentParams, setCurrentParams] = useState<any>(null);
+  const { isAuthenticated, isLoading, isProfileComplete, user } = useAuth();
 
-  const navigate = (screen: string) => {
+  const navigate = (screen: string, params?: any) => {
+    setCurrentParams(params ?? null);
     setCurrentScreen(screen);
   };
 
@@ -229,7 +237,16 @@ const AppNavigator = () => {
   }
 
   if (isAuthenticated) {
-    return <HomeScreen onNavigate={navigate} />;
+    if (isProfileComplete === false) {
+      return (
+        <ProfileCompletionScreen
+          onComplete={() => navigate('notes')}
+          onSkip={() => navigate('notes')}
+        />
+      );
+    }
+    // Default to main Notes screen with navigation and user props
+    return <WhisprNotesScreen onNavigate={navigate} user={user} />;
   }
 
   switch (currentScreen) {
@@ -251,8 +268,29 @@ const AppNavigator = () => {
       );
     case 'mood':
       return <MoodSelectionScreen onNavigate={navigate} />;
-    case 'home':
-      return <HomeScreen onNavigate={navigate} />;
+    case 'profileCompletion':
+      return (
+        <ProfileCompletionScreen
+          onComplete={() => navigate('notes')}
+          onSkip={() => navigate('notes')}
+        />
+      );
+    case 'notes':
+      return <WhisprNotesScreen onNavigate={navigate} user={user} />;
+    case 'buddies':
+      return <BuddiesScreen onNavigate={navigate} user={user} />;
+    case 'chat':
+      return (
+        <ChatScreen
+          onNavigate={navigate}
+          user={user}
+          buddy={currentParams?.buddy}
+        />
+      );
+    case 'profile':
+      return <ProfileScreen onNavigate={navigate} user={user} />;
+    case 'settings':
+      return <SettingsScreen onNavigate={navigate} user={user} />;
     default:
       return <WelcomeScreen onNavigate={navigate} />;
   }

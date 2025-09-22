@@ -215,6 +215,48 @@ export class FlexibleDatabaseService {
     }
   }
 
+  // Determine if profile is complete based on available columns
+  static async isProfileComplete(userId: string, tableName: string = 'user_profiles'): Promise<boolean> {
+    try {
+      const data = await this.request('GET', `${tableName}?id=eq.${userId}&limit=1`);
+      if (!data || data.length === 0) return false;
+      const row = data[0] || {};
+
+      // Consider commonly expected fields
+      const gender = row.gender;
+      const dob = row.date_of_birth || row.dob || row.dateOfBirth;
+      const country = row.country;
+      const bio = row.bio;
+      const profileCompleted = row.profile_completed || row.profileCompleted;
+
+      if (typeof profileCompleted === 'boolean') {
+        return profileCompleted;
+      }
+
+      // Fallback heuristic: required fields present and non-empty
+      const hasGender = typeof gender === 'string' && gender.length > 0;
+      const hasDob = typeof dob === 'string' && dob.length > 0;
+      const hasCountry = typeof country === 'string' && country.length > 0;
+      // Bio optional, do not require
+
+      return hasGender && hasDob && hasCountry;
+    } catch (error) {
+      console.error('Flexible Database error checking profile completeness:', error);
+      return false;
+    }
+  }
+
+  // Update user profile fields and optionally set profile_completed flag
+  static async updateUserProfile(userId: string, update: Record<string, any>, tableName: string = 'user_profiles'): Promise<boolean> {
+    try {
+      await this.request('PATCH', `${tableName}?id=eq.${userId}`, update);
+      return true;
+    } catch (error) {
+      console.error('Flexible Database error updating user profile:', error);
+      return false;
+    }
+  }
+
   // Find users by mood
   static async findUsersByMood(mood: MoodType, excludeUserId?: string, tableName: string = 'user_profiles'): Promise<User[]> {
     try {
