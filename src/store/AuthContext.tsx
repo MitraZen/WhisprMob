@@ -8,6 +8,7 @@ interface AuthContextType extends AuthState {
   logout: () => Promise<void>;
   updateMood: (mood: string) => Promise<void>;
   testDatabaseConnection: () => Promise<boolean>;
+  setAuthenticatedUser: (user: User) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -121,6 +122,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Allow email/password auth flow to set the authenticated user
+  const setAuthenticatedUser = async (user: User) => {
+    try {
+      await StorageService.setItem('user', user);
+      dispatch({ type: 'LOGIN_SUCCESS', payload: user });
+    } catch (error) {
+      console.error('setAuthenticatedUser error:', error);
+    }
+  };
+
   const logout = async () => {
     try {
              if (state.user) {
@@ -171,6 +182,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     updateMood,
     testDatabaseConnection,
+    setAuthenticatedUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

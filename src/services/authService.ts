@@ -3,13 +3,13 @@ import { User, MoodType } from '@/types';
 
 // HTTP-based authentication service for Supabase
 export class AuthService {
-  private static getHeaders() {
+  private static getHeaders(accessToken?: string) {
     return {
       'apikey': SUPABASE_CONFIG.anonKey,
-      'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+      'Authorization': `Bearer ${accessToken ?? SUPABASE_CONFIG.anonKey}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=minimal',
-    };
+    } as const;
   }
 
   // Sign up with email and password
@@ -97,15 +97,26 @@ export class AuthService {
       }
 
       const authData = await response.json();
-      
-      if (!authData.user) {
+
+      // Supabase error format: { error: string, error_description: string }
+      if (authData?.error) {
+        return { user: null, error: authData.error_description || 'Sign in failed' };
+      }
+
+      if (!authData?.user) {
         return { user: null, error: 'Authentication failed' };
+      }
+
+      const accessToken: string | undefined = authData?.access_token;
+      if (!accessToken) {
+        // Likely email confirmation required or password grant disabled
+        return { user: null, error: 'No access token returned. Confirm your email or check Auth settings.' };
       }
 
       // Get user profile from our user_profiles table
       const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${authData.user.id}`, {
         method: 'GET',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(accessToken),
       });
 
       if (!profileResponse.ok) {
@@ -127,7 +138,7 @@ export class AuthService {
       };
 
       // Update online status
-      await this.updateOnlineStatus(authData.user.id, true);
+      await this.updateOnlineStatus(authData.user.id, true, accessToken);
 
       return { user, error: null };
     } catch (error) {
@@ -150,11 +161,11 @@ export class AuthService {
   }
 
   // Update user online status
-  static async updateOnlineStatus(userId: string, isOnline: boolean): Promise<boolean> {
+  static async updateOnlineStatus(userId: string, isOnline: boolean, accessToken?: string): Promise<boolean> {
     try {
       const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${userId}`, {
         method: 'PATCH',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(accessToken),
         body: JSON.stringify({
           is_online: isOnline,
           last_seen: new Date().toISOString(),
@@ -169,11 +180,11 @@ export class AuthService {
   }
 
   // Update user mood
-  static async updateMood(userId: string, mood: MoodType): Promise<boolean> {
+  static async updateMood(userId: string, mood: MoodType, accessToken?: string): Promise<boolean> {
     try {
       const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${userId}`, {
         method: 'PATCH',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(accessToken),
         body: JSON.stringify({
           mood: mood,
           last_seen: new Date().toISOString(),

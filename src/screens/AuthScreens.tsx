@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityInd
 import { theme, spacing, moodConfig } from '@/utils/theme';
 import { MoodType } from '@/types';
 import { AuthService } from '@/services/authService';
+import { useAuth } from '@/store/AuthContext';
 
 interface SignUpScreenProps {
   onSignUpSuccess: (user: any) => void;
@@ -15,6 +16,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const { setAuthenticatedUser } = useAuth();
 
   const handleSignUp = async () => {
     if (!email || !password || !confirmPassword || !selectedMood) {
@@ -39,9 +41,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
       if (error) {
         Alert.alert('Sign Up Failed', error);
       } else if (user) {
-        Alert.alert('Success', 'Account created successfully!', [
-          { text: 'OK', onPress: () => onSignUpSuccess(user) }
-        ]);
+        await setAuthenticatedUser(user);
+        onSignUpSuccess(user);
       }
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred');
@@ -148,6 +149,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { setAuthenticatedUser } = useAuth();
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -162,9 +164,8 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
       if (error) {
         Alert.alert('Sign In Failed', error);
       } else if (user) {
-        Alert.alert('Success', 'Welcome back!', [
-          { text: 'OK', onPress: () => onSignInSuccess(user) }
-        ]);
+        await setAuthenticatedUser(user);
+        onSignInSuccess(user);
       }
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred');
