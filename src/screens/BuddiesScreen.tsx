@@ -142,7 +142,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
         <View style={styles.navigationButtons}>
           <TouchableOpacity 
             style={styles.navButton}
-            onPress={() => onNavigate('whispr-notes')}
+            onPress={() => onNavigate('notes')}
           >
             <Text style={styles.navButtonText}>📝 Notes</Text>
           </TouchableOpacity>
