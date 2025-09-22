@@ -112,9 +112,9 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
     return Array.from({ length: daysInMonth }, (_, i) => i + 1);
   };
 
-  // Filter countries based on search
+  // Filter countries based on search (case-insensitive, partial match)
   const filteredCountries = countries.filter(country =>
-    country.toLowerCase().includes(countrySearch.toLowerCase())
+    country.toLowerCase().includes(countrySearch.toLowerCase().trim())
   );
 
   const handleComplete = async () => {
@@ -148,19 +148,28 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
         bio: bio.trim(),
       };
 
-      if (!user?.id) {
+      console.log('ProfileCompletionScreen - User object:', user);
+      console.log('ProfileCompletionScreen - User ID:', user?.id);
+      
+      // Try different possible ID properties
+      const userId = user?.id || user?.user_id || user?.uuid;
+      console.log('ProfileCompletionScreen - Resolved User ID:', userId);
+      
+      if (!userId) {
+        console.error('ProfileCompletionScreen - No user ID found in any property');
         throw new Error('No authenticated user');
       }
 
-      const update: Record<string, any> = {
-        gender: profileData.gender,
-        country: profileData.country,
-        bio: profileData.bio,
-        profile_completed: true,
-        date_of_birth: profileData.dateOfBirth,
-      };
+          const update: Record<string, any> = {
+            gender: profileData.gender,
+            country: profileData.country,
+            bio: profileData.bio,
+            profile_completed: true,
+            date_of_birth: profileData.dateOfBirth,
+            updated_at: new Date().toISOString(),
+          };
 
-      const ok = await FlexibleDatabaseService.updateUserProfile(user.id, update);
+      const ok = await FlexibleDatabaseService.updateUserProfile(userId, update);
       if (!ok) {
         throw new Error('Failed to save profile');
       }
@@ -377,16 +386,39 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               value={countrySearch}
               onChangeText={setCountrySearch}
               autoFocus
+              clearButtonMode="while-editing"
+              returnKeyType="search"
             />
+            {countrySearch.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={() => setCountrySearch('')}
+              >
+                <Text style={styles.clearButtonText}>✕</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          <FlatList
-            data={filteredCountries}
-            keyExtractor={(item) => item}
-            renderItem={renderCountryItem}
-            style={styles.countryList}
-            showsVerticalScrollIndicator={false}
-          />
+          {filteredCountries.length > 0 ? (
+            <FlatList
+              data={filteredCountries}
+              keyExtractor={(item) => item}
+              renderItem={renderCountryItem}
+              style={styles.countryList}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              removeClippedSubviews={false}
+              initialNumToRender={20}
+              maxToRenderPerBatch={10}
+              windowSize={10}
+            />
+          ) : (
+            <View style={styles.noResultsContainer}>
+              <Text style={styles.noResultsText}>
+                {countrySearch ? 'No countries found matching your search' : 'No countries available'}
+              </Text>
+            </View>
+          )}
         </View>
       </Modal>
     </ScrollView>
@@ -557,8 +589,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   searchInput: {
+    flex: 1,
     backgroundColor: '#f3f4f6',
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
@@ -567,9 +602,35 @@ const styles = StyleSheet.create({
     color: theme.colors.onBackground,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    marginRight: spacing.sm,
+  },
+  clearButton: {
+    padding: spacing.sm,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearButtonText: {
+    fontSize: 16,
+    color: '#6b7280',
+    fontWeight: 'bold',
   },
   countryList: {
     flex: 1,
+  },
+  noResultsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  noResultsText: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
   },
   countryItem: {
     paddingVertical: spacing.md,

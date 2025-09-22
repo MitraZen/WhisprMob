@@ -162,7 +162,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
               styles.statusIndicator,
               buddy.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
             ]} />
-            <TouchableOpacity onPress={() => setShowProfileView(true)}>
+            <TouchableOpacity onPress={() => {
+              console.log('ChatScreen - Opening profile for buddy:', buddy);
+              console.log('ChatScreen - Buddy ID:', buddy.buddyUserId || buddy.id);
+              console.log('ChatScreen - Available buddy fields:', Object.keys(buddy));
+              setShowProfileView(true);
+            }}>
               <Text style={styles.buddyName}>{buddy.name}</Text>
             </TouchableOpacity>
           </View>
@@ -301,12 +306,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       </View>
       
       {/* User Profile View Modal */}
-      <UserProfileView
-        visible={showProfileView}
-        onClose={() => setShowProfileView(false)}
-        userId={buddy.buddyUserId || buddy.id}
-        buddyName={buddy.name}
-      />
+      {showProfileView && (
+        <UserProfileView
+          visible={showProfileView}
+          onClose={() => setShowProfileView(false)}
+          userId={buddy.buddyUserId || buddy.id}
+          buddyName={buddy.name}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 };

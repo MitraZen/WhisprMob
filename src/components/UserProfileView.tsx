@@ -31,13 +31,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     setError(null);
     
     try {
-      console.log('Loading profile for user:', userId);
       const profile = await BuddiesService.getUserProfile(userId);
       
       if (profile) {
-        console.log('Profile data received:', profile);
         setProfileData({
-          displayName: profile.display_name || profile.name || 'Anonymous User',
+          displayName: profile.username || profile.name || 'Anonymous User',
           username: profile.username || profile.anonymous_id || '@anonymous',
           bio: profile.bio || 'No bio available',
           age: profile.age || profile.date_of_birth ? 
@@ -51,8 +49,20 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           lastSeen: profile.last_seen ? new Date(profile.last_seen) : null,
         });
       } else {
-        console.log('No profile data found for user:', userId);
-        setError('Profile not found');
+        // Show a fallback profile instead of error
+        setProfileData({
+          displayName: buddyName || 'Anonymous User',
+          username: '@anonymous',
+          bio: 'Profile not available',
+          age: 'Not specified',
+          location: 'Not specified',
+          gender: 'Not specified',
+          mood: 'happy',
+          joinDate: new Date(),
+          isOnline: false,
+          lastSeen: null,
+        });
+        setError(null); // Clear error to show fallback profile
       }
     } catch (err) {
       console.error('Error loading user profile:', err);
@@ -199,14 +209,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: spacing.md,
   },
   modalContent: {
     backgroundColor: theme.colors.surface,
     borderRadius: borderRadius.lg,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
+    width: '95%',
+    height: '85%',
+    maxWidth: 500,
+    minHeight: 400,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   header: {
     flexDirection: 'row',
@@ -266,6 +286,7 @@ const styles = StyleSheet.create({
   profileContent: {
     flex: 1,
     padding: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   profileHeader: {
     flexDirection: 'row',

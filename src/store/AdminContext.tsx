@@ -29,6 +29,7 @@ interface AdminContextType extends AdminState {
   resetUserData: (userId: string) => Promise<void>;
   sendTestMessage: (userId: string, message: string) => Promise<void>;
   simulateUserActivity: (userId: string) => Promise<void>;
+  clearFakeNotes: () => Promise<void>;
 }
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
@@ -230,6 +231,21 @@ export const AdminProvider: React.FC<AdminProviderProps> = ({ children }) => {
     }
   };
 
+  const clearFakeNotes = async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      
+      const deletedCount = await FlexibleDatabaseService.clearFakeNotes();
+      await refreshStats();
+      Alert.alert('Success', `Cleared ${deletedCount} fake notes from the database`);
+    } catch (error) {
+      console.error('Error clearing fake notes:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to clear fake notes' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
   const value: AdminContextType = {
     ...state,
     enableAdminMode,
@@ -245,6 +261,7 @@ export const AdminProvider: React.FC<AdminProviderProps> = ({ children }) => {
     resetUserData,
     sendTestMessage,
     simulateUserActivity,
+    clearFakeNotes,
   };
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;

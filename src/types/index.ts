@@ -4,6 +4,7 @@ export interface User {
   mood: MoodType;
   createdAt: Date;
   lastSeen: Date;
+  email?: string;
 }
 
 export interface Message {

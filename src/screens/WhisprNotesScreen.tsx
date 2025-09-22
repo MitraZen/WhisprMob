@@ -19,6 +19,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isNewUser, setIsNewUser] = useState(false);
   const { enableAdminMode } = useAdmin();
 
   // Load notes from database
@@ -47,8 +48,22 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     
     try {
       console.log('Loading Whispr notes for user:', user.id);
-      const notesData = await BuddiesService.getWhisprNotes(user.id);
-      console.log(`Loaded ${notesData.length} notes successfully`);
+      
+      // Check if user is new (has no buddies) and load fewer notes
+      const buddies = await BuddiesService.getBuddies(user.id);
+      const userIsNew = !buddies || buddies.length === 0;
+      setIsNewUser(userIsNew);
+      
+      let notesData;
+      if (userIsNew) {
+        console.log('New user detected, loading limited notes');
+        notesData = await BuddiesService.getNewUserNotes(user.id, 5);
+      } else {
+        console.log('Existing user, loading full notes');
+        notesData = await BuddiesService.getWhisprNotes(user.id);
+      }
+      
+      console.log(`Loaded ${notesData.length} notes successfully (${userIsNew ? 'new user' : 'existing user'})`);
       setNotes(notesData);
     } catch (err) {
       console.error('Error loading notes:', err);
@@ -110,9 +125,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     }
 
     try {
-      console.log('Listening to note:', noteId, 'for user:', user.id);
       const result = await BuddiesService.listenToNote(noteId, user.id);
-      console.log('Listen result:', result ? 'Success' : 'Failed');
       
       if (result?.success) {
         Alert.alert(
@@ -240,38 +253,48 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
             <Text style={styles.emptySubtext}>Be the first to share your thoughts!</Text>
           </View>
         ) : (
-          notes.map((note) => (
-            <View key={note.id} style={styles.noteCard}>
-              <View style={styles.noteHeader}>
-                <View style={styles.moodIndicator}>
-                  <Text style={styles.moodEmoji}>
-                    {getMoodConfig(note.mood).emoji}
-                  </Text>
-                  <Text style={styles.moodText}>
-                    {getMoodConfig(note.mood).description}
-                  </Text>
-                </View>
-                <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
+          <>
+            {isNewUser && (
+              <View style={styles.newUserBanner}>
+                <Text style={styles.newUserBannerText}>
+                  🎉 Welcome! You're seeing a curated selection of notes. 
+                  Listen to notes to make connections and see more!
+                </Text>
               </View>
-              
-              <Text style={styles.noteContent}>{note.content}</Text>
-              
-              <View style={styles.noteActions}>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => handleListen(note.id)}
-                >
-                  <Text style={styles.actionButtonText}>👂 Listen</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => handleReject(note.id)}
-                >
-                  <Text style={styles.actionButtonText}>❌ Reject</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+            )}
+                {notes.map((note) => (
+                  <View key={note.id} style={styles.noteCard}>
+                    <View style={styles.noteHeader}>
+                      <View style={styles.moodIndicator}>
+                        <Text style={styles.moodEmoji}>
+                          {getMoodConfig(note.mood).emoji}
+                        </Text>
+                        <Text style={styles.moodText}>
+                          {getMoodConfig(note.mood).description}
+                        </Text>
+                      </View>
+                      <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
+                    </View>
+                    
+                    <Text style={styles.noteContent}>{note.content}</Text>
+                    
+                    <View style={styles.noteActions}>
+                      <TouchableOpacity 
+                        style={styles.actionButton}
+                        onPress={() => handleListen(note.id)}
+                      >
+                        <Text style={styles.actionButtonText}>👂 Listen</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.actionButton}
+                        onPress={() => handleReject(note.id)}
+                      >
+                        <Text style={styles.actionButtonText}>❌ Reject</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+          </>
         )}
       </ScrollView>
 
@@ -548,6 +571,20 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
   },
-});
+  newUserBanner: {
+    backgroundColor: '#e0f2fe',
+    padding: spacing.md,
+    margin: spacing.md,
+    borderRadius: borderRadius.md,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.primary,
+  },
+      newUserBannerText: {
+        fontSize: 14,
+        color: '#0369a1',
+        textAlign: 'center',
+        lineHeight: 20,
+      },
+    });
 
 export default WhisprNotesScreen;
