@@ -47,3 +47,4 @@ SELECT
          ELSE 'username column MISSING' 
     END as username_status;
 
+
