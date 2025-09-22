@@ -418,6 +418,49 @@ export class FlexibleDatabaseService {
     }
   }
 
+  static async clearFakeNotes(): Promise<number> {
+    try {
+      let deletedCount = 0;
+      
+      // Get all notes first to check their content
+      const allNotes = await this.request('GET', 'whispr_notes');
+      
+      if (!allNotes || allNotes.length === 0) {
+        return 0;
+      }
+      
+      // Define patterns that indicate fake/test notes
+      const fakePatterns = [
+        'test', 'fake', 'dummy', 'sample', 'demo', 'example',
+        'hello world', 'this is a test', 'test message',
+        'fake note', 'dummy note', 'sample note',
+        'lorem ipsum', 'placeholder', 'debug'
+      ];
+      
+      // Check each note for fake patterns
+      for (const note of allNotes) {
+        const content = note.content?.toLowerCase() || '';
+        const isFake = fakePatterns.some(pattern => content.includes(pattern.toLowerCase()));
+        
+        if (isFake) {
+          try {
+            await this.request('DELETE', `whispr_notes?id=eq.${note.id}`);
+            deletedCount++;
+            console.log(`Deleted fake note: ${note.content?.substring(0, 50)}...`);
+          } catch (error) {
+            console.error(`Failed to delete note ${note.id}:`, error);
+          }
+        }
+      }
+      
+      console.log(`Cleared ${deletedCount} fake notes from database`);
+      return deletedCount;
+    } catch (error) {
+      console.error('Error clearing fake notes:', error);
+      throw error;
+    }
+  }
+
   static async resetUserData(userId: string): Promise<void> {
     try {
       // Delete user's messages

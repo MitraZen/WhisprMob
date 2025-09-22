@@ -111,7 +111,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         };
 
         const profileData = {
-          displayName: profile.display_name || profile.anonymous_id || 'Anonymous User',
+            displayName: profile.username || profile.anonymous_id || 'Anonymous User',
           username: profile.username || `@${profile.anonymous_id || 'anonymous'}`,
           bio: profile.bio || 'No bio yet',
           age: ageDisplay,
@@ -173,10 +173,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         updated_at: new Date().toISOString(),
       };
       
-      // Only add fields if they have values (to avoid null errors)
-      if (profileData.displayName && profileData.displayName !== 'Anonymous User') {
-        updateData.display_name = profileData.displayName;
-      }
+          // Only add fields if they have values (to avoid null errors)
+          if (profileData.displayName && profileData.displayName !== 'Anonymous User') {
+            updateData.username = profileData.displayName;
+          }
       if (profileData.username && profileData.username !== '@anonymous') {
         updateData.username = profileData.username;
       }

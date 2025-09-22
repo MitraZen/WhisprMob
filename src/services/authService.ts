@@ -13,9 +13,74 @@ export class AuthService {
   }
 
   // Sign up with email and password
-  static async signUp(email: string, password: string, mood: MoodType): Promise<{ user: User | null; error: string | null }> {
+  static async signUp(email: string, password: string, mood: MoodType, username: string): Promise<{ user: User | null; error: string | null }> {
     try {
-      // First, sign up the user with Supabase Auth
+      // Check if username is already taken BEFORE creating auth user
+      const usernameCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=eq.@${username}`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+
+      if (usernameCheckResponse.ok) {
+        const existingUsers = await usernameCheckResponse.json();
+        if (existingUsers && existingUsers.length > 0) {
+          return { user: null, error: 'Username is already taken. Please choose a different username.' };
+        }
+      }
+
+      // Check if email is already registered in user_profiles
+      const emailCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?email=eq.${email}`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+
+      if (emailCheckResponse.ok) {
+        const existingUsers = await emailCheckResponse.json();
+        if (existingUsers && existingUsers.length > 0) {
+          // User already exists, try to sign them in instead
+          return await this.handleExistingUser(email, password, existingUsers[0]);
+        }
+      }
+
+      // Check if email exists in auth.users but not in user_profiles (orphaned user)
+      // We'll try to sign them in first, and if that fails, we'll create a new profile
+      try {
+        const signInResult = await this.signIn(email, password);
+        if (signInResult.user) {
+          // User exists in auth but not in profiles - this is an orphaned user
+          // Create their profile now
+          const anonymousId = `user_${signInResult.user.id.substring(0, 8)}`;
+          
+          const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({
+              id: signInResult.user.id,
+              email: signInResult.user.email,
+              username: `@${username}`,
+              anonymous_id: anonymousId,
+              mood: mood,
+              is_online: true,
+              profile_completed: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }),
+          });
+
+          if (profileResponse.ok) {
+            // Profile created successfully, return the user
+            return { user: signInResult.user, error: null };
+          } else {
+            // Profile creation failed, but user can still sign in
+            return { user: signInResult.user, error: 'Profile creation failed, but you can sign in.' };
+          }
+        }
+      } catch (signInError) {
+        // User doesn't exist in auth, continue with normal signup
+        console.log('User not found in auth, proceeding with signup');
+      }
+
+      // Now create the auth user
       const authResponse = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/signup`, {
         method: 'POST',
         headers: {
@@ -41,37 +106,92 @@ export class AuthService {
       }
 
       // Create user profile in our user_profiles table
-      const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          id: authData.user.id,
-          email: authData.user.email,
-          mood: mood,
-          is_online: true,
-        }),
-      });
-
-      if (!profileResponse.ok) {
-        const errorText = await profileResponse.text();
-        console.error('Profile creation error:', errorText);
-        return { user: null, error: 'Profile creation failed' };
-      }
-
-      const profileData = await profileResponse.json();
+      const anonymousId = `user_${authData.user.id.substring(0, 8)}`;
       
-      const user: User = {
-        id: authData.user.id,
-        anonymousId: `user_${authData.user.id.substring(0, 8)}`,
-        mood: mood,
-        createdAt: new Date(profileData[0].created_at),
-        lastSeen: new Date(profileData[0].last_seen),
-      };
+      try {
+          const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({
+              id: authData.user.id,
+              email: authData.user.email,
+              username: `@${username}`,
+              anonymous_id: anonymousId,
+              mood: mood,
+              is_online: true,
+              profile_completed: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }),
+          });
 
-      return { user, error: null };
+        if (!profileResponse.ok) {
+          const errorText = await profileResponse.text();
+          console.error('Profile creation error:', errorText);
+          
+          // If profile creation fails, try to clean up the auth user
+          try {
+            await this.cleanupAuthUser(authData.user.id);
+          } catch (cleanupError) {
+            console.error('Failed to cleanup auth user:', cleanupError);
+          }
+          
+          return { user: null, error: 'Profile creation failed. Please try again.' };
+        }
+
+        const profileData = await profileResponse.json();
+        
+        const user: User = {
+          id: authData.user.id,
+          anonymousId: anonymousId,
+          mood: mood,
+          createdAt: new Date(profileData[0].created_at),
+          lastSeen: new Date(profileData[0].last_seen),
+        };
+
+        return { user, error: null };
+      } catch (profileError) {
+        console.error('Profile creation error:', profileError);
+        
+        // If profile creation fails, try to clean up the auth user
+        try {
+          await this.cleanupAuthUser(authData.user.id);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup auth user:', cleanupError);
+        }
+        
+        return { user: null, error: 'Profile creation failed. Please try again.' };
+      }
     } catch (error) {
       console.error('Sign up error:', error);
       return { user: null, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Helper function to cleanup auth user if profile creation fails
+  private static async cleanupAuthUser(userId: string): Promise<void> {
+    try {
+      // Note: We can't directly delete auth users via API, but we can log this for manual cleanup
+      console.log(`Auth user ${userId} needs manual cleanup - profile creation failed`);
+    } catch (error) {
+      console.error('Error during auth user cleanup:', error);
+    }
+  }
+
+  // Handle existing user - try to sign them in
+  private static async handleExistingUser(email: string, password: string, existingProfile: any): Promise<{ user: User | null; error: string | null }> {
+    try {
+      // Try to sign in the existing user
+      const signInResult = await this.signIn(email, password);
+      
+      if (signInResult.user) {
+        return { user: signInResult.user, error: null };
+      } else {
+        return { user: null, error: 'User already exists but password is incorrect. Please sign in instead.' };
+      }
+    } catch (error) {
+      console.error('Error handling existing user:', error);
+      return { user: null, error: 'User already exists. Please sign in instead.' };
     }
   }
 

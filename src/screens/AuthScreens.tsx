@@ -12,15 +12,72 @@ interface SignUpScreenProps {
 
 export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onBackToWelcome }) => {
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const { setAuthenticatedUser } = useAuth();
 
+  const checkUsernameAvailability = async (username: string) => {
+    if (username.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+
+    setIsCheckingUsername(true);
+    try {
+      const response = await fetch(`https://bkfonnecvqlppivnrgxe.supabase.co/rest/v1/user_profiles?username=eq.@${username}`, {
+        method: 'GET',
+        headers: {
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxVvgFuA62-0IVGejwg',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxVvgFuA62-0IVGejwg',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUsernameAvailable(data.length === 0);
+      } else {
+        setUsernameAvailable(null);
+      }
+    } catch (error) {
+      console.error('Error checking username:', error);
+      setUsernameAvailable(null);
+    } finally {
+      setIsCheckingUsername(false);
+    }
+  };
+
+  const handleUsernameChange = (text: string) => {
+    setUsername(text);
+    if (text.length >= 3) {
+      checkUsernameAvailability(text);
+    } else {
+      setUsernameAvailable(null);
+    }
+  };
+
   const handleSignUp = async () => {
-    if (!email || !password || !confirmPassword || !selectedMood) {
+    if (!email || !username || !password || !confirmPassword || !selectedMood) {
       Alert.alert('Error', 'Please fill in all fields and select a mood');
+      return;
+    }
+
+    if (username.length < 3) {
+      Alert.alert('Error', 'Username must be at least 3 characters long');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      Alert.alert('Error', 'Username can only contain letters, numbers, and underscores');
+      return;
+    }
+
+    if (usernameAvailable === false) {
+      Alert.alert('Error', 'Username is already taken. Please choose a different username.');
       return;
     }
 
@@ -36,7 +93,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
 
     setIsLoading(true);
     try {
-      const { user, error } = await AuthService.signUp(email, password, selectedMood);
+      const { user, error } = await AuthService.signUp(email, password, selectedMood, username);
       
       if (error) {
         Alert.alert('Sign Up Failed', error);
@@ -70,6 +127,31 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
             autoCapitalize="none"
             autoCorrect={false}
           />
+
+              <View style={styles.usernameContainer}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    usernameAvailable === false && styles.inputError,
+                    usernameAvailable === true && styles.inputSuccess
+                  ]}
+                  placeholder="Username"
+                  placeholderTextColor="#9ca3af"
+                  value={username}
+                  onChangeText={handleUsernameChange}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {isCheckingUsername && (
+                  <ActivityIndicator size="small" color={theme.colors.primary} style={styles.usernameIndicator} />
+                )}
+                {usernameAvailable === true && (
+                  <Text style={styles.usernameSuccessText}>✓ Available</Text>
+                )}
+                {usernameAvailable === false && (
+                  <Text style={styles.usernameErrorText}>✗ Username taken</Text>
+                )}
+              </View>
 
           <TextInput
             style={styles.input}
@@ -264,6 +346,39 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+  },
+  inputError: {
+    borderColor: '#ef4444',
+    backgroundColor: '#fef2f2',
+  },
+  inputSuccess: {
+    borderColor: '#10b981',
+    backgroundColor: '#f0fdf4',
+  },
+  usernameContainer: {
+    position: 'relative',
+    marginBottom: spacing.md,
+  },
+  usernameIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+  },
+  usernameSuccessText: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    color: '#10b981',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  usernameErrorText: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '600',
   },
   moodLabel: {
     fontSize: 16,

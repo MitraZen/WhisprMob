@@ -138,22 +138,27 @@ export class BuddiesService {
       }
 
       // Transform database buddies to mobile app format
-      return data.map((buddy: any) => ({
-        id: buddy.id,
-        name: buddy.name,
-        initials: buddy.initials,
-        avatar: buddy.avatar_url || undefined,
-        lastMessage: buddy.last_message || undefined,
-        lastMessageTime: buddy.last_message_time ? new Date(buddy.last_message_time) : undefined,
-        unreadCount: buddy.unread_count || 0,
-        isOnline: buddy.is_online || false,
-        isPinned: buddy.is_pinned || false,
-        status: buddy.status || 'active',
-        mood: buddy.mood || undefined,
-        createdAt: new Date(buddy.created_at),
-        updatedAt: new Date(buddy.updated_at),
-        buddyUserId: buddy.buddy_user_id || buddy.user_id || buddy.id, // Add buddy user ID for profile viewing
-      }));
+      return data.map((buddy: any) => {
+        console.log('BuddiesService.getBuddies - Raw buddy data:', buddy);
+        const transformedBuddy = {
+          id: buddy.id,
+          name: buddy.name,
+          initials: buddy.initials,
+          avatar: buddy.avatar_url || undefined,
+          lastMessage: buddy.last_message || undefined,
+          lastMessageTime: buddy.last_message_time ? new Date(buddy.last_message_time) : undefined,
+          unreadCount: buddy.unread_count || 0,
+          isOnline: buddy.is_online || false,
+          isPinned: buddy.is_pinned || false,
+          status: buddy.status || 'active',
+          mood: buddy.mood || undefined,
+          createdAt: new Date(buddy.created_at),
+          updatedAt: new Date(buddy.updated_at),
+          buddyUserId: buddy.buddy_user_id || buddy.user_id || buddy.id, // Add buddy user ID for profile viewing
+        };
+        console.log('BuddiesService.getBuddies - Transformed buddy:', transformedBuddy);
+        return transformedBuddy;
+      });
     } catch (error) {
       console.error('Error fetching buddies:', error);
       
@@ -340,7 +345,100 @@ export class BuddiesService {
   // Get Whispr notes for the current user
   static async getWhisprNotes(userId: string): Promise<WhisprNote[]> {
     try {
-      const data = await this.request('GET', `whispr_notes?status=eq.active&is_active=eq.true&order=created_at.desc&limit=20`);
+      // Get user's mood for mood-based filtering
+      const userProfile = await this.getUserProfile(userId);
+      const userMood = userProfile?.mood || 'happy';
+      
+      // Get notes from users that the current user is NOT already buddies with
+      // This prevents showing notes from existing connections
+      const data = await this.request('GET', 
+        `whispr_notes?status=eq.active&is_active=eq.true&sender_id=not.in.(${await this.getExistingBuddyIds(userId)})&order=created_at.desc&limit=50`
+      );
+
+      if (!data) {
+        return [];
+      }
+
+      // Filter out notes from the current user (self-notes)
+      let filteredData = data.filter((note: any) => note.sender_id !== userId);
+
+      // Apply smart filtering
+      filteredData = this.applySmartNoteFiltering(filteredData, userMood);
+
+      // Limit to 20 notes after filtering
+      filteredData = filteredData.slice(0, 20);
+
+      return filteredData.map((note: any) => ({
+        id: note.id,
+        senderId: note.sender_id,
+        content: note.content,
+        mood: note.mood,
+        status: note.status,
+        propagationCount: note.propagation_count || 0,
+        isActive: note.is_active || false,
+        expiresAt: note.expires_at ? new Date(note.expires_at) : undefined,
+        createdAt: new Date(note.created_at),
+        updatedAt: new Date(note.updated_at),
+      }));
+    } catch (error) {
+      console.error('Error fetching Whispr notes:', error);
+      throw error;
+    }
+  }
+
+  // Apply smart filtering to notes
+  private static applySmartNoteFiltering(notes: any[], userMood: string): any[] {
+    // Sort by priority: mood match, recency, and propagation count
+    return notes.sort((a, b) => {
+      let scoreA = 0;
+      let scoreB = 0;
+
+      // Mood matching bonus (higher priority for same mood)
+      if (a.mood === userMood) scoreA += 10;
+      if (b.mood === userMood) scoreB += 10;
+
+      // Recency bonus (newer notes get higher priority)
+      const now = new Date();
+      const ageA = now.getTime() - new Date(a.created_at).getTime();
+      const ageB = now.getTime() - new Date(b.created_at).getTime();
+      
+      // Recent notes (less than 1 hour) get bonus
+      if (ageA < 3600000) scoreA += 5; // 1 hour in milliseconds
+      if (ageB < 3600000) scoreB += 5;
+
+      // Propagation count (notes with fewer listeners get higher priority)
+      scoreA += Math.max(0, 10 - (a.propagation_count || 0));
+      scoreB += Math.max(0, 10 - (b.propagation_count || 0));
+
+      // Random factor to ensure variety
+      scoreA += Math.random() * 2;
+      scoreB += Math.random() * 2;
+
+      return scoreB - scoreA; // Higher score first
+    });
+  }
+
+  // Helper function to get existing buddy IDs for a user
+  private static async getExistingBuddyIds(userId: string): Promise<string> {
+    try {
+      const buddies = await this.request('GET', `buddies?user_id=eq.${userId}&select=buddy_user_id`);
+      if (!buddies || buddies.length === 0) {
+        return '00000000-0000-0000-0000-000000000000'; // Return a dummy UUID if no buddies
+      }
+      return buddies.map((buddy: any) => buddy.buddy_user_id).join(',');
+    } catch (error) {
+      console.error('Error fetching buddy IDs:', error);
+      return '00000000-0000-0000-0000-000000000000'; // Return dummy UUID on error
+    }
+  }
+
+  // Get a limited number of notes for new users
+  static async getNewUserNotes(userId: string, limit: number = 5): Promise<WhisprNote[]> {
+    try {
+      // For new users, get a small sample of recent notes
+      const data = await this.request('GET', 
+        `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=${limit}`
+      );
 
       if (!data) {
         return [];
@@ -359,7 +457,7 @@ export class BuddiesService {
         updatedAt: new Date(note.updated_at),
       }));
     } catch (error) {
-      console.error('Error fetching Whispr notes:', error);
+      console.error('Error fetching new user notes:', error);
       throw error;
     }
   }
@@ -367,10 +465,9 @@ export class BuddiesService {
   // Listen to a Whispr note (accept it)
   static async listenToNote(noteId: string, userId: string): Promise<any> {
     try {
-      const result = await this.rpcRequest('handle_note_propagation', {
-        note_id: noteId,
-        responder_id: userId,
-        response_type: 'listen'
+      const result = await this.rpcRequest('listen_to_note', {
+        note_id_param: noteId,
+        listener_id_param: userId
       });
 
       return result;

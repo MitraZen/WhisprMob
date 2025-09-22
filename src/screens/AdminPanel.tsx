@@ -42,6 +42,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     resetUserData,
     sendTestMessage,
     simulateUserActivity,
+    clearFakeNotes,
   } = useAdmin();
 
   const [adminPassword, setAdminPassword] = useState('');
@@ -137,6 +138,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     }
     
     sendTestMessage(selectedUserId, testMessage);
+  };
+
+  const handleClearFakeNotes = () => {
+    Alert.alert(
+      'Clear Fake Notes',
+      'This will remove all fake/test notes from the database. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Clear Fake Notes', style: 'destructive', onPress: clearFakeNotes },
+      ]
+    );
   };
 
   const handleSimulateActivity = () => {
@@ -267,6 +279,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             onPress={handleClearAllData}
           >
             <Text style={styles.actionButtonText}>Clear All Data</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.warningButton]} 
+            onPress={handleClearFakeNotes}
+          >
+            <Text style={styles.actionButtonText}>Clear Fake Notes</Text>
           </TouchableOpacity>
         </View>
 
@@ -576,6 +595,9 @@ const styles = StyleSheet.create({
   },
   dangerButton: {
     backgroundColor: '#ef4444',
+  },
+  warningButton: {
+    backgroundColor: '#f59e0b',
   },
   logoutButton: {
     backgroundColor: '#6b7280',
