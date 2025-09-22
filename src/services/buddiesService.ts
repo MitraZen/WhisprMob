@@ -445,6 +445,7 @@ export class BuddiesService {
         status: 'active',
         is_active: true,
         propagation_count: 0,
+        created_at: new Date().toISOString(),
       });
 
       return data[0].id;

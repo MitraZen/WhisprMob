@@ -4,6 +4,8 @@ import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils
 import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
+import DebugOverlay from '@/components/DebugOverlay';
+import { useAdmin } from '@/store/AdminContext';
 
 interface WhisprNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -17,6 +19,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { enableAdminMode } = useAdmin();
 
   // Load notes from database
   useEffect(() => {
@@ -311,6 +314,9 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       
       {/* Bottom Navigation Menu */}
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
+      
+      {/* Debug Overlay */}
+      <DebugOverlay onToggleAdmin={enableAdminMode} />
     </KeyboardAvoidingView>
   );
 };

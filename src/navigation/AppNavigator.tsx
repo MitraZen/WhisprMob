@@ -8,74 +8,91 @@ import BuddiesScreen from '@/screens/BuddiesScreen';
 import ChatScreen from '@/screens/ChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
+import AdminPanel from '@/screens/AdminPanel';
 import { useAuth } from '@/store/AuthContext';
+import { useAdmin } from '@/store/AdminContext';
 
 // Simple screens without Paper components
-const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => (
-  <View style={styles.container}>
-    <View style={styles.gradient}>
-      <View style={styles.content}>
-        <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Text style={styles.logoEmoji}>💬</Text>
-          </View>
-          <Text style={styles.appName}>Whispr</Text>
-          <Text style={styles.tagline}>Send anonymous messages to the world</Text>
-          <Text style={styles.taglineSub}>and discover meaningful connections</Text>
-        </View>
+const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
+  const { enableAdminMode } = useAdmin();
+  const [adminTapCount, setAdminTapCount] = useState(0);
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity 
-            style={styles.signUpButton} 
-            onPress={() => onNavigate('signup')}
-          >
-            <Text style={styles.signUpButtonText}>Sign Up</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.signInButton} 
-            onPress={() => onNavigate('signin')}
-          >
-            <Text style={styles.signInButtonText}>Sign In</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.primaryButton} 
-            onPress={() => onNavigate('mood')}
-          >
-            <Text style={styles.primaryButtonText}>Start Whispr-ing</Text>
-          </TouchableOpacity>
-        </View>
+  const handleLogoPress = () => {
+    setAdminTapCount(prev => prev + 1);
+    if (adminTapCount >= 4) { // 5 taps to enable admin
+      enableAdminMode();
+      setAdminTapCount(0);
+    }
+  };
 
-        <View style={styles.featuresContainer}>
-          <View style={styles.featureCard}>
-            <View style={styles.featureIconContainer}>
-              <Text style={styles.featureIcon}>💬</Text>
-            </View>
-            <Text style={styles.featureTitle}>Anonymous</Text>
-            <Text style={styles.featureSubtext}>Share without revealing identity</Text>
+  return (
+    <View style={styles.container}>
+      <View style={styles.gradient}>
+        <View style={styles.content}>
+          <View style={styles.logoContainer}>
+            <TouchableOpacity onPress={handleLogoPress}>
+              <View style={styles.logoIcon}>
+                <Text style={styles.logoEmoji}>💬</Text>
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.appName}>Whispr</Text>
+            <Text style={styles.tagline}>Send anonymous messages to the world</Text>
+            <Text style={styles.taglineSub}>and discover meaningful connections</Text>
           </View>
-          
-          <View style={styles.featureCard}>
-            <View style={styles.featureIconContainer}>
-              <Text style={styles.featureIcon}>❤️</Text>
-            </View>
-            <Text style={styles.featureTitle}>Mood-Based</Text>
-            <Text style={styles.featureSubtext}>Connect through emotions</Text>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={styles.signUpButton} 
+              onPress={() => onNavigate('signup')}
+            >
+              <Text style={styles.signUpButtonText}>Sign Up</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.signInButton} 
+              onPress={() => onNavigate('signin')}
+            >
+              <Text style={styles.signInButtonText}>Sign In</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.primaryButton} 
+              onPress={() => onNavigate('mood')}
+            >
+              <Text style={styles.primaryButtonText}>Start Whispr-ing</Text>
+            </TouchableOpacity>
           </View>
-          
-          <View style={styles.featureCard}>
-            <View style={styles.featureIconContainer}>
-              <Text style={styles.featureIcon}>🛡️</Text>
+
+          <View style={styles.featuresContainer}>
+            <View style={styles.featureCard}>
+              <View style={styles.featureIconContainer}>
+                <Text style={styles.featureIcon}>💬</Text>
+              </View>
+              <Text style={styles.featureTitle}>Anonymous</Text>
+              <Text style={styles.featureSubtext}>Share without revealing identity</Text>
             </View>
-            <Text style={styles.featureTitle}>Safe & Secure</Text>
-            <Text style={styles.featureSubtext}>Protected conversations</Text>
+            
+            <View style={styles.featureCard}>
+              <View style={styles.featureIconContainer}>
+                <Text style={styles.featureIcon}>❤️</Text>
+              </View>
+              <Text style={styles.featureTitle}>Mood-Based</Text>
+              <Text style={styles.featureSubtext}>Connect through emotions</Text>
+            </View>
+            
+            <View style={styles.featureCard}>
+              <View style={styles.featureIconContainer}>
+                <Text style={styles.featureIcon}>🛡️</Text>
+              </View>
+              <Text style={styles.featureTitle}>Safe & Secure</Text>
+              <Text style={styles.featureSubtext}>Protected conversations</Text>
+            </View>
           </View>
         </View>
       </View>
     </View>
-  </View>
-);
+  );
+};
 
 const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -220,6 +237,7 @@ const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
   const { isAuthenticated, isLoading, isProfileComplete, user, logout } = useAuth();
+  const { isAdminMode } = useAdmin();
 
   const navigate = (screen: string, params?: any) => {
     setCurrentParams(params ?? null);
@@ -244,6 +262,11 @@ const AppNavigator = () => {
         <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
+  }
+
+  // Show admin panel if admin mode is enabled
+  if (isAdminMode) {
+    return <AdminPanel onClose={() => navigate('welcome')} />;
   }
 
   if (isAuthenticated && isProfileComplete === false) {
@@ -552,7 +575,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   homeFeatureCard: {
-          backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surface,
     padding: spacing.lg,
     borderRadius: 12,
     marginBottom: spacing.md,
@@ -588,7 +611,7 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     fontSize: 16,
-          fontWeight: 'bold',
+    fontWeight: 'bold',
     color: 'white',
   },
 });

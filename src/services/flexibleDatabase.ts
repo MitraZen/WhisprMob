@@ -318,5 +318,176 @@ export class FlexibleDatabaseService {
       return false;
     }
   }
+
+  // Admin-specific methods
+  static async getDatabaseStats(): Promise<any> {
+    try {
+      // Get basic database information
+      const tables = ['user_profiles', 'messages', 'connections', 'mood_connections'];
+      const stats: any = {
+        tables: tables.length,
+        status: 'connected',
+        connections: 'active',
+      };
+
+      // Test each table
+      for (const table of tables) {
+        try {
+          await this.testTableConnection(table);
+          stats[`${table}_accessible`] = true;
+        } catch (error) {
+          stats[`${table}_accessible`] = false;
+        }
+      }
+
+      return stats;
+    } catch (error) {
+      console.error('Error getting database stats:', error);
+      return { status: 'error', error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  static async getUserStats(): Promise<any> {
+    try {
+      const users = await this.request('GET', 'user_profiles?select=id,last_seen,online_status,created_at');
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const oneDayAgo = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+      const stats = {
+        totalUsers: users.length,
+        activeUsers: users.filter((user: any) => {
+          const lastSeen = new Date(user.last_seen);
+          return lastSeen > oneDayAgo;
+        }).length,
+        onlineUsers: users.filter((user: any) => user.online_status === true).length,
+      };
+
+      return stats;
+    } catch (error) {
+      console.error('Error getting user stats:', error);
+      return { totalUsers: 0, activeUsers: 0, onlineUsers: 0 };
+    }
+  }
+
+  static async getMessageStats(): Promise<any> {
+    try {
+      const messages = await this.request('GET', 'messages?select=id,created_at,sender_id,receiver_id');
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayMessages = messages.filter((msg: any) => {
+        const createdAt = new Date(msg.created_at);
+        return createdAt >= today;
+      });
+
+      // Get unique chat pairs
+      const chatPairs = new Set();
+      messages.forEach((msg: any) => {
+        const pair = [msg.sender_id, msg.receiver_id].sort().join('-');
+        chatPairs.add(pair);
+      });
+
+      return {
+        totalMessages: messages.length,
+        todayMessages: todayMessages.length,
+        activeChats: chatPairs.size,
+      };
+    } catch (error) {
+      console.error('Error getting message stats:', error);
+      return { totalMessages: 0, todayMessages: 0, activeChats: 0 };
+    }
+  }
+
+  static async clearAllData(): Promise<void> {
+    try {
+      // Clear messages first (due to foreign key constraints)
+      await this.request('DELETE', 'messages');
+      
+      // Clear connections
+      await this.request('DELETE', 'connections');
+      
+      // Clear mood connections
+      await this.request('DELETE', 'mood_connections');
+      
+      // Clear user profiles
+      await this.request('DELETE', 'user_profiles');
+      
+      console.log('All data cleared successfully');
+    } catch (error) {
+      console.error('Error clearing all data:', error);
+      throw error;
+    }
+  }
+
+  static async resetUserData(userId: string): Promise<void> {
+    try {
+      // Delete user's messages
+      await this.request('DELETE', `messages?or=(sender_id.eq.${userId},receiver_id.eq.${userId})`);
+      
+      // Delete user's connections
+      await this.request('DELETE', `connections?or=(user1_id.eq.${userId},user2_id.eq.${userId})`);
+      
+      // Delete user's mood connections
+      await this.request('DELETE', `mood_connections?or=(user1_id.eq.${userId},user2_id.eq.${userId})`);
+      
+      // Reset user profile (keep basic info, clear activity)
+      await this.request('PATCH', `user_profiles?id=eq.${userId}`, {
+        last_seen: new Date().toISOString(),
+        online_status: false,
+        bio: 'User data reset',
+      });
+      
+      console.log(`User data reset for user ${userId}`);
+    } catch (error) {
+      console.error('Error resetting user data:', error);
+      throw error;
+    }
+  }
+
+  static async sendTestMessage(userId: string, message: string): Promise<void> {
+    try {
+      // Create a test message from system to user
+      const testMessage = {
+        sender_id: 'system',
+        receiver_id: userId,
+        content: `[TEST MESSAGE] ${message}`,
+        message_type: 'text',
+        created_at: new Date().toISOString(),
+      };
+
+      await this.request('POST', 'messages', testMessage);
+      console.log(`Test message sent to user ${userId}`);
+    } catch (error) {
+      console.error('Error sending test message:', error);
+      throw error;
+    }
+  }
+
+  static async simulateUserActivity(userId: string): Promise<void> {
+    try {
+      // Update user's last seen and online status
+      await this.request('PATCH', `user_profiles?id=eq.${userId}`, {
+        last_seen: new Date().toISOString(),
+        online_status: true,
+      });
+
+      // Create a simulated mood connection
+      const moodConnection = {
+        user1_id: userId,
+        user2_id: 'simulated_user',
+        mood: 'test',
+        created_at: new Date().toISOString(),
+      };
+
+      await this.request('POST', 'mood_connections', moodConnection);
+      
+      console.log(`User activity simulated for user ${userId}`);
+    } catch (error) {
+      console.error('Error simulating user activity:', error);
+      throw error;
+    }
+  }
 }
 
