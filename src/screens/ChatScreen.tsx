@@ -19,6 +19,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProfileView, setShowProfileView] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Load messages from database
@@ -73,6 +74,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
     loadMessages(true);
   };
 
+  const handleScroll = (event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const isNearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 100;
+    setShowScrollToBottom(!isNearBottom && messages.length > 5);
+  };
+
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !buddy?.id) return;
 
@@ -111,12 +118,30 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
   };
 
   const scrollToBottom = () => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    // Use setTimeout to ensure the ScrollView is fully rendered
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
+  // Scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Scroll to bottom when chat opens
+  useEffect(() => {
+    if (buddy?.id && messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [buddy?.id]);
+
+  // Scroll to bottom after loading messages
+  useEffect(() => {
+    if (!isLoading && messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [isLoading, messages.length]);
 
   return (
     <KeyboardAvoidingView 
@@ -169,6 +194,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -237,6 +264,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
           </View>
         )}
       </ScrollView>
+
+      {/* Scroll to Bottom Button */}
+      {showScrollToBottom && (
+        <TouchableOpacity
+          style={styles.scrollToBottomButton}
+          onPress={scrollToBottom}
+        >
+          <Text style={styles.scrollToBottomText}>↓</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.inputContainer}>
         <TextInput
@@ -509,6 +546,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9ca3af',
     textAlign: 'center',
+  },
+  scrollToBottomButton: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  scrollToBottomText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
 });
 
