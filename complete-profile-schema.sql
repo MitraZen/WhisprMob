@@ -79,3 +79,4 @@ ORDER BY ordinal_position;
 SELECT 'Profile schema updated successfully! All columns added to user_profiles table.' as status;
 
 
+

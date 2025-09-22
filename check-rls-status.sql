@@ -51,3 +51,4 @@ FROM public.whispr_notes;
 SELECT * FROM public.buddy_messages LIMIT 3;
 
 
+
