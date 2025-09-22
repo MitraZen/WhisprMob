@@ -203,35 +203,18 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.header}>
-        <Text style={styles.title}>Whispr Notes</Text>
-        <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
-        
-        <View style={styles.navigationButtons}>
-          <TouchableOpacity 
-            style={[styles.navButton, styles.activeNavButton]}
-            onPress={() => onNavigate('notes')}
-          >
-            <Text style={styles.activeNavButtonText}>📝 Notes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navButton}
-            onPress={() => onNavigate('buddies')}
-          >
-            <Text style={styles.navButtonText}>👥 Buddies</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navButton}
-            onPress={() => onNavigate('profile')}
-          >
-            <Text style={styles.navButtonText}>👤 Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navButton}
-            onPress={() => onNavigate('settings')}
-          >
-            <Text style={styles.navButtonText}>⚙️ Settings</Text>
-          </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Whispr Notes</Text>
+          <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
         </View>
+        
+        {isNewUser && (
+          <View style={styles.newUserBanner}>
+            <Text style={styles.newUserBannerText}>
+              🎉 Welcome! You're seeing a limited set of notes. Listen to notes to discover more!
+            </Text>
+          </View>
+        )}
       </View>
 
       <ScrollView style={styles.notesContainer} showsVerticalScrollIndicator={false}>
@@ -364,45 +347,37 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
+    ...theme.shadows.lg,
+  },
+  headerContent: {
+    alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    ...theme.typography.displaySmall,
     color: '#fff',
     textAlign: 'center',
     marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    ...theme.typography.bodyLarge,
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
-  navigationButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  navButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.md,
-  },
-  activeNavButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  newUserBanner: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: spacing.sm,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  navButtonText: {
+  newUserBannerText: {
+    ...theme.typography.bodyMedium,
     color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  activeNavButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   notesContainer: {
     flex: 1,
@@ -410,14 +385,14 @@ const styles = StyleSheet.create({
   },
   noteCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
     marginBottom: spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
+    marginHorizontal: spacing.xs,
+    ...theme.shadows.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    overflow: 'hidden',
   },
   noteHeader: {
     flexDirection: 'row',
@@ -462,9 +437,10 @@ const styles = StyleSheet.create({
   },
   composeContainer: {
     backgroundColor: theme.colors.surface,
-    padding: spacing.md,
+    padding: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: theme.colors.border,
+    ...theme.shadows.lg,
   },
   moodSelector: {
     marginBottom: spacing.md,
@@ -476,19 +452,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   moodButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: borderRadius.full,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.surfaceVariant,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,
     borderWidth: 2,
     borderColor: 'transparent',
+    ...theme.shadows.sm,
   },
   selectedMoodButton: {
-    backgroundColor: '#dbeafe',
+    backgroundColor: theme.colors.primary + '15',
     borderColor: theme.colors.primary,
+    ...theme.shadows.md,
   },
   moodButtonEmoji: {
     fontSize: 20,
@@ -500,23 +478,27 @@ const styles = StyleSheet.create({
   },
   messageInput: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     fontSize: 16,
     color: theme.colors.onSurface,
     maxHeight: 100,
     textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   sendButton: {
     backgroundColor: theme.colors.primary,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
     minWidth: 60,
+    ...theme.shadows.md,
   },
   sendButtonDisabled: {
     backgroundColor: '#9ca3af',
