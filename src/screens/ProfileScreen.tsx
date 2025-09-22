@@ -282,7 +282,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         <View style={styles.headerTop}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => onNavigate('whispr-notes')}
+            onPress={() => onNavigate('notes')}
           >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
@@ -295,7 +295,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         <View style={styles.navigationButtons}>
           <TouchableOpacity 
             style={styles.navButton}
-            onPress={() => onNavigate('whispr-notes')}
+            onPress={() => onNavigate('notes')}
           >
             <Text style={styles.navButtonText}>📝 Notes</Text>
           </TouchableOpacity>

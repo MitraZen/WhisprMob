@@ -182,7 +182,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         <View style={styles.navigationButtons}>
           <TouchableOpacity 
             style={[styles.navButton, styles.activeNavButton]}
-            onPress={() => onNavigate('whispr-notes')}
+            onPress={() => onNavigate('notes')}
           >
             <Text style={styles.activeNavButtonText}>📝 Notes</Text>
           </TouchableOpacity>
@@ -310,7 +310,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       </View>
       
       {/* Bottom Navigation Menu */}
-      <NavigationMenu currentScreen="whispr-notes" onNavigate={onNavigate} />
+      <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
     </KeyboardAvoidingView>
   );
 };

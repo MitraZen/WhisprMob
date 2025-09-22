@@ -9,7 +9,7 @@ interface NavigationMenuProps {
 
 export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, onNavigate }) => {
   const menuItems = [
-    { id: 'whispr-notes', label: 'Notes', icon: '📝' },
+    { id: 'notes', label: 'Notes', icon: '📝' },
     { id: 'buddies', label: 'Buddies', icon: '👥' },
     { id: 'profile', label: 'Profile', icon: '👤' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
