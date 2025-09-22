@@ -219,7 +219,7 @@ const HomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) =>
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
-  const { isAuthenticated, isLoading, isProfileComplete, user } = useAuth();
+  const { isAuthenticated, isLoading, isProfileComplete, user, logout } = useAuth();
 
   const navigate = (screen: string, params?: any) => {
     setCurrentParams(params ?? null);
@@ -227,6 +227,16 @@ const AppNavigator = () => {
   };
 
   console.log('AppNavigator - currentScreen:', currentScreen);
+
+  // When the user becomes authenticated, default to notes screen
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      const authScreens = new Set(['welcome', 'signin', 'signup', 'mood', 'profileCompletion']);
+      if (authScreens.has(currentScreen)) {
+        setCurrentScreen('notes');
+      }
+    }
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -236,17 +246,13 @@ const AppNavigator = () => {
     );
   }
 
-  if (isAuthenticated) {
-    if (isProfileComplete === false) {
-      return (
-        <ProfileCompletionScreen
-          onComplete={() => navigate('notes')}
-          onSkip={() => navigate('notes')}
-        />
-      );
-    }
-    // Default to main Notes screen with navigation and user props
-    return <WhisprNotesScreen onNavigate={navigate} user={user} />;
+  if (isAuthenticated && isProfileComplete === false) {
+    return (
+      <ProfileCompletionScreen
+        onComplete={() => navigate('notes')}
+        onSkip={() => navigate('notes')}
+      />
+    );
   }
 
   switch (currentScreen) {
@@ -278,19 +284,23 @@ const AppNavigator = () => {
     case 'notes':
       return <WhisprNotesScreen onNavigate={navigate} user={user} />;
     case 'buddies':
-      return <BuddiesScreen onNavigate={navigate} user={user} />;
+      if (isAuthenticated) return <BuddiesScreen onNavigate={navigate} user={user} />;
+      return <WelcomeScreen onNavigate={navigate} />;
     case 'chat':
-      return (
+      if (isAuthenticated) return (
         <ChatScreen
           onNavigate={navigate}
           user={user}
           buddy={currentParams?.buddy}
         />
       );
+      return <WelcomeScreen onNavigate={navigate} />;
     case 'profile':
-      return <ProfileScreen onNavigate={navigate} user={user} />;
+      if (isAuthenticated) return <ProfileScreen onNavigate={navigate} user={user} />;
+      return <WelcomeScreen onNavigate={navigate} />;
     case 'settings':
-      return <SettingsScreen onNavigate={navigate} user={user} />;
+      if (isAuthenticated) return <SettingsScreen onNavigate={navigate} user={user} onLogout={async () => { await logout(); navigate('welcome'); }} />;
+      return <WelcomeScreen onNavigate={navigate} />;
     default:
       return <WelcomeScreen onNavigate={navigate} />;
   }
