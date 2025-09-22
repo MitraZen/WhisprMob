@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+# Next.js
+.next/
+out/
+# Capacitor build outputs
+dist/
+www/
+# Android/iOS build artifacts
+android/app/build/
+android/app/.cxx/
+android/build/
+android/.gradle/
+ios/build/
+ios/Pods/
+ios/DerivedData/
+# React Native specific
+*.log
+*.tmp
+*.temp
+# Metro
+.metro-health-check*
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+# NDK
+obj/
+# IntelliJ
+*.iml
+.idea/
+# VS Code
+.vscode/
+# macOS
+.DS_Store
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
