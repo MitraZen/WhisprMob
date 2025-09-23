@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
+import { notificationService } from '@/services/notificationService';
 
 interface SettingsScreenProps {
   onNavigate: (screen: string) => void;
@@ -15,6 +16,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{ [key: string]: boolean }>({});
+  const [permissions, setPermissions] = useState({
+    notifications: false,
+    storage: false,
+    camera: false,
+    location: false,
+    contacts: false,
+    phone: false,
+  });
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -39,6 +48,52 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       ...prev,
       [sectionKey]: !prev[sectionKey]
     }));
+  };
+
+  const handlePermissionRequest = (permissionType: string) => {
+    Alert.alert(
+      'Permission Required',
+      `Whispr needs ${permissionType} permission to provide this feature. Would you like to grant it?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Grant Permission', 
+          onPress: () => {
+            // TODO: Implement actual permission request
+            setPermissions(prev => ({
+              ...prev,
+              [permissionType]: true
+            }));
+            Alert.alert('Success', `${permissionType} permission granted!`);
+          }
+        },
+      ]
+    );
+  };
+
+  const handleNotificationSettings = () => {
+    Alert.alert(
+      'Notification Settings',
+      'Manage your notification preferences',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Enable All', onPress: () => setNotificationsEnabled(true) },
+        { text: 'Disable All', onPress: () => setNotificationsEnabled(false) },
+        { text: 'Test Notification', onPress: handleTestNotification },
+        { text: 'Customize', onPress: () => {
+          // TODO: Open detailed notification settings
+          Alert.alert('Customize', 'Detailed notification settings coming soon!');
+        }},
+      ]
+    );
+  };
+
+  const handleTestNotification = async () => {
+    try {
+      await notificationService.testNotification();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send test notification');
+    }
   };
 
   const handleLogout = () => {
@@ -234,6 +289,103 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
                   thumbColor={notificationsEnabled ? theme.colors.primary : '#f3f4f6'}
                 />
               }
+            />
+            <SettingItem
+              title="Notification Settings"
+              subtitle="Customize notification preferences"
+              icon="⚙️"
+              onPress={handleNotificationSettings}
+            />
+            <SettingItem
+              title="Message Notifications"
+              subtitle="Get notified about new messages"
+              icon="💬"
+              rightComponent={
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={setNotificationsEnabled}
+                  trackColor={{ false: '#e5e7eb', true: '#dbeafe' }}
+                  thumbColor={notificationsEnabled ? theme.colors.primary : '#f3f4f6'}
+                />
+              }
+            />
+            <SettingItem
+              title="Note Notifications"
+              subtitle="Get notified about new Whispr notes"
+              icon="📝"
+              rightComponent={
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={setNotificationsEnabled}
+                  trackColor={{ false: '#e5e7eb', true: '#dbeafe' }}
+                  thumbColor={notificationsEnabled ? theme.colors.primary : '#f3f4f6'}
+                />
+              }
+            />
+          </Animated.View>
+        )}
+      </Animated.View>
+
+      {/* Permissions Section */}
+      <Animated.View 
+        style={[
+          styles.section,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <TouchableOpacity 
+          style={styles.sectionHeader}
+          onPress={() => toggleSection('permissions')}
+        >
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionIcon}>🔐</Text>
+            <Text style={styles.sectionTitle}>Permissions</Text>
+          </View>
+          <Text style={styles.sectionChevron}>
+            {expandedSections.permissions ? '▼' : '▶'}
+          </Text>
+        </TouchableOpacity>
+        
+        {expandedSections.permissions && (
+          <Animated.View style={styles.sectionContent}>
+            <SettingItem
+              title="Notifications"
+              subtitle={permissions.notifications ? "✅ Granted" : "❌ Not granted"}
+              icon="🔔"
+              onPress={() => handlePermissionRequest('notifications')}
+            />
+            <SettingItem
+              title="Storage"
+              subtitle={permissions.storage ? "✅ Granted" : "❌ Not granted"}
+              icon="💾"
+              onPress={() => handlePermissionRequest('storage')}
+            />
+            <SettingItem
+              title="Camera"
+              subtitle={permissions.camera ? "✅ Granted" : "❌ Not granted"}
+              icon="📷"
+              onPress={() => handlePermissionRequest('camera')}
+            />
+            <SettingItem
+              title="Location"
+              subtitle={permissions.location ? "✅ Granted" : "❌ Not granted"}
+              icon="📍"
+              onPress={() => handlePermissionRequest('location')}
+            />
+            <SettingItem
+              title="Contacts"
+              subtitle={permissions.contacts ? "✅ Granted" : "❌ Not granted"}
+              icon="👥"
+              onPress={() => handlePermissionRequest('contacts')}
+            />
+            <SettingItem
+              title="Phone"
+              subtitle={permissions.phone ? "✅ Granted" : "❌ Not granted"}
+              icon="📞"
+              onPress={() => handlePermissionRequest('phone')}
             />
           </Animated.View>
         )}

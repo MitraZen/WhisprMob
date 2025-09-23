@@ -5,6 +5,7 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
+import { notificationService } from '@/services/notificationService';
 
 interface WhisprNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -81,6 +82,19 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       const result = await BuddiesService.listenToNote(noteId, user.id);
       
       if (result?.success) {
+        // Send notification for listening to a note (simulating receiving)
+        try {
+          const note = notes.find(n => n.id === noteId);
+          if (note) {
+            await notificationService.showNoteNotification(
+              'Note Listened! 👂',
+              `You've connected with ${note.sender_username || 'someone'}! Check your Buddies tab to start chatting.`
+            );
+          }
+        } catch (notificationError) {
+          console.warn('Failed to send note notification:', notificationError);
+        }
+        
         Alert.alert(
           'Note Listened! 👂', 
           'You\'ve connected with this person! Check your Buddies tab to start chatting.',

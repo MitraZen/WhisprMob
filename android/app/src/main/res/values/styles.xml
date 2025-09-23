@@ -33,4 +33,17 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <!-- Immersive mode - full screen but respects system UI -->
+    <style name="AppTheme.Immersive" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Immersive mode - content goes behind system bars -->
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+        <item name="android:fitsSystemWindows">false</item>
+        <!-- Ensure content doesn't overlap with system UI -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
 </resources>
