@@ -24,8 +24,6 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
             style={[
               styles.menuItem,
               currentScreen === item.id && styles.activeMenuItem,
-              index === 0 && styles.firstMenuItem,
-              index === menuItems.length - 1 && styles.lastMenuItem,
             ]}
             onPress={() => onNavigate(item.id)}
           >
@@ -54,19 +52,20 @@ const styles = StyleSheet.create({
   },
   menuContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
+    minHeight: 70,
   },
   menuItem: {
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.xs,
     borderRadius: borderRadius.lg,
     flex: 1,
-    marginHorizontal: spacing.xs,
+    maxWidth: 80,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
@@ -89,20 +88,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   menuLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.colors.onSurface,
     fontWeight: '600',
     textAlign: 'center',
+    numberOfLines: 1,
   },
   activeMenuLabel: {
     color: '#ffffff',
     fontWeight: 'bold',
-  },
-  firstMenuItem: {
-    marginLeft: 0,
-  },
-  lastMenuItem: {
-    marginRight: 0,
   },
 });
 

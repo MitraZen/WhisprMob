@@ -81,3 +81,5 @@ SELECT 'Profile schema updated successfully! All columns added to user_profiles 
 
 
 
+
+
