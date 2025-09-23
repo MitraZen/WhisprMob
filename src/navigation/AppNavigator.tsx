@@ -4,6 +4,7 @@ import { theme, spacing } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
 import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
 import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
+import WhisprComposeScreen from '@/screens/WhisprComposeScreen';
 import BuddiesScreen from '@/screens/BuddiesScreen';
 import ChatScreen from '@/screens/ChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
@@ -311,6 +312,8 @@ const AppNavigator = () => {
       );
     case 'notes':
       return <WhisprNotesScreen onNavigate={navigate} user={user} />;
+    case 'compose':
+      return <WhisprComposeScreen onNavigate={navigate} user={user} />;
     case 'buddies':
       if (isAuthenticated) return <BuddiesScreen onNavigate={navigate} user={user} />;
       return <WelcomeScreen onNavigate={navigate} />;

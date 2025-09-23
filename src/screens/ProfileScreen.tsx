@@ -359,53 +359,50 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               <TouchableOpacity 
                 style={styles.backButton}
                 onPress={() => onNavigate('notes')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.backButtonText}>←</Text>
+                <Text style={styles.backButtonText}>‹</Text>
               </TouchableOpacity>
               
               <Animated.View 
                 style={[
-                  styles.avatarSection,
+                  styles.profileHeader,
                   {
                     opacity: fadeAnim,
                     transform: [{ translateY: slideAnim }]
                   }
                 ]}
               >
-                <View style={styles.avatarContainer}>
-                  <View
-                    style={[styles.avatarGradient, { backgroundColor: getMoodGradient(profileData.mood)[0] }]}
-                  >
-                    <Text style={styles.avatarText}>
-                      {profileData.displayName.charAt(0).toUpperCase()}
-                    </Text>
+                {/* Left side - Avatar and Mood Selector */}
+                <View style={styles.leftSection}>
+                  <View style={styles.avatarContainer}>
+                    <View
+                      style={[styles.avatarGradient, { backgroundColor: getMoodGradient(profileData.mood)[0] }]}
+                    >
+                      <Text style={styles.avatarText}>
+                        {profileData.displayName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
                   </View>
+                  
+                  <TouchableOpacity 
+                    style={styles.moodButton}
+                    onPress={() => setShowMoodModal(true)}
+                  >
+                    <Text style={styles.moodEmoji}>
+                      {getMoodConfig(profileData.mood).emoji}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
                 
-                <TouchableOpacity 
-                  style={styles.moodButton}
-                  onPress={() => setShowMoodModal(true)}
-                >
-                  <Text style={styles.moodEmoji}>
-                    {getMoodConfig(profileData.mood).emoji}
+                {/* Right side - User Info */}
+                <View style={styles.rightSection}>
+                  <Text style={styles.displayName}>{profileData.displayName}</Text>
+                  <Text style={styles.username}>{profileData.username}</Text>
+                  <Text style={styles.moodDescription}>
+                    {getMoodConfig(profileData.mood).description}
                   </Text>
-                </TouchableOpacity>
-              </Animated.View>
-              
-              <Animated.View 
-                style={[
-                  styles.profileInfo,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
-                  }
-                ]}
-              >
-                <Text style={styles.displayName}>{profileData.displayName}</Text>
-                <Text style={styles.username}>{profileData.username}</Text>
-                <Text style={styles.moodDescription}>
-                  {getMoodConfig(profileData.mood).description}
-                </Text>
+                </View>
               </Animated.View>
             </View>
           </View>
@@ -853,13 +850,14 @@ const styles = StyleSheet.create({
   },
   // Profile Cover Section
   profileCover: {
-    height: 280,
+    height: 180,
     paddingTop: spacing.xl,
   },
   coverContent: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
+    justifyContent: 'center',
   },
   backButton: {
     position: 'absolute',
@@ -875,64 +873,77 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
   },
-  avatarSection: {
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingLeft: 64, // leave space for back button
+    paddingBottom: spacing.lg, // pushes stats row down
+  },
+  leftSection: {
+    flexDirection: 'column',
     alignItems: 'center',
-    marginTop: spacing.lg,
+    gap: spacing.sm,
   },
   avatarContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    padding: 4,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    padding: 3,
     backgroundColor: '#fff',
     ...theme.shadows.lg,
   },
   avatarGradient: {
     width: '100%',
     height: '100%',
-    borderRadius: 46,
+    borderRadius: 27,
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     color: '#fff',
-    fontSize: 36,
+    fontSize: 24,
     fontWeight: 'bold',
   },
   moodButton: {
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.full,
+    justifyContent: 'center',
+    alignItems: 'center',
     ...theme.shadows.sm,
   },
   moodEmoji: {
-    fontSize: 24,
+    fontSize: 18,
   },
-  profileInfo: {
-    alignItems: 'center',
-    marginTop: spacing.md,
+  rightSection: {
+    flex: 1,
+    alignItems: 'flex-end',
+    paddingLeft: spacing.md,
   },
   displayName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
-    textAlign: 'center',
+    marginBottom: spacing.xs,
+    textAlign: 'right',
   },
   username: {
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+    textAlign: 'right',
   },
   moodDescription: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginTop: spacing.xs,
-    fontStyle: 'italic',
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'right',
   },
   // Scroll Content
   scrollContent: {
@@ -944,30 +955,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: -spacing.xl,
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
   },
   statCard: {
     flex: 1,
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginHorizontal: spacing.xs,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
     alignItems: 'center',
-    ...theme.shadows.md,
+    ...theme.shadows.sm,
+    minHeight: 60,
   },
   statIcon: {
-    fontSize: 24,
+    fontSize: 18,
     marginBottom: spacing.xs,
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: theme.colors.onSurface,
     marginBottom: spacing.xs,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#9ca3af',
     textAlign: 'center',
   },
@@ -1123,7 +1135,7 @@ const styles = StyleSheet.create({
   // Floating Action Button
   fab: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 120,
     right: spacing.lg,
     width: 56,
     height: 56,
@@ -1132,6 +1144,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...theme.shadows.lg,
+    zIndex: 10,
   },
   fabIcon: {
     fontSize: 24,

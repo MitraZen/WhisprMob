@@ -43,6 +43,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
     return () => clearInterval(interval);
   }, [buddy?.id]);
 
+  // Scroll to bottom when messages are first loaded
+  useEffect(() => {
+    if (messages.length > 0 && flatListRef.current) {
+      setTimeout(() => {
+        // Since FlatList is inverted, scroll to index 0 (newest message)
+        flatListRef.current?.scrollToIndex({ 
+          index: 0, 
+          animated: true, 
+          viewPosition: 0 
+        });
+      }, 200);
+    }
+  }, [messages.length]);
+
   const loadMessages = async (isRefresh = false) => {
     if (!buddy?.id) return;
     
@@ -62,21 +76,24 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         console.log(`Loaded ${messagesData.length} messages successfully`);
       }
       
-      // Only scroll to bottom if new messages were added
+      // Check if this is the initial load or if new messages were added
       const hasNewMessages = messagesData.length > previousMessageCount;
+      const isInitialLoad = previousMessageCount === 0;
+      
       setMessages(messagesData);
       setPreviousMessageCount(messagesData.length);
       
       // Mark messages as read
       await BuddiesService.markMessagesAsRead(buddy.id, user.id);
       
-      // Scroll to bottom only if new messages were added
-      if (hasNewMessages && messagesData.length > 0) {
+      // Scroll to bottom on initial load or when new messages are added
+      if ((isInitialLoad || hasNewMessages) && messagesData.length > 0) {
         setTimeout(() => {
+          // Since FlatList is inverted, scroll to index 0 (newest message)
           flatListRef.current?.scrollToIndex({ 
             index: 0, 
-            animated: true,
-            viewPosition: 0
+            animated: true, 
+            viewPosition: 0 
           });
         }, 100);
       }
@@ -104,10 +121,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
 
   const scrollToBottom = useCallback(() => {
     if (messages.length > 0) {
+      // Since FlatList is inverted, scroll to index 0 (newest message)
       flatListRef.current?.scrollToIndex({ 
         index: 0, 
-        animated: true,
-        viewPosition: 0
+        animated: true, 
+        viewPosition: 0 
       });
     }
   }, [messages.length]);
@@ -227,8 +245,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => onNavigate('buddies')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Text style={styles.backButtonText}>‹</Text>
         </TouchableOpacity>
         
         <View style={styles.buddyInfo}>
@@ -267,7 +286,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
 
       <FlatList
         ref={flatListRef}
-        data={[...messages].reverse()}
+        data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
         style={styles.messagesContainer}
@@ -275,6 +294,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
+        inverted={true}
         onScrollToIndexFailed={(info) => {
           // Fallback to scrollToEnd if scrollToIndex fails
           flatListRef.current?.scrollToEnd({ animated: true });
@@ -396,11 +416,18 @@ const styles = StyleSheet.create({
     ...theme.shadows.lg,
   },
   backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: spacing.md,
   },
   backButtonText: {
-    ...theme.typography.labelLarge,
-    color: theme.colors.onPrimary,
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   buddyInfo: {
     flex: 1,
