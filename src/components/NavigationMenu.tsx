@@ -28,10 +28,13 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
             onPress={() => onNavigate(item.id)}
           >
             <Text style={styles.menuIcon}>{item.icon}</Text>
-            <Text style={[
-              styles.menuLabel,
-              currentScreen === item.id && styles.activeMenuLabel
-            ]}>
+            <Text 
+              style={[
+                styles.menuLabel,
+                currentScreen === item.id && styles.activeMenuLabel
+              ]}
+              numberOfLines={1}
+            >
               {item.label}
             </Text>
           </TouchableOpacity>
@@ -48,7 +51,6 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255, 255, 255, 0.2)',
     paddingBottom: spacing.sm,
     ...theme.shadows.lg,
-    backdropFilter: 'blur(10px)',
   },
   menuContainer: {
     flexDirection: 'row',
@@ -92,7 +94,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     fontWeight: '600',
     textAlign: 'center',
-    numberOfLines: 1,
   },
   activeMenuLabel: {
     color: '#ffffff',
