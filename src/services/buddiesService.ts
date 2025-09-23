@@ -228,7 +228,7 @@ export class BuddiesService {
       // Buddy exists check
       
       // Then query messages
-      const queryUrl = `buddy_messages?buddy_id=eq.${buddyId}&order=created_at.asc`;
+      const queryUrl = `buddy_messages?buddy_id=eq.${buddyId}&order=created_at.desc`;
       // Query messages for buddy
       
       const data = await this.request('GET', queryUrl);
@@ -345,30 +345,21 @@ export class BuddiesService {
   // Get Whispr notes for the current user
   static async getWhisprNotes(userId: string): Promise<WhisprNote[]> {
     try {
-      // Get user's mood for mood-based filtering
-      const userProfile = await this.getUserProfile(userId);
-      const userMood = userProfile?.mood || 'happy';
+      console.log('Fetching Whispr notes for user:', userId);
       
-      // Get notes from users that the current user is NOT already buddies with
-      // This prevents showing notes from existing connections
+      // Simplified query - just get active notes, excluding self-notes
       const data = await this.request('GET', 
-        `whispr_notes?status=eq.active&is_active=eq.true&sender_id=not.in.(${await this.getExistingBuddyIds(userId)})&order=created_at.desc&limit=50`
+        `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=20`
       );
 
-      if (!data) {
+      console.log('Raw notes data:', data);
+
+      if (!data || data.length === 0) {
+        console.log('No notes found');
         return [];
       }
 
-      // Filter out notes from the current user (self-notes)
-      let filteredData = data.filter((note: any) => note.sender_id !== userId);
-
-      // Apply smart filtering
-      filteredData = this.applySmartNoteFiltering(filteredData, userMood);
-
-      // Limit to 20 notes after filtering
-      filteredData = filteredData.slice(0, 20);
-
-      return filteredData.map((note: any) => ({
+      const notes = data.map((note: any) => ({
         id: note.id,
         senderId: note.sender_id,
         content: note.content,
@@ -380,6 +371,9 @@ export class BuddiesService {
         createdAt: new Date(note.created_at),
         updatedAt: new Date(note.updated_at),
       }));
+
+      console.log('Processed notes:', notes);
+      return notes;
     } catch (error) {
       console.error('Error fetching Whispr notes:', error);
       throw error;
@@ -435,16 +429,21 @@ export class BuddiesService {
   // Get a limited number of notes for new users
   static async getNewUserNotes(userId: string, limit: number = 5): Promise<WhisprNote[]> {
     try {
+      console.log('Fetching new user notes for user:', userId, 'limit:', limit);
+      
       // For new users, get a small sample of recent notes
       const data = await this.request('GET', 
         `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=${limit}`
       );
 
-      if (!data) {
+      console.log('New user notes data:', data);
+
+      if (!data || data.length === 0) {
+        console.log('No notes found for new user');
         return [];
       }
 
-      return data.map((note: any) => ({
+      const notes = data.map((note: any) => ({
         id: note.id,
         senderId: note.sender_id,
         content: note.content,
@@ -456,6 +455,9 @@ export class BuddiesService {
         createdAt: new Date(note.created_at),
         updatedAt: new Date(note.updated_at),
       }));
+
+      console.log('Processed new user notes:', notes);
+      return notes;
     } catch (error) {
       console.error('Error fetching new user notes:', error);
       throw error;
@@ -499,64 +501,29 @@ export class BuddiesService {
     content: string,
     mood: MoodType
   ): Promise<string> {
-    // Workaround: Use a different approach to avoid the database trigger issue
     try {
-      // Try using a stored procedure or function call instead of direct insert
-      const rpcData = {
-        p_content: content,
-        p_mood: mood,
-        p_user_id: userId,
-      };
-
-      console.log('Trying RPC approach to avoid trigger conflicts...');
-      const data = await this.request('POST', 'rpc/create_whispr_note', rpcData);
-      
-      if (data && data.length > 0) {
-        console.log('RPC approach succeeded!');
-        return data[0].id;
-      }
-    } catch (rpcError) {
-      console.log('RPC approach failed, trying direct insert with minimal data...');
-    }
-
-    // Fallback: Try direct insert with minimal data
-    try {
-      const minimalData = {
+      const noteData = {
+        sender_id: userId,
         content: content,
         mood: mood,
+        status: 'active',
+        propagation_count: 0,
+        is_active: true,
       };
 
-      console.log('Trying minimal data approach...');
-      const data = await this.request('POST', 'whispr_notes', minimalData);
+      console.log('Creating Whispr note with data:', noteData);
+      const data = await this.request('POST', 'whispr_notes', noteData);
       
       if (data && data.length > 0) {
-        console.log('Minimal data approach succeeded!');
+        console.log('Whispr note created successfully:', data[0].id);
         return data[0].id;
       }
-    } catch (minimalError) {
-      console.log('Minimal data approach failed, trying ultra simple...');
-    }
-
-    // Final fallback: Just content
-    try {
-      const ultraSimpleData = {
-        content: content,
-      };
-
-      console.log('Trying ultra simple approach...');
-      const data = await this.request('POST', 'whispr_notes', ultraSimpleData);
       
-      if (data && data.length > 0) {
-        console.log('Ultra simple approach succeeded!');
-        return data[0].id;
-      }
-    } catch (ultraError) {
-      console.log('Ultra simple approach failed');
+      throw new Error('No data returned from note creation');
+    } catch (error) {
+      console.error('Error creating Whispr note:', error);
+      throw new Error(`Failed to create Whispr note: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-
-    // If all approaches fail, return a mock success for now
-    console.log('All approaches failed, returning mock success to prevent app crash');
-    return `mock-note-${Date.now()}`;
   }
 
   // Test connection to buddy system

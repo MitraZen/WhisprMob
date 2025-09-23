@@ -129,7 +129,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         <View style={styles.headerTop}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => onNavigate('whispr-notes')}
+            onPress={() => onNavigate('notes')}
+            activeOpacity={0.7}
           >
             <Text style={styles.backButtonIcon}>‹</Text>
           </TouchableOpacity>
@@ -480,15 +481,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   backButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: spacing.md,
   },
   backButtonIcon: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
   },
   headerTitleContainer: {

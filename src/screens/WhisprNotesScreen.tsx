@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
-import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/theme';
-import { MoodType } from '@/types';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
+import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
@@ -13,15 +12,11 @@ interface WhisprNotesScreenProps {
 }
 
 export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate, user }) => {
-  const [message, setMessage] = useState('');
-  const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
-  const [showFloatingSend, setShowFloatingSend] = useState(false);
   const { enableAdminMode } = useAdmin();
 
   // Load notes from database
@@ -75,50 +70,6 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     }
   };
 
-  const handleSendNote = async () => {
-    if (!message.trim()) {
-      Alert.alert('Empty Message', 'Please enter a message to send.');
-      return;
-    }
-
-    if (!selectedMood) {
-      Alert.alert('No Mood Selected', 'Please select a mood for your message.');
-      return;
-    }
-
-    if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated.');
-      return;
-    }
-
-    setIsSending(true);
-    const messageContent = message.trim();
-    const mood = selectedMood;
-    
-    // Clear form immediately for better UX
-    setMessage('');
-    setSelectedMood(null);
-
-    try {
-      console.log('Sending Whispr note:', { content: messageContent, mood, userId: user.id });
-      const noteId = await BuddiesService.sendWhisprNote(user.id, messageContent, mood);
-      console.log('Note sent successfully:', noteId);
-      
-      Alert.alert('Success', 'Your Whispr note has been sent! 🌟');
-      
-      // Reload notes to show the new one
-      await loadNotes();
-      
-    } catch (error) {
-      console.error('Error sending note:', error);
-      Alert.alert('Error', 'Failed to send note. Please try again.');
-      // Restore form data if sending failed
-      setMessage(messageContent);
-      setSelectedMood(mood);
-    } finally {
-      setIsSending(false);
-    }
-  };
 
   const handleListen = async (noteId: string) => {
     if (!user?.id) {
@@ -227,7 +178,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     return gradients[mood as keyof typeof gradients] || ['#F0F0F0', '#E0E0E0'];
   };
 
-  const truncateText = (text: string, maxLength: number = 100) => {
+  const truncateText = (text: string, maxLength: number = 80) => {
     return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
 
@@ -322,7 +273,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                           {isExpanded ? note.content : truncateText(note.content)}
                         </Text>
                         
-                        {!isExpanded && note.content.length > 100 && (
+                        {!isExpanded && note.content.length > 80 && (
                           <Text style={styles.expandHint}>Tap to expand...</Text>
                         )}
                         
@@ -348,80 +299,19 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         )}
       </ScrollView>
 
-      <View style={styles.composeContainer}>
-        <View style={styles.moodSelector}>
-          <Text style={styles.moodLabel}>Select your mood:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.moodScrollView}>
-            {Object.entries(moodConfig).map(([moodType, config]) => (
-              <TouchableOpacity
-                key={moodType}
-                style={[
-                  styles.moodPill,
-                  selectedMood === moodType && styles.selectedMoodPill,
-                ]}
-                onPress={() => setSelectedMood(moodType as MoodType)}
-                disabled={isSending}
-              >
-                <Text style={styles.moodPillEmoji}>{config.emoji}</Text>
-                <Text style={[
-                  styles.moodPillText,
-                  selectedMood === moodType && styles.selectedMoodPillText
-                ]}>
-                  {config.description}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={styles.fabButton}
+        onPress={() => onNavigate('compose')}
+        activeOpacity={0.8}
+      >
+        <View style={styles.fabContent}>
+          <Text style={styles.fabIcon}>✨</Text>
+          <Text style={styles.fabText}>Start Whispr-ing</Text>
+          <Text style={styles.fabArrow}>→</Text>
         </View>
-
-        <View style={styles.messageInputContainer}>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.messageInput}
-              placeholder="What's on your mind?"
-              placeholderTextColor="#9ca3af"
-              value={message}
-              onChangeText={(text) => {
-                setMessage(text);
-                setShowFloatingSend(text.trim().length > 0 && selectedMood !== null);
-              }}
-              multiline
-              maxLength={500}
-              editable={!isSending}
-            />
-            <View style={styles.inputFooter}>
-              <Text style={styles.characterCount}>
-                {message.length}/500
-              </Text>
-              {selectedMood && (
-                <View style={styles.selectedMoodBadge}>
-                  <Text style={styles.moodBadgeEmoji}>
-                    {getMoodConfig(selectedMood).emoji}
-                  </Text>
-                  <Text style={styles.moodBadgeText}>
-                    {getMoodConfig(selectedMood).description}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-        
-        {/* Floating Send Button */}
-        {showFloatingSend && (
-          <TouchableOpacity
-            style={styles.floatingSendButton}
-            onPress={handleSendNote}
-            disabled={isSending}
-          >
-            {isSending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.floatingSendIcon}>✈️</Text>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+      </TouchableOpacity>
       
       {/* Bottom Navigation Menu */}
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
@@ -441,16 +331,16 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: theme.colors.primary,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    ...theme.shadows.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    ...theme.shadows.md,
   },
   headerGradient: {
     backgroundColor: theme.colors.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    ...theme.shadows.xl,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...theme.shadows.lg,
   },
   headerContent: {
     alignItems: 'center',
@@ -459,7 +349,7 @@ const styles = StyleSheet.create({
     ...theme.typography.displaySmall,
     color: '#fff',
     textAlign: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: 2,
     fontWeight: 'bold',
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 2 },
@@ -469,14 +359,14 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyLarge,
     color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
     fontWeight: '500',
   },
   newUserBanner: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginTop: spacing.sm,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.xs,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
@@ -491,27 +381,27 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   noteCard: {
-    borderRadius: borderRadius.xxxl,
-    marginBottom: spacing.lg,
+    borderRadius: borderRadius.xl,
+    marginBottom: spacing.md,
     marginHorizontal: spacing.sm,
-    ...theme.shadows.lg,
+    ...theme.shadows.md,
     overflow: 'hidden',
-    elevation: 8,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   noteCardInner: {
-    padding: spacing.lg,
+    padding: spacing.md,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: borderRadius.xxxl,
+    borderRadius: borderRadius.xl,
   },
   noteHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   moodIndicator: {
     flexDirection: 'row',
@@ -520,17 +410,17 @@ const styles = StyleSheet.create({
   noteMoodPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 4,
     borderRadius: borderRadius.full,
     ...theme.shadows.sm,
   },
   moodEmoji: {
-    fontSize: 14,
-    marginRight: spacing.xs,
+    fontSize: 12,
+    marginRight: 4,
   },
   moodText: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#fff',
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
@@ -538,25 +428,25 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   timestamp: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#9ca3af',
   },
   noteContent: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.onSurface,
-    lineHeight: 24,
-    marginBottom: spacing.md,
+    lineHeight: 20,
+    marginBottom: spacing.sm,
     fontWeight: '400',
   },
   expandHint: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#9ca3af',
     fontStyle: 'italic',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   noteActions: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     justifyContent: 'space-around',
   },
   actionButton: {
@@ -564,8 +454,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
     borderRadius: borderRadius.full,
     ...theme.shadows.sm,
   },
@@ -576,137 +466,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   actionButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#fff',
     fontWeight: '600',
     marginLeft: spacing.xs,
-  },
-  composeContainer: {
-    backgroundColor: theme.colors.surface,
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    ...theme.shadows.lg,
-  },
-  moodSelector: {
-    marginBottom: spacing.lg,
-  },
-  moodLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: theme.colors.onSurface,
-    marginBottom: spacing.md,
-  },
-  moodScrollView: {
-    paddingHorizontal: spacing.xs,
-  },
-  moodPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginRight: spacing.sm,
-    borderRadius: borderRadius.full,
-    backgroundColor: theme.colors.surfaceVariant,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    ...theme.shadows.sm,
-  },
-  selectedMoodPill: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-    ...theme.shadows.lg,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  moodPillEmoji: {
-    fontSize: 16,
-    marginRight: spacing.xs,
-  },
-  moodPillText: {
-    fontSize: 12,
-    color: theme.colors.onSurface,
-    fontWeight: '600',
-  },
-  selectedMoodPillText: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  messageInputContainer: {
-    marginBottom: spacing.md,
-  },
-  inputWrapper: {
-    backgroundColor: theme.colors.surfaceVariant,
-    borderRadius: borderRadius.xl,
-    padding: spacing.sm,
-    ...theme.shadows.sm,
-  },
-  messageInput: {
-    backgroundColor: '#fff',
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: theme.colors.onSurface,
-    maxHeight: 120,
-    minHeight: 50,
-    textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    ...theme.shadows.sm,
-  },
-  inputFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  characterCount: {
-    fontSize: 12,
-    color: '#9ca3af',
-    fontWeight: '500',
-  },
-  selectedMoodBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    ...theme.shadows.sm,
-  },
-  moodBadgeEmoji: {
-    fontSize: 12,
-    marginRight: spacing.xs,
-  },
-  moodBadgeText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  floatingSendButton: {
-    position: 'absolute',
-    bottom: 100,
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: theme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...theme.shadows.lg,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  floatingSendIcon: {
-    fontSize: 24,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -805,6 +568,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-    });
+  // Floating Action Button
+  fabButton: {
+    position: 'absolute',
+    bottom: 100, // Above navigation menu
+    left: '50%',
+    marginLeft: -100, // Half of button width to center
+    width: 200,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4F46E5', // Blue-purple gradient start color
+    ...theme.shadows.lg,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  fabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    paddingHorizontal: spacing.md,
+  },
+  fabIcon: {
+    fontSize: 20,
+    color: '#fff',
+    marginRight: spacing.sm,
+  },
+  fabText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+  },
+  fabArrow: {
+    fontSize: 18,
+    color: '#fff',
+    marginLeft: spacing.sm,
+  },
+});
 
 export default WhisprNotesScreen;

@@ -176,8 +176,17 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Buddies</Text>
-        <Text style={styles.subtitle}>Your connections and conversations</Text>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => onNavigate('notes')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backButtonText}>‹</Text>
+        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Buddies</Text>
+          <Text style={styles.subtitle}>Your connections and conversations</Text>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -286,6 +295,26 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
   },
   title: {
     fontSize: 24,
