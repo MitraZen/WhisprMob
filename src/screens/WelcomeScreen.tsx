@@ -12,11 +12,6 @@ import { theme, spacing } from '@/utils/theme';
 const { width, height } = Dimensions.get('window');
 
 const WelcomeScreen: React.FC = () => {
-  const navigation = useNavigation();
-
-  const handleGetStarted = () => {
-    navigation.navigate('MoodSelection' as never);
-  };
 
   return (
     <View style={styles.container}>
@@ -46,7 +41,7 @@ const WelcomeScreen: React.FC = () => {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
+          <TouchableOpacity style={styles.button}>
             <Text style={styles.buttonText}>Start Whispr-ing</Text>
           </TouchableOpacity>
 
