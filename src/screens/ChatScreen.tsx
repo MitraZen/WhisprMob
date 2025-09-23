@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Keyboard
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { BuddiesService, BuddyMessage } from '@/services/buddiesService';
 import { UserProfileView } from '@/components/UserProfileView';
+import { notificationService } from '@/services/notificationService';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -82,6 +83,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       
       setMessages(messagesData);
       setPreviousMessageCount(messagesData.length);
+      
+      // Send notification for new messages (not on initial load)
+      if (hasNewMessages && !isInitialLoad && messagesData.length > 0) {
+        const latestMessage = messagesData[0]; // First message is newest due to inverted FlatList
+        if (latestMessage.sender_id !== user.id) { // Only notify for messages from others
+          try {
+            await notificationService.showMessageNotification(
+              'New Message',
+              latestMessage.content,
+              buddy.username || buddy.display_name || 'Buddy'
+            );
+          } catch (notificationError) {
+            console.warn('Failed to send notification:', notificationError);
+          }
+        }
+      }
       
       // Mark messages as read
       await BuddiesService.markMessagesAsRead(buddy.id, user.id);

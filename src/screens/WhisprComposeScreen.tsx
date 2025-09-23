@@ -6,6 +6,7 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
+import { notificationService } from '@/services/notificationService';
 
 interface WhisprComposeScreenProps {
   onNavigate: (screen: string) => void;
