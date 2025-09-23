@@ -42,3 +42,5 @@ GRANT ALL ON public.user_profiles TO authenticated;
 
 
 
+
+
