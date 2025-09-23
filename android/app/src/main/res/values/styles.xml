@@ -1,9 +1,36 @@
 <resources>
 
     <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Minimal UI - shows action bar with app title -->
+        <item name="android:windowActionBar">true</item>
+        <item name="android:windowNoTitle">false</item>
+    </style>
+
+    <!-- Alternative: Standalone mode with custom styling -->
+    <style name="AppTheme.Standalone" parent="Theme.AppCompat.DayNight">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Standalone - custom action bar styling -->
+        <item name="android:windowActionBar">true</item>
+        <item name="android:windowNoTitle">false</item>
+        <item name="android:actionBarStyle">@style/CustomActionBar</item>
+        <item name="android:colorPrimary">@color/whispr_primary</item>
+        <item name="android:colorPrimaryDark">@color/whispr_primary_dark</item>
+    </style>
+
+    <!-- Custom action bar for standalone mode -->
+    <style name="CustomActionBar" parent="Widget.AppCompat.ActionBar.Solid">
+        <item name="android:background">@color/whispr_primary</item>
+        <item name="android:titleTextStyle">@style/ActionBarTitleText</item>
+    </style>
+
+    <!-- Action bar title styling -->
+    <style name="ActionBarTitleText" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
     </style>
 
 </resources>

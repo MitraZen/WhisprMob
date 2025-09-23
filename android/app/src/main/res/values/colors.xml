@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Whispr brand colors for standalone mode -->
+    <color name="whispr_primary">#7c3aed</color>
+    <color name="whispr_primary_dark">#5b21b6</color>
+    <color name="whispr_accent">#a855f7</color>
+    
+    <!-- Standard colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>
