@@ -14,7 +14,6 @@ import { MoodType } from '@/types';
 import { GradientBackground } from '@/components/GradientBackground';
 
 const HomeScreen: React.FC = () => {
-  const navigation = useNavigation();
   const { user, updateMood } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -25,15 +24,18 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleMoodChange = () => {
-    navigation.navigate('MoodSelection' as never);
+    // TODO: Implement mood change navigation
+    console.log('Mood change requested');
   };
 
   const handleFindConnections = () => {
-    navigation.navigate('Connections' as never);
+    // TODO: Implement connections navigation
+    console.log('Find connections requested');
   };
 
   const handleViewMessages = () => {
-    navigation.navigate('Messages' as never);
+    // TODO: Implement messages navigation
+    console.log('View messages requested');
   };
 
   if (!user) {
