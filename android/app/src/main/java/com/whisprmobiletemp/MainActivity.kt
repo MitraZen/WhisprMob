@@ -7,8 +7,12 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.facebook.react.modules.core.PermissionAwareActivity
+import com.facebook.react.modules.core.PermissionListener
 
-class MainActivity : ReactActivity() {
+class MainActivity : ReactActivity(), PermissionAwareActivity {
+
+  private var permissionListener: PermissionListener? = null
 
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
@@ -48,5 +52,15 @@ class MainActivity : ReactActivity() {
     // Handle back button - exit app instead of minimizing
     finishAffinity()
     System.exit(0)
+  }
+
+  override fun requestPermissions(permissions: Array<String>, requestCode: Int, listener: PermissionListener?) {
+    permissionListener = listener
+    super.requestPermissions(permissions, requestCode)
+  }
+
+  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    permissionListener?.onRequestPermissionsResult(requestCode, permissions, grantResults)
   }
 }

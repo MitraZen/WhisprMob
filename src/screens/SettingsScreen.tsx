@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, An
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { notificationService } from '@/services/notificationService';
+import PermissionService, { PermissionStatus } from '../services/permissionService';
+import PermissionInitializer from '../services/permissionInitializer';
 
 interface SettingsScreenProps {
   onNavigate: (screen: string) => void;
@@ -16,7 +18,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{ [key: string]: boolean }>({});
-  const [permissions, setPermissions] = useState({
+  const [permissions, setPermissions] = useState<PermissionStatus>({
     notifications: false,
     storage: false,
     camera: false,
@@ -27,7 +29,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  // Initialize animations
+  // Initialize animations and load permissions
   React.useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -41,7 +43,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Load actual permission status
+    loadPermissionStatus();
   }, []);
+
+  const loadPermissionStatus = async () => {
+    try {
+      const status = await PermissionService.getAllPermissionStatus();
+      setPermissions(status);
+    } catch (error) {
+      console.error('Error loading permission status:', error);
+    }
+  };
 
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
@@ -50,25 +64,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     }));
   };
 
-  const handlePermissionRequest = (permissionType: string) => {
-    Alert.alert(
-      'Permission Required',
-      `Whispr needs ${permissionType} permission to provide this feature. Would you like to grant it?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Grant Permission', 
-          onPress: () => {
-            // TODO: Implement actual permission request
-            setPermissions(prev => ({
-              ...prev,
-              [permissionType]: true
-            }));
-            Alert.alert('Success', `${permissionType} permission granted!`);
-          }
-        },
-      ]
-    );
+  const handlePermissionRequest = async (permissionType: string) => {
+    try {
+      const granted = await PermissionService.requestPermissionWithDialog(permissionType);
+      if (granted) {
+        // Reload permission status to get the updated state
+        await loadPermissionStatus();
+      }
+    } catch (error) {
+      console.error('Error requesting permission:', error);
+      Alert.alert('Error', 'Failed to request permission');
+    }
   };
 
   const handleNotificationSettings = () => {
@@ -80,6 +86,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         { text: 'Enable All', onPress: () => setNotificationsEnabled(true) },
         { text: 'Disable All', onPress: () => setNotificationsEnabled(false) },
         { text: 'Test Notification', onPress: handleTestNotification },
+        { text: 'Request Permissions', onPress: handleRequestPermissions },
         { text: 'Customize', onPress: () => {
           // TODO: Open detailed notification settings
           Alert.alert('Customize', 'Detailed notification settings coming soon!');
@@ -93,6 +100,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       await notificationService.testNotification();
     } catch (error) {
       Alert.alert('Error', 'Failed to send test notification');
+    }
+  };
+
+  const handleRequestPermissions = async () => {
+    try {
+      Alert.alert(
+        'Request Permissions',
+        'This will show the permission request dialog as it appears on app startup.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Request Permissions',
+            onPress: async () => {
+              // Reset permission state to allow re-requesting
+              PermissionInitializer.resetPermissionState();
+              await PermissionInitializer.initializePermissions(user.id);
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to request permissions');
     }
   };
 
