@@ -5,6 +5,8 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, Buddy } from '@/services/buddiesService';
 import { BuddyCard } from '@/components/BuddyCard';
 import { formatLastSeen } from '@/utils/date';
+import { notificationService } from '@/services/notificationService';
+import { realtimeService } from '@/services/realtimeService';
 
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -69,6 +71,75 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const onRefresh = useCallback(() => {
     loadBuddies(true);
   }, [user?.id]);
+
+  const simulateIncomingMessage = async () => {
+    if (buddies.length === 0) {
+      Alert.alert('No Buddies', 'You need to have buddies to simulate incoming messages.');
+      return;
+    }
+    
+    const randomBuddy = buddies[Math.floor(Math.random() * buddies.length)];
+    const sampleMessages = [
+      "Hey! How are you doing?",
+      "Just wanted to say hi! 👋",
+      "Hope you're having a great day!",
+      "What's up?",
+      "Thinking of you! 💭",
+      "How was your day?",
+      "Miss you! 😊",
+      "Let's chat soon!"
+    ];
+    
+    const randomMessage = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
+    
+    try {
+      await notificationService.showMessageNotification(
+        'New Message',
+        randomMessage,
+        randomBuddy.name || randomBuddy.initials
+      );
+      Alert.alert('Simulation', `Simulated message from ${randomBuddy.name || randomBuddy.initials}: "${randomMessage}"`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to simulate message notification');
+    }
+  };
+
+  const simulateIncomingNote = async () => {
+    const sampleNotes = [
+      "Feeling grateful today! 🌟",
+      "Having a wonderful day! ☀️",
+      "Life is beautiful! ✨",
+      "Feeling hopeful! 🌈",
+      "Today is amazing! 🎉",
+      "Feeling blessed! 🙏",
+      "Everything is going great! 🚀",
+      "Feeling positive! 💪"
+    ];
+    
+    const randomNote = sampleNotes[Math.floor(Math.random() * sampleNotes.length)];
+    
+    try {
+      await notificationService.showNoteNotification(
+        'New Whispr Note',
+        randomNote
+      );
+      Alert.alert('Simulation', `Simulated Whispr note: "${randomNote}"`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to simulate note notification');
+    }
+  };
+
+  const triggerNotificationCheck = async () => {
+    try {
+      const status = realtimeService.getConnectionStatus();
+      Alert.alert(
+        'Realtime Status', 
+        `Connected: ${status.isConnected}\nUser: ${status.userId}\nSubscriptions: ${status.subscriptionCount}`
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to get realtime status');
+    }
+  };
 
   const filteredBuddies = useMemo(() => {
     return buddies.filter(buddy => {
@@ -187,6 +258,29 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           <Text style={styles.title}>Buddies</Text>
           <Text style={styles.subtitle}>Your connections and conversations</Text>
         </View>
+        <View style={styles.testButtons}>
+          <TouchableOpacity 
+            style={styles.testButton}
+            onPress={simulateIncomingMessage}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.testButtonText}>📱</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.testButton}
+            onPress={simulateIncomingNote}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.testButtonText}>📝</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.testButton}
+            onPress={triggerNotificationCheck}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.testButtonText}>🔍</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -297,6 +391,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  testButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  testButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadows.sm,
+  },
+  testButtonText: {
+    fontSize: 16,
+    color: 'white',
   },
   backButton: {
     width: 40,

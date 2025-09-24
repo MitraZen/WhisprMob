@@ -114,6 +114,31 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     }
   };
 
+  const simulateIncomingNote = async () => {
+    const sampleNotes = [
+      "Feeling grateful today! 🌟",
+      "Having a wonderful day! ☀️",
+      "Life is beautiful! ✨",
+      "Feeling hopeful! 🌈",
+      "Today is amazing! 🎉",
+      "Feeling blessed! 🙏",
+      "Everything is going great! 🚀",
+      "Feeling positive! 💪"
+    ];
+    
+    const randomNote = sampleNotes[Math.floor(Math.random() * sampleNotes.length)];
+    
+    try {
+      await notificationService.showNoteNotification(
+        'New Whispr Note',
+        randomNote
+      );
+      Alert.alert('Simulation', `Simulated Whispr note: "${randomNote}"`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to simulate note notification');
+    }
+  };
+
   const handleReject = async (noteId: string) => {
     if (!user?.id) {
       Alert.alert('Error', 'User not authenticated.');
@@ -204,8 +229,19 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       <View style={styles.header}>
         <View style={styles.headerGradient}>
           <View style={styles.headerContent}>
-            <Text style={styles.title}>Whispr Notes</Text>
-            <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
+            <View style={styles.titleRow}>
+              <View style={styles.titleColumn}>
+                <Text style={styles.title}>Whispr Notes</Text>
+                <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.testButton}
+                onPress={simulateIncomingNote}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.testButtonText}>📝</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {isNewUser && (
@@ -358,6 +394,29 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     alignItems: 'center',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  titleColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  testButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadows.sm,
+  },
+  testButtonText: {
+    fontSize: 16,
+    color: 'white',
   },
   title: {
     ...theme.typography.displaySmall,
