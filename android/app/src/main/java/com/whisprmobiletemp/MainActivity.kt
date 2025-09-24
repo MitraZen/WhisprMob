@@ -30,16 +30,8 @@ class MainActivity : ReactActivity(), PermissionAwareActivity {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     
-    // Enable immersive mode - full screen but respect system UI
-    window.decorView.systemUiVisibility = (
-        View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-    )
-    
-    // Keep system bars visible but transparent
-    window.statusBarColor = android.graphics.Color.TRANSPARENT
-    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+    // Let the theme handle system UI styling
+    // Remove conflicting system UI flags that interfere with styles.xml
     
     // Initialize notification service
     NotificationService(this)
