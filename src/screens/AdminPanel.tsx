@@ -12,8 +12,19 @@ import {
   Modal,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { theme, spacing } from '@/utils/theme';
+import { theme } from '@/utils/theme';
+
+// Hardcoded spacing to fix Metro cache issue
+const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
+};
 import { useAdmin } from '@/store/AdminContext';
+import AdminNotificationPanel from '@/components/AdminNotificationPanel';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -51,6 +62,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [testMessage, setTestMessage] = useState('Hello from Admin!');
   const [buddyList, setBuddyList] = useState<any[]>([]);
   const [selectedBuddyId, setSelectedBuddyId] = useState('');
+  const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
   useEffect(() => {
     if (isAdminMode && !isAdminAuthenticated) {
@@ -262,6 +274,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </View>
         </View>
 
+        {/* Notification Debugging */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notification Debugging</Text>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.primaryButton]} 
+            onPress={() => setShowNotificationPanel(true)}
+          >
+            <Text style={styles.actionButtonText}>Open Notification Debug Panel</Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.sectionDescription}>
+            Debug notification issues, test all notification types, and send test notifications to users.
+          </Text>
+        </View>
+
         {/* Database Controls */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Database Controls</Text>
@@ -442,6 +470,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Notification Debug Panel Modal */}
+      <Modal
+        visible={showNotificationPanel}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <AdminNotificationPanel onClose={() => setShowNotificationPanel(false)} />
+      </Modal>
     </View>
   );
 };
@@ -668,6 +705,15 @@ const styles = StyleSheet.create({
   multilineInput: {
     height: 80,
     textAlignVertical: 'top',
+  },
+  primaryButton: {
+    backgroundColor: theme.colors.primary,
+  },
+  sectionDescription: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
   },
 });
 
