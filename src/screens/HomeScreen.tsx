@@ -12,10 +12,26 @@ import { useAuth } from '@/store/AuthContext';
 import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
 import { MoodType } from '@/types';
 import { GradientBackground } from '@/components/GradientBackground';
+import { realtimeService } from '@/services/realtimeService';
 
 const HomeScreen: React.FC = () => {
   const { user, updateMood } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+
+  // Initialize realtime notifications when user is available
+  useEffect(() => {
+    if (user?.id) {
+      console.log('Starting realtime notifications for user:', user.id);
+      realtimeService.initialize(user.id).catch(error => {
+        console.error('Failed to initialize realtime service:', error);
+      });
+    }
+
+    // Cleanup on unmount
+    return () => {
+      realtimeService.disconnect();
+    };
+  }, [user?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);

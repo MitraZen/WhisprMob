@@ -2,7 +2,6 @@ package com.whisprmobiletemp
 
 import android.os.Bundle
 import android.view.View
-import android.view.WindowManager
 import android.view.KeyEvent
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

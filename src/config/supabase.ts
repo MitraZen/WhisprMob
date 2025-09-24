@@ -20,11 +20,12 @@ export const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKe
       'X-Client-Info': 'whispr-mobile-app',
     },
   },
-  // Disable real-time for now to avoid protocol issues
+  // Enable real-time for notifications
   realtime: {
     params: {
       eventsPerSecond: 10,
     },
+    transport: 'websocket',
   },
 });
 
