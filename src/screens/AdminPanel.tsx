@@ -12,17 +12,9 @@ import {
   Modal,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { theme } from '@/utils/theme';
+import { theme, spacing, borderRadius } from '@/utils/theme';
 
-// Hardcoded spacing to fix Metro cache issue
-const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-};
+// Using imported spacing from theme
 import { useAdmin } from '@/store/AdminContext';
 import AdminNotificationPanel from '@/components/AdminNotificationPanel';
 

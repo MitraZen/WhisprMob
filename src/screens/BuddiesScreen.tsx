@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: theme.colors.primary,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',

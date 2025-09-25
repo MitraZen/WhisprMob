@@ -467,15 +467,43 @@ export class BuddiesService {
   // Listen to a Whispr note (accept it)
   static async listenToNote(noteId: string, userId: string): Promise<any> {
     try {
+      // First try the RPC function
       const result = await this.rpcRequest('listen_to_note', {
         note_id_param: noteId,
         listener_id_param: userId
       });
 
+      // If RPC succeeded, also manually update the note status as a fallback
+      try {
+        await this.request('PATCH', `whispr_notes?id=eq.${noteId}`, {
+          status: 'listened'
+        });
+        console.log('Note status updated to listened as fallback');
+      } catch (updateError) {
+        console.warn('Failed to update note status as fallback:', updateError);
+      }
+
       return result;
     } catch (error) {
       console.error('Error listening to note:', error);
-      throw error;
+      
+      // If RPC fails, try to manually update the note status
+      try {
+        await this.request('PATCH', `whispr_notes?id=eq.${noteId}`, {
+          status: 'listened'
+        });
+        console.log('Note status updated to listened after RPC failure');
+        
+        return {
+          success: true,
+          message: 'Note listened to successfully (fallback method)',
+          buddy_created: false,
+          note_status_updated: true
+        };
+      } catch (fallbackError) {
+        console.error('Both RPC and fallback failed:', fallbackError);
+        throw error;
+      }
     }
   }
 
