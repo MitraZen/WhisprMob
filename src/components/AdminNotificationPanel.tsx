@@ -10,25 +10,11 @@ import {
   TextInput,
 } from 'react-native';
 import { useAdmin } from '@/store/AdminContext';
-import { theme } from '@/utils/theme';
+import { theme, spacing, borderRadius } from '@/utils/theme';
 
-// Hardcoded spacing to fix Metro cache issue
-const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-};
+// Using imported spacing from theme
 
-const borderRadius = {
-  sm: 4,
-  md: 8,
-  lg: 12,
-  xl: 16,
-  full: 9999,
-};
+// Using imported borderRadius from theme
 
 interface AdminNotificationPanelProps {
   onClose: () => void;

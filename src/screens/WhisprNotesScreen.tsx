@@ -103,8 +103,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           ]
         );
         
-        // Reload notes to update the status
-        await loadNotes();
+        // Remove the listened note from the list
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
       } else {
         Alert.alert('Error', 'Failed to listen to note. Please try again.');
       }
@@ -232,15 +232,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
             <View style={styles.titleRow}>
               <View style={styles.titleColumn}>
                 <Text style={styles.title}>Whispr Notes</Text>
-                <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
+                <Text style={styles.subtitle}>Send anonymous message to world</Text>
               </View>
-              <TouchableOpacity 
-                style={styles.testButton}
-                onPress={simulateIncomingNote}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.testButtonText}>📝</Text>
-              </TouchableOpacity>
             </View>
           </View>
           
@@ -349,7 +342,6 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         )}
       </ScrollView>
 
-      
       {/* Floating Action Button */}
       <TouchableOpacity 
         style={styles.fabButton}
@@ -380,14 +372,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   header: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#7c3aed', // Purple color
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
     ...theme.shadows.md,
   },
   headerGradient: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#7c3aed', // Purple color to match header
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     ...theme.shadows.lg,
@@ -398,25 +390,12 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center', // Center the title
     width: '100%',
   },
   titleColumn: {
     flex: 1,
     alignItems: 'center',
-  },
-  testButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...theme.shadows.sm,
-  },
-  testButtonText: {
-    fontSize: 16,
-    color: 'white',
   },
   title: {
     ...theme.typography.displaySmall,

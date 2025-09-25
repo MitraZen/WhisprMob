@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { theme, spacing } from '@/utils/theme';
+import { theme, spacing, borderRadius } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
 import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
 import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
@@ -56,12 +56,6 @@ const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void })
               <Text style={styles.signInButtonText}>Sign In</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={styles.primaryButton} 
-              onPress={() => onNavigate('mood')}
-            >
-              <Text style={styles.primaryButtonText}>Start Whispr-ing</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.featuresContainer}>

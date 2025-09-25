@@ -117,3 +117,11 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Fix for duplicate classes issue
+configurations.all {
+    exclude group: 'androidx.autofill', module: 'autofill'
+    resolutionStrategy {
+        force 'androidx.autofill:autofill:1.1.0'
+    }
+}
