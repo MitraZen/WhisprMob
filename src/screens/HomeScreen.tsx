@@ -6,148 +6,165 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
-
+import LinearGradient from 'react-native-linear-gradient';
 import { useAuth } from '@/store/AuthContext';
-import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
-import { MoodType } from '@/types';
-import { GradientBackground } from '@/components/GradientBackground';
+import { theme, spacing, borderRadius } from '@/utils/theme';
 import { realtimeService } from '@/services/realtimeService';
+import { BuddiesService, WhisprNote } from '@/services/buddiesService';
+import { NoteCard } from '@/components/NoteCard';
 
-const HomeScreen: React.FC = () => {
-  const { user, updateMood } = useAuth();
+interface HomeScreenProps {
+  onNavigate: (screen: string) => void;
+}
+
+const EmptyState = () => (
+  <View style={styles.centeredContainer}>
+    <Text style={styles.emptyIcon}>💭</Text>
+    <Text style={styles.emptyText}>No new Whisprs</Text>
+    <Text style={styles.emptySubtext}>Pull down to check again!</Text>
+  </View>
+);
+
+const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate }) => {
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [notes, setNotes] = useState<WhisprNote[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize realtime notifications when user is available
   useEffect(() => {
     if (user?.id) {
-      console.log('Starting realtime notifications for user:', user.id);
       realtimeService.initialize(user.id).catch(error => {
         console.error('Failed to initialize realtime service:', error);
       });
+      loadNotes();
     }
-
-    // Cleanup on unmount
     return () => {
       realtimeService.disconnect();
     };
   }, [user?.id]);
 
+  const loadNotes = async () => {
+    if (!user?.id) return;
+    setIsLoading(true);
+    try {
+      const notesData = await BuddiesService.getWhisprNotes(user.id);
+      setNotes(notesData.slice(0, 3));
+    } catch (error) {
+      console.error('Error loading notes:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate refresh - in real app, this would fetch new data
-    setTimeout(() => setRefreshing(false), 1000);
+    await loadNotes();
+    setRefreshing(false);
   };
 
-  const handleMoodChange = () => {
-    // TODO: Implement mood change navigation
-    console.log('Mood change requested');
-  };
+  const handleAction = async (action: 'listen' | 'reject', noteId: string) => {
+    if (!user?.id) return;
 
-  const handleFindConnections = () => {
-    // TODO: Implement connections navigation
-    console.log('Find connections requested');
-  };
+    // Optimistically remove the note from the UI
+    setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
 
-  const handleViewMessages = () => {
-    // TODO: Implement messages navigation
-    console.log('View messages requested');
+    try {
+      if (action === 'listen') {
+        await BuddiesService.listenToNote(noteId, user.id);
+      } else {
+        await BuddiesService.rejectNote(noteId, user.id);
+      }
+    } catch (error) {
+      console.error(`Error ${action}ing to note:`, error);
+      // Optional: Add the note back if the API call fails
+      loadNotes();
+    }
   };
 
   if (!user) {
     return (
-      <View style={styles.container}>
-        <Text>Loading...</Text>
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
-  const currentMoodConfig = moodConfig[user.mood] || { emoji: '😊', color: '#fbbf24', description: 'Unknown mood' };
-
   return (
     <View style={styles.container}>
+      {/* Header */}
+      <LinearGradient
+        colors={['#8B5CF6', '#A78BFA', '#C4B5FD']}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.whisperIcon}>💬</Text>
+            <Text style={styles.title}>Whispr</Text>
+            <Text style={styles.titleAccent}>Notes</Text>
+          </View>
+          <Text style={styles.subtitle}>Share your thoughts anonymously with the world</Text>
+          <View style={styles.floatingElements}>
+            <Text style={styles.floatingIcon1}>✨</Text>
+            <Text style={styles.floatingIcon2}>🌟</Text>
+            <Text style={styles.floatingIcon3}>💫</Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Notes List */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+          />
         }
       >
-        {/* Current Mood Section */}
-        <View style={styles.moodSection}>
-          <Text style={styles.sectionTitle}>Your Current Mood</Text>
-          <View style={styles.currentMoodCard}>
-            <Text style={styles.moodEmoji}>{currentMoodConfig.emoji}</Text>
-            <Text style={styles.moodName}>
-              {user.mood.charAt(0).toUpperCase() + user.mood.slice(1)}
-            </Text>
-            <Text style={styles.moodDescription}>
-              {currentMoodConfig.description}
-            </Text>
-            <TouchableOpacity style={styles.changeMoodButton} onPress={handleMoodChange}>
-              <Text style={styles.changeMoodButtonText}>Change Mood</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Quick Actions */}
-        <View style={styles.actionsSection}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          
-          <TouchableOpacity style={styles.actionCard} onPress={handleFindConnections}>
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionEmoji}>🔍</Text>
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Find Connections</Text>
-              <Text style={styles.actionDescription}>
-                Connect with others who share your mood
-              </Text>
-            </View>
-            <Text style={styles.actionArrow}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionCard} onPress={handleViewMessages}>
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionEmoji}>💬</Text>
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>View Messages</Text>
-              <Text style={styles.actionDescription}>
-                Check your anonymous conversations
-              </Text>
-            </View>
-            <Text style={styles.actionArrow}>›</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Stats Section */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Your Anonymous Journey</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Connections</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Messages</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>1</Text>
-              <Text style={styles.statLabel}>Days Active</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Privacy Notice */}
-        <View style={styles.privacySection}>
-          <Text style={styles.privacyTitle}>🔒 Your Privacy</Text>
-          <Text style={styles.privacyText}>
-            Your identity remains completely anonymous. All messages are encrypted 
-            and your personal information is never stored or shared.
-          </Text>
-        </View>
+        {isLoading ? (
+          <ActivityIndicator
+            size="large"
+            color={theme.colors.primary}
+            style={{ marginTop: 50 }}
+          />
+        ) : notes.length === 0 ? (
+          <EmptyState />
+        ) : (
+          notes.map(note => (
+            <NoteCard
+              key={note.id}
+              id={note.id}
+              text={note.content}
+              tag="🌸 Positive Vibe"
+              timeAgo="1m ago"
+              onListen={() => handleAction('listen', note.id)}
+              onReject={() => handleAction('reject', note.id)}
+            />
+          ))
+        )}
       </ScrollView>
+
+      {/* Gradient Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fabWrapper}
+        onPress={() => onNavigate('compose')}
+        activeOpacity={0.9}
+      >
+        <LinearGradient
+          colors={['#A78BFA', '#8B5CF6']}
+          style={styles.fab}
+        >
+          <Text style={styles.fabIcon}>✨</Text>
+          <Text style={styles.fabText}>Start Whispr-ing</Text>
+          <Text style={styles.fabArrow}>→</Text>
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -155,150 +172,131 @@ const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F8F9FA',
   },
-  scrollContent: {
-    padding: spacing.lg,
-  },
-  sectionTitle: {
-    ...theme.typography.headlineSmall,
-    color: theme.colors.onSurface,
-    marginBottom: spacing.md,
-  },
-  moodSection: {
-    marginBottom: spacing.xl,
-  },
-  currentMoodCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-    ...theme.shadows.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  moodEmoji: {
-    fontSize: 48,
-    marginBottom: spacing.sm,
-  },
-  moodName: {
-    ...theme.typography.displaySmall,
-    color: theme.colors.onSurface,
-    marginBottom: spacing.xs,
-  },
-  moodDescription: {
-    ...theme.typography.bodyLarge,
-    color: theme.colors.onSurfaceVariant,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  changeMoodButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    ...theme.shadows.sm,
-  },
-  changeMoodButtonText: {
-    ...theme.typography.labelLarge,
-    color: theme.colors.onPrimary,
-  },
-  actionsSection: {
-    marginBottom: spacing.xl,
-  },
-  actionCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    ...theme.shadows.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: borderRadius.full,
-    backgroundColor: `${theme.colors.primary}15`,
+  centeredContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.md,
+    padding: spacing.xl,
   },
-  actionEmoji: {
+  header: {
+    paddingTop: 60,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    ...theme.shadows.lg,
+  },
+  headerContent: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  whisperIcon: {
     fontSize: 28,
+    marginRight: 8,
   },
-  actionContent: {
-    flex: 1,
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
-  actionTitle: {
+  titleAccent: {
+    fontSize: 32,
+    fontWeight: '300',
+    color: '#fff',
+    marginLeft: 4,
+    opacity: 0.9,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    fontWeight: '500',
+    lineHeight: 22,
+  },
+  floatingElements: {
+    position: 'absolute',
+    top: -10,
+    left: 0,
+    right: 0,
+    height: 40,
+    justifyContent: 'space-between',
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+  },
+  floatingIcon1: {
+    fontSize: 20,
+    opacity: 0.7,
+    transform: [{ rotate: '-15deg' }],
+  },
+  floatingIcon2: {
+    fontSize: 24,
+    opacity: 0.8,
+    transform: [{ rotate: '10deg' }],
+  },
+  floatingIcon3: {
+    fontSize: 18,
+    opacity: 0.6,
+    transform: [{ rotate: '-5deg' }],
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: 100,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: spacing.md,
+  },
+  emptyText: {
     ...theme.typography.titleLarge,
     color: theme.colors.onSurface,
-    marginBottom: spacing.xs,
-  },
-  actionDescription: {
-    ...theme.typography.bodyMedium,
-    color: theme.colors.onSurfaceVariant,
-  },
-  actionArrow: {
-    fontSize: 24,
-    color: theme.colors.primary,
-  },
-  statsSection: {
-    marginBottom: spacing.xl,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: spacing.xs,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: theme.colors.onSurface,
-    textAlign: 'center',
-  },
-  privacySection: {
-    backgroundColor: `${theme.colors.primary}10`,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.primary,
-  },
-  privacyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.primary,
     marginBottom: spacing.sm,
   },
-  privacyText: {
-    fontSize: 14,
-    color: theme.colors.onSurface,
-    lineHeight: 20,
+  emptySubtext: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+  },
+  fabWrapper: {
+    position: 'absolute',
+    bottom: 30,
+    left: spacing.lg,
+    right: spacing.lg,
+  },
+  fab: {
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadows.lg,
+  },
+  fabIcon: {
+    fontSize: 20,
+    marginRight: spacing.sm,
+    color: '#fff',
+  },
+  fabText: {
+    ...theme.typography.titleMedium,
+    color: '#fff',
+    flex: 1,
+    textAlign: 'center',
+  },
+  fabArrow: {
+    ...theme.typography.titleMedium,
+    color: '#fff',
   },
 });
 
 export default HomeScreen;
-
-
