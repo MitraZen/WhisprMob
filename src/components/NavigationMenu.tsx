@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { spacing } from '@/utils/theme';
 
 interface NavigationMenuProps {
   currentScreen: string;
@@ -16,88 +16,66 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
   ];
 
   return (
-    <View style={styles.container}>
-      <View style={styles.menuContainer}>
-        {menuItems.map((item, index) => (
-          <TouchableOpacity
-            key={item.id}
-            style={[
-              styles.menuItem,
-              currentScreen === item.id && styles.activeMenuItem,
-            ]}
-            onPress={() => onNavigate(item.id)}
-          >
-            <Text style={styles.menuIcon}>{item.icon}</Text>
-            <Text 
-              style={[
-                styles.menuLabel,
-                currentScreen === item.id && styles.activeMenuLabel
-              ]}
-              numberOfLines={1}
-            >
-              {item.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.menuContainer}>
+          {menuItems.map(item => {
+            const isActive = currentScreen === item.id;
+
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.menuItem}
+                onPress={() => onNavigate(item.id)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.menuIcon, isActive && styles.activeIcon]}>{item.icon}</Text>
+                <Text style={[styles.menuLabel, isActive && styles.active]}>{item.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    backgroundColor: '#fff',
+  },
   container: {
-    backgroundColor: theme.colors.glass,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
-    paddingBottom: spacing.sm,
-    ...theme.shadows.lg,
+    backgroundColor: '#fff',
+    borderTopWidth: 0.5,
+    borderTopColor: '#E5E7EB',
   },
   menuContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    minHeight: 70,
+    paddingVertical: spacing.sm, // reduced from spacing.md
+    paddingBottom: spacing.md, // add extra bottom padding for safe area
+    minHeight: 60, // reduced from 70
   },
   menuItem: {
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    borderRadius: borderRadius.lg,
-    flex: 1,
-    maxWidth: 80,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    ...theme.shadows.sm,
-  },
-  activeMenuItem: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-    shadowColor: theme.colors.primary,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    justifyContent: 'center',
   },
   menuIcon: {
-    fontSize: 20,
-    marginBottom: spacing.xs,
+    fontSize: 22,
+    opacity: 0.8, // increased from 0.7 for better visibility
+  },
+  activeIcon: {
+    opacity: 1,
   },
   menuLabel: {
-    fontSize: 11,
-    color: theme.colors.onSurface,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#374151', // darker gray for better visibility
+    marginTop: 2, // reduced from 4 to bring text closer to icon
   },
-  activeMenuLabel: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+  active: {
+    color: '#7C3AED', // darker purple for better contrast
+    fontWeight: '600',
   },
 });
-

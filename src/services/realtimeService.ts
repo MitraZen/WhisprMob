@@ -16,6 +16,12 @@ class RealtimeService {
     console.log('Initializing realtime service for user:', userId);
     
     try {
+      // Check if supabase is available
+      if (!supabase) {
+        console.warn('Supabase client not available, skipping realtime initialization');
+        return;
+      }
+      
       // Subscribe to buddy messages
       await this.subscribeToMessages();
       
@@ -26,16 +32,18 @@ class RealtimeService {
       console.log('Realtime service initialized successfully');
     } catch (error) {
       console.error('Failed to initialize realtime service:', error);
-      throw error;
+      // Don't throw the error, just log it
+      // The app should continue working without realtime updates
     }
   }
 
   private async subscribeToMessages() {
-    if (!this.userId) return;
+    if (!this.userId || !supabase) return;
 
     console.log('Subscribing to buddy messages...');
     
-    const channel = supabase
+    try {
+      const channel = supabase
       .channel('buddy-messages')
       .on(
         'postgres_changes',
@@ -75,21 +83,25 @@ class RealtimeService {
         console.log('Message subscription status:', status);
       });
 
-    this.subscriptions.push({
-      channel,
-      unsubscribe: () => {
-        console.log('Unsubscribing from buddy messages');
-        supabase.removeChannel(channel);
-      }
-    });
+      this.subscriptions.push({
+        channel,
+        unsubscribe: () => {
+          console.log('Unsubscribing from buddy messages');
+          supabase.removeChannel(channel);
+        }
+      });
+    } catch (error) {
+      console.error('Error subscribing to messages:', error);
+    }
   }
 
   private async subscribeToNotes() {
-    if (!this.userId) return;
+    if (!this.userId || !supabase) return;
 
     console.log('Subscribing to Whispr notes...');
     
-    const channel = supabase
+    try {
+      const channel = supabase
       .channel('whispr-notes')
       .on(
         'postgres_changes',
@@ -119,13 +131,16 @@ class RealtimeService {
         console.log('Note subscription status:', status);
       });
 
-    this.subscriptions.push({
-      channel,
-      unsubscribe: () => {
-        console.log('Unsubscribing from Whispr notes');
-        supabase.removeChannel(channel);
-      }
-    });
+      this.subscriptions.push({
+        channel,
+        unsubscribe: () => {
+          console.log('Unsubscribing from Whispr notes');
+          supabase.removeChannel(channel);
+        }
+      });
+    } catch (error) {
+      console.error('Error subscribing to notes:', error);
+    }
   }
 
   async disconnect() {

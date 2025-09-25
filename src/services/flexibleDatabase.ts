@@ -1,8 +1,6 @@
+import { supabase } from '@/config/supabase';
 import { SUPABASE_CONFIG } from '@/config/env';
 import { User, MoodType } from '@/types';
-
-const SUPABASE_URL = SUPABASE_CONFIG.url;
-const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 
 export class FlexibleDatabaseService {
   private static async request(
@@ -11,32 +9,33 @@ export class FlexibleDatabaseService {
     body?: any,
     headers?: Record<string, string>
   ): Promise<any> {
-    const url = `${SUPABASE_URL}/rest/v1/${path}`;
-    const defaultHeaders = {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-      ...headers,
-    };
-
-    const options: RequestInit = {
-      method,
-      headers: defaultHeaders,
-      body: body ? JSON.stringify(body) : undefined,
-    };
-
     try {
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      // Use Supabase client instead of direct HTTP calls
+      const [table, ...rest] = path.split('?');
+      
+      let result;
+      switch (method) {
+        case 'GET':
+          result = await supabase.from(table).select('*');
+          break;
+        case 'POST':
+          result = await supabase.from(table).insert(body);
+          break;
+        case 'PATCH':
+          result = await supabase.from(table).update(body);
+          break;
+        case 'DELETE':
+          result = await supabase.from(table).delete();
+          break;
+        default:
+          throw new Error(`Unsupported method: ${method}`);
       }
       
-      if (response.status === 204) {
-        return null;
+      if (result.error) {
+        throw new Error(`Supabase error: ${result.error.message}`);
       }
-      return await response.json();
+      
+      return result.data;
     } catch (error) {
       console.error('Flexible Database request error:', error);
       throw error;

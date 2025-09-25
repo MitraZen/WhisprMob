@@ -7,16 +7,20 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuth } from '@/store/AuthContext';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { useAdmin } from '@/store/AdminContext';
+import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { realtimeService } from '@/services/realtimeService';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import { NoteCard } from '@/components/NoteCard';
+import { NavigationMenu } from '@/components/NavigationMenu';
 
 interface HomeScreenProps {
   onNavigate: (screen: string) => void;
+  user?: any;
 }
 
 const EmptyState = () => (
@@ -27,32 +31,57 @@ const EmptyState = () => (
   </View>
 );
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate }) => {
-  const { user } = useAuth();
+const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate, user: propUser }) => {
+  const { user: authUser } = useAuth();
+  const { enableAdminMode } = useAdmin();
+  const user = propUser || authUser;
+  
   const [refreshing, setRefreshing] = useState(false);
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user?.id) {
-      realtimeService.initialize(user.id).catch(error => {
-        console.error('Failed to initialize realtime service:', error);
-      });
+      console.log('Loading notes for user:', user.id);
+      // Temporarily disable real-time service to prevent crashes
       loadNotes();
     }
-    return () => {
-      realtimeService.disconnect();
-    };
+  }, [user?.id]);
+
+  // Auto-refresh notes every 15 seconds
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const interval = setInterval(() => {
+      loadNotes();
+    }, 15000);
+
+    return () => clearInterval(interval);
   }, [user?.id]);
 
   const loadNotes = async () => {
     if (!user?.id) return;
+    
     setIsLoading(true);
+    setError(null);
+    
     try {
+      console.log('Loading Whispr notes for user:', user.id);
+      
+      // Load real notes from database
       const notesData = await BuddiesService.getWhisprNotes(user.id);
-      setNotes(notesData.slice(0, 3));
-    } catch (error) {
-      console.error('Error loading notes:', error);
+      console.log(`Loaded ${notesData.length} real notes from database`);
+      
+      setNotes(notesData);
+      setIsNewUser(notesData.length === 0);
+      
+    } catch (err) {
+      console.error('Error loading notes:', err);
+      setError('Failed to load notes - using offline mode');
+      setNotes([]);
     } finally {
       setIsLoading(false);
     }
@@ -65,21 +94,55 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate }) => {
   };
 
   const handleAction = async (action: 'listen' | 'reject', noteId: string) => {
-    if (!user?.id) return;
-
-    // Optimistically remove the note from the UI
-    setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
 
     try {
       if (action === 'listen') {
+        console.log('Listening to note:', noteId);
         await BuddiesService.listenToNote(noteId, user.id);
+        Alert.alert('Note Listened! 👂', 'You\'ve listened to this note.');
       } else {
+        console.log('Rejecting note:', noteId);
         await BuddiesService.rejectNote(noteId, user.id);
+        Alert.alert('Note Rejected', 'This note has been removed from your feed.');
       }
+      
+      // Remove the note from the list
+      setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+      
     } catch (error) {
       console.error(`Error ${action}ing to note:`, error);
-      // Optional: Add the note back if the API call fails
-      loadNotes();
+      Alert.alert('Error', `Failed to ${action} note. Please try again.`);
+    }
+  };
+
+  // Admin function to simulate incoming note
+  const simulateIncomingNote = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const testNote: WhisprNote = {
+        id: `test-${Date.now()}`,
+        senderId: 'test-user-id',
+        content: 'This is a test note from admin! 🧪',
+        mood: 'excited',
+        status: 'active',
+        propagationCount: 0,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      // Add the test note to the current notes
+      setNotes(prevNotes => [testNote, ...prevNotes]);
+      
+      Alert.alert('Test Note Added', 'A test note has been added to your feed!');
+    } catch (error) {
+      console.error('Error simulating note:', error);
+      Alert.alert('Error', 'Failed to simulate note.');
     }
   };
 
@@ -165,6 +228,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate }) => {
           <Text style={styles.fabArrow}>→</Text>
         </LinearGradient>
       </TouchableOpacity>
+
+      {/* Navigation Menu */}
+      <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
     </View>
   );
 };
@@ -251,25 +317,29 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: 100,
+    paddingBottom: 150, // Increased to accommodate FAB above NavigationMenu
   },
   emptyIcon: {
     fontSize: 48,
     marginBottom: spacing.md,
   },
   emptyText: {
-    ...theme.typography.titleLarge,
+    fontSize: 18,
+    fontWeight: '600' as const,
+    lineHeight: 24,
     color: theme.colors.onSurface,
     marginBottom: spacing.sm,
   },
   emptySubtext: {
-    ...theme.typography.bodyMedium,
+    fontSize: 14,
+    fontWeight: '400' as const,
+    lineHeight: 20,
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
   },
   fabWrapper: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 100, // Position above the NavigationMenu (70px height + 30px margin)
     left: spacing.lg,
     right: spacing.lg,
   },
@@ -292,10 +362,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     flex: 1,
     textAlign: 'center',
+    fontWeight: '600' as const,
   },
   fabArrow: {
     ...theme.typography.titleMedium,
     color: '#fff',
+    fontWeight: '600' as const,
   },
 });
 
