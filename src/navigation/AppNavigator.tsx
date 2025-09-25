@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
-import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
-import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
 import WhisprComposeScreen from '@/screens/WhisprComposeScreen';
 import BuddiesScreen from '@/screens/BuddiesScreen';
 import ChatScreen from '@/screens/ChatScreen';
@@ -112,20 +110,12 @@ const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => v
       setIsConnecting(true);
       setConnectionStatus('Testing database connection...');
       
-      // First test the database connection
-      const { testSupabaseConnection } = await import('@/utils/testSupabase');
-      const testResult = await testSupabaseConnection();
-      
-      if (!testResult.success) {
-        setConnectionStatus(`Database test failed: ${testResult.error}`);
-        return;
-      }
-      
-      setConnectionStatus('Database connected! Creating user...');
+      // For now, skip database testing and create user directly
+      setConnectionStatus('Creating user...');
       
       // Create user directly using HTTP DatabaseService instead of Supabase client
-      const { HttpDatabaseService } = await import('@/services/httpDatabase');
-      const { generateAnonymousId } = await import('@/utils/helpers');
+      const HttpDatabaseService = require('@/services/httpDatabase').HttpDatabaseService;
+      const generateAnonymousId = require('@/utils/helpers').generateAnonymousId;
       
       const anonymousId = generateAnonymousId();
       const newUser = await HttpDatabaseService.createUser({
@@ -192,7 +182,7 @@ const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => v
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
-  const { isAuthenticated, isLoading, isProfileComplete, user, logout } = useAuth();
+  const { isAuthenticated, isLoading, user, logout } = useAuth();
   const { isAdminMode } = useAdmin();
 
   const navigate = (screen: string, params?: any) => {
@@ -205,7 +195,7 @@ const AppNavigator = () => {
   // When the user becomes authenticated, default to notes screen
   React.useEffect(() => {
     if (isAuthenticated) {
-      const authScreens = new Set(['welcome', 'signin', 'signup', 'mood', 'profileCompletion']);
+      const authScreens = new Set(['welcome', 'signin', 'signup', 'mood']);
       if (authScreens.has(currentScreen)) {
         setCurrentScreen('notes');
       }
@@ -225,17 +215,6 @@ const AppNavigator = () => {
     return <AdminPanel onClose={() => navigate('welcome')} />;
   }
 
-  if (isAuthenticated && isProfileComplete === false) {
-    console.log('AppNavigator - Rendering ProfileCompletionScreen with user:', user);
-    return (
-      <ProfileCompletionScreen
-        onComplete={() => navigate('notes')}
-        onSkip={() => navigate('notes')}
-        user={user}
-        onNavigate={navigate}
-      />
-    );
-  }
 
   switch (currentScreen) {
     case 'welcome':
@@ -256,17 +235,8 @@ const AppNavigator = () => {
       );
     case 'mood':
       return <MoodSelectionScreen onNavigate={navigate} />;
-    case 'profileCompletion':
-      return (
-        <ProfileCompletionScreen
-          onComplete={() => navigate('notes')}
-          onSkip={() => navigate('notes')}
-          user={user}
-          onNavigate={navigate}
-        />
-      );
     case 'notes':
-      return <WhisprNotesScreen onNavigate={navigate} user={user} />;
+      return <HomeScreen onNavigate={navigate} user={user} />;
     case 'compose':
       return <WhisprComposeScreen onNavigate={navigate} user={user} />;
     case 'buddies':
@@ -661,10 +631,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     backgroundColor: '#FFB84D', // Sample gradient color
     ...theme.shadows.sm,
-  },
-  moodEmoji: {
-    fontSize: 12,
-    marginRight: 4,
   },
   moodText: {
     fontSize: 10,
