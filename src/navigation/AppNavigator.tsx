@@ -54,13 +54,6 @@ const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void })
             >
               <Text style={styles.signInButtonText}>Sign In</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.primaryButton} 
-              onPress={() => onNavigate('mood')}
-            >
-              <Text style={styles.primaryButtonText}>Start Whispr-ing</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.featuresContainer}>
@@ -439,27 +432,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#2563eb',
-  },
-  primaryButton: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-    borderRadius: 12,
-    width: '100%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  primaryButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
   },
   featuresContainer: {
     flexDirection: 'row',
