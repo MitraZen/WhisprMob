@@ -94,7 +94,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const handleClearChat = (buddyId: string) => {
     Alert.alert(
       'Clear Chat',
-      'Are you sure you want to clear all messages with this buddy?',
+      'Are you sure you want to clear all messages with this buddy? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -102,13 +102,17 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log('Starting to clear chat for buddy:', buddyId);
               await BuddiesService.clearChatHistory(buddyId);
+              
               // Reload buddies to reflect the change
               await loadBuddies();
+              
               Alert.alert('Success', 'Chat history cleared successfully');
             } catch (error) {
               console.error('Error clearing chat:', error);
-              Alert.alert('Error', 'Failed to clear chat history');
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+              Alert.alert('Error', `Failed to clear chat history: ${errorMessage}`);
             }
           }
         },

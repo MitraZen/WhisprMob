@@ -331,10 +331,12 @@ export class BuddiesService {
   // Clear chat history with a buddy
   static async clearChatHistory(buddyId: string): Promise<boolean> {
     try {
-      await this.rpcRequest('clear_chat_history', {
-        buddy_id_param: buddyId
-      });
-
+      console.log('Clearing chat history for buddy:', buddyId);
+      
+      // Delete all messages for this buddy
+      const result = await this.request('DELETE', `buddy_messages?buddy_id=eq.${buddyId}`);
+      
+      console.log('Chat history cleared successfully:', result);
       return true;
     } catch (error) {
       console.error('Error clearing chat history:', error);
