@@ -180,18 +180,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
                >
                  <Text style={styles.moreButtonText}>⋯</Text>
                </TouchableOpacity>
-               
-        {/* Debug button - remove in production */}
-        <TouchableOpacity 
-          style={styles.debugButton}
-          onPress={() => {
-            BuddiesService.testDatabase();
-            BuddiesService.testMessageRetrieval(buddy.id);
-            BuddiesService.testSendMessage(buddy.id, user.id);
-          }}
-        >
-          <Text style={styles.debugButtonText}>🐛</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -381,16 +369,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
-  debugButton: {
-    padding: spacing.sm,
-    marginLeft: spacing.sm,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.md,
-  },
-  debugButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
   messagesContainer: {
     flex: 1,
   },
@@ -483,29 +461,35 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     backgroundColor: theme.colors.surface,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
+    ...theme.shadows.lg,
   },
   messageInput: {
     flex: 1,
     backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     fontSize: 16,
     color: theme.colors.onSurface,
-    maxHeight: 100,
+    maxHeight: 120,
+    minHeight: 44,
     textAlignVertical: 'top',
-    marginRight: spacing.sm,
+    marginRight: spacing.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   sendButton: {
     backgroundColor: theme.colors.primary,
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: borderRadius.full,
     justifyContent: 'center',
     alignItems: 'center',
+    ...theme.shadows.md,
   },
   sendButtonDisabled: {
     backgroundColor: '#9ca3af',

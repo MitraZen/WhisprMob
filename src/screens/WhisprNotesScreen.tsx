@@ -229,6 +229,13 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         )}
       </ScrollView>
 
+      {/* Demarcation Line */}
+      <View style={styles.demarcationContainer}>
+        <View style={styles.demarcationLine} />
+        <Text style={styles.demarcationText}>Send Your Note</Text>
+        <View style={styles.demarcationLine} />
+      </View>
+
       {/* Compose Area */}
       <View style={styles.composeContainer}>
         <View style={styles.moodSelector}>
@@ -246,14 +253,17 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           </ScrollView>
         </View>
         <View style={styles.messageInputContainer}>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="What's on your mind?"
-            placeholderTextColor="#9ca3af"
-            value={message}
-            onChangeText={setMessage}
-            multiline
-          />
+          <View style={styles.textInputWrapper}>
+            <TextInput
+              style={styles.messageInput}
+              placeholder="Share your thoughts with the world..."
+              placeholderTextColor="#9ca3af"
+              value={message}
+              onChangeText={setMessage}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
           <TouchableOpacity
             style={[styles.sendButton, (!message.trim() || !selectedMood || isSending) && styles.sendButtonDisabled]}
             onPress={handleSendNote}
@@ -338,11 +348,32 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 60 },
   emptyText: { fontSize: 18, fontWeight: '600', marginTop: spacing.md },
   emptySubtext: { fontSize: 14, color: '#9ca3af' },
+  demarcationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: theme.colors.background,
+  },
+  demarcationLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.colors.border,
+  },
+  demarcationText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    marginHorizontal: spacing.md,
+    backgroundColor: theme.colors.background,
+    paddingHorizontal: spacing.sm,
+  },
   composeContainer: {
     backgroundColor: theme.colors.surface,
-    padding: spacing.md,
+    padding: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
+    ...theme.shadows.lg,
   },
   moodSelector: { marginBottom: spacing.md },
   moodLabel: { fontSize: 14, fontWeight: '600', marginBottom: spacing.sm },
@@ -353,10 +384,28 @@ const styles = StyleSheet.create({
   },
   selectedMoodButton: { borderColor: theme.colors.primary, borderWidth: 2 },
   moodButtonEmoji: { fontSize: 20 },
-  messageInputContainer: { flexDirection: 'row', alignItems: 'flex-end' },
+  messageInputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-end',
+    gap: spacing.md,
+  },
+  textInputWrapper: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    minHeight: 80,
+  },
   messageInput: {
-    flex: 1, borderRadius: borderRadius.lg, padding: spacing.md,
-    backgroundColor: theme.colors.surfaceVariant, color: theme.colors.onSurface,
+    flex: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    backgroundColor: 'transparent',
+    color: theme.colors.onSurface,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: 'top',
   },
   sendButton: { marginLeft: spacing.sm, backgroundColor: theme.colors.primary, padding: spacing.md, borderRadius: borderRadius.lg },
   sendButtonDisabled: { backgroundColor: '#9ca3af' },
