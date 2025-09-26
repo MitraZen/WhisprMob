@@ -1209,4 +1209,80 @@ export class BuddiesService {
       console.error('Delete functionality test failed:', error);
     }
   }
+
+  /**
+   * Delete a buddy relationship (remove from buddies list)
+   */
+  static async deleteBuddy(buddyId: string, userId: string): Promise<boolean> {
+    try {
+      console.log('Deleting buddy relationship:', buddyId);
+      
+      // Delete the buddy relationship
+      const result = await this.request('DELETE', `buddies?id=eq.${buddyId}&user_id=eq.${userId}`);
+      console.log('Buddy relationship deleted successfully:', result);
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting buddy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Block a user (add to blocked users list)
+   */
+  static async blockUser(buddyUserId: string, userId: string): Promise<boolean> {
+    try {
+      console.log('Blocking user:', buddyUserId);
+      
+      // First, delete the buddy relationship
+      await this.deleteBuddy(buddyUserId, userId);
+      
+      // Add to blocked users (assuming there's a blocked_users table)
+      const blockData = {
+        user_id: userId,
+        blocked_user_id: buddyUserId,
+        blocked_at: new Date().toISOString(),
+        reason: 'User blocked'
+      };
+      
+      const result = await this.request('POST', 'blocked_users', blockData);
+      console.log('User blocked successfully:', result);
+      
+      return true;
+    } catch (error) {
+      console.error('Error blocking user:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unblock a user (remove from blocked users list)
+   */
+  static async unblockUser(buddyUserId: string, userId: string): Promise<boolean> {
+    try {
+      console.log('Unblocking user:', buddyUserId);
+      
+      const result = await this.request('DELETE', `blocked_users?user_id=eq.${userId}&blocked_user_id=eq.${buddyUserId}`);
+      console.log('User unblocked successfully:', result);
+      
+      return true;
+    } catch (error) {
+      console.error('Error unblocking user:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a user is blocked
+   */
+  static async isUserBlocked(buddyUserId: string, userId: string): Promise<boolean> {
+    try {
+      const result = await this.request('GET', `blocked_users?user_id=eq.${userId}&blocked_user_id=eq.${buddyUserId}`);
+      return result && result.length > 0;
+    } catch (error) {
+      console.error('Error checking if user is blocked:', error);
+      return false;
+    }
+  }
 }

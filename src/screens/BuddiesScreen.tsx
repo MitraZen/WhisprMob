@@ -120,6 +120,88 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     );
   };
 
+  const handleDeleteBuddy = (buddy: Buddy) => {
+    Alert.alert(
+      'Delete Buddy',
+      `Are you sure you want to remove ${buddy.name} from your buddies list? This will end your relationship and remove all chat history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('Deleting buddy:', buddy.id);
+              await BuddiesService.deleteBuddy(buddy.id, user.id);
+              
+              // Reload buddies to reflect the change
+              await loadBuddies();
+              
+              Alert.alert('Success', `${buddy.name} has been removed from your buddies list`);
+            } catch (error) {
+              console.error('Error deleting buddy:', error);
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+              Alert.alert('Error', `Failed to delete buddy: ${errorMessage}`);
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleBlockUser = (buddy: Buddy) => {
+    Alert.alert(
+      'Block User',
+      `Are you sure you want to block ${buddy.name}? This will remove them from your buddies list and prevent them from contacting you.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Block', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('Blocking user:', buddy.buddyUserId);
+              await BuddiesService.blockUser(buddy.buddyUserId || buddy.id, user.id);
+              
+              // Reload buddies to reflect the change
+              await loadBuddies();
+              
+              Alert.alert('Success', `${buddy.name} has been blocked`);
+            } catch (error) {
+              console.error('Error blocking user:', error);
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+              Alert.alert('Error', `Failed to block user: ${errorMessage}`);
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleBuddyOptions = (buddy: Buddy) => {
+    Alert.alert(
+      'Buddy Options',
+      `What would you like to do with ${buddy.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete Buddy', 
+          style: 'destructive',
+          onPress: () => handleDeleteBuddy(buddy)
+        },
+        { 
+          text: 'Block User', 
+          style: 'destructive',
+          onPress: () => handleBlockUser(buddy)
+        },
+        { 
+          text: 'Clear Chat', 
+          onPress: () => handleClearChat(buddy.id)
+        },
+      ]
+    );
+  };
+
   const formatLastSeen = (lastMessageTime?: Date): string => {
     if (!lastMessageTime) return 'No messages';
     
@@ -212,6 +294,8 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
               key={buddy.id}
               style={styles.buddyCard}
               onPress={() => handleChatPress(buddy)}
+              onLongPress={() => handleBuddyOptions(buddy)}
+              delayLongPress={500}
             >
               <View style={styles.buddyHeader}>
                 <View style={styles.buddyInfo}>
@@ -250,6 +334,12 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                     onPress={() => handleClearChat(buddy.id)}
                   >
                     <Text style={styles.actionButtonText}>🗑️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleBuddyOptions(buddy)}
+                  >
+                    <Text style={styles.actionButtonText}>⋯</Text>
                   </TouchableOpacity>
                 </View>
                 

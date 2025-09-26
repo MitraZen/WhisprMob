@@ -176,4 +176,42 @@ class PermissionManager(private val context: Context) {
         val status = getAllPermissionStatus()
         return status.filter { !it.value }.keys.toList()
     }
+    
+    fun shouldShowRequestRationale(permissionType: String, activity: Activity): Boolean {
+        return when (permissionType) {
+            "notifications" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    false
+                }
+            }
+            "storage" -> {
+                STORAGE_PERMISSIONS.any { permission ->
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+                }
+            }
+            "camera" -> {
+                CAMERA_PERMISSIONS.any { permission ->
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+                }
+            }
+            "location" -> {
+                LOCATION_PERMISSIONS.any { permission ->
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+                }
+            }
+            "contacts" -> {
+                CONTACT_PERMISSIONS.any { permission ->
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+                }
+            }
+            "phone" -> {
+                PHONE_PERMISSIONS.any { permission ->
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+                }
+            }
+            else -> false
+        }
+    }
 }
