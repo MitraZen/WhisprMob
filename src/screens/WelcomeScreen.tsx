@@ -5,56 +5,118 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  Animated,
 } from 'react-native';
 
 import { theme, spacing } from '@/utils/theme';
 
 const { width, height } = Dimensions.get('window');
 
-const WelcomeScreen: React.FC = () => {
-  const navigation = useNavigation();
+interface WelcomeScreenProps {
+  onNavigate: (screen: string) => void;
+}
 
-  const handleGetStarted = () => {
-    navigation.navigate('MoodSelection' as never);
-  };
+const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNavigate }) => {
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(50)).current;
+
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   return (
     <View style={styles.container}>
       <View style={styles.gradient}>
-        <View style={styles.content}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>💬</Text>
-            <Text style={styles.appName}>Whispr</Text>
-            <Text style={styles.tagline}>Send anonymous messages to the world{'\n'}and discover meaningful connections</Text>
+        <Animated.View 
+          style={[
+            styles.content,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          {/* Header Section */}
+          <View style={styles.headerSection}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.logo}>💬</Text>
+              <Text style={styles.appName}>Whispr</Text>
+              <Text style={styles.tagline}>
+                Connect anonymously through{'\n'}mood-based conversations
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.featuresContainer}>
-            <View style={styles.feature}>
+          {/* Features Section */}
+          <View style={styles.featuresSection}>
+            <View style={styles.featureCard}>
               <Text style={styles.featureIcon}>🔒</Text>
-              <Text style={styles.featureText}>Anonymous</Text>
-              <Text style={styles.featureSubtext}>Share without revealing identity</Text>
+              <View style={styles.featureContent}>
+                <Text style={styles.featureTitle}>Anonymous</Text>
+                <Text style={styles.featureDescription}>
+                  Share your thoughts without revealing your identity
+                </Text>
+              </View>
             </View>
-            <View style={styles.feature}>
+
+            <View style={styles.featureCard}>
               <Text style={styles.featureIcon}>💭</Text>
-              <Text style={styles.featureText}>Mood-Based</Text>
-              <Text style={styles.featureSubtext}>Connect through emotions</Text>
+              <View style={styles.featureContent}>
+                <Text style={styles.featureTitle}>Mood-Based</Text>
+                <Text style={styles.featureDescription}>
+                  Connect with others who share your current emotional state
+                </Text>
+              </View>
             </View>
-            <View style={styles.feature}>
+
+            <View style={styles.featureCard}>
               <Text style={styles.featureIcon}>🛡️</Text>
-              <Text style={styles.featureText}>Safe & Secure</Text>
-              <Text style={styles.featureSubtext}>Protected conversations</Text>
+              <View style={styles.featureContent}>
+                <Text style={styles.featureTitle}>Safe & Secure</Text>
+                <Text style={styles.featureDescription}>
+                  Protected conversations with built-in safety features
+                </Text>
+              </View>
             </View>
           </View>
 
-          <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
-            <Text style={styles.buttonText}>Start Whispr-ing</Text>
-          </TouchableOpacity>
+          {/* Action Section */}
+          <View style={styles.actionSection}>
+            <TouchableOpacity 
+              style={styles.primaryButton} 
+              onPress={() => onNavigate('signup')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.primaryButtonText}>Get Started</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.secondaryButton} 
+              onPress={() => onNavigate('signin')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryButtonText}>Already have an account?</Text>
+            </TouchableOpacity>
+          </View>
 
-          <Text style={styles.disclaimer}>
-            Connect with others who share your current mood. 
-            Your identity remains completely anonymous.
-          </Text>
-        </View>
+          {/* Footer */}
+          <View style={styles.footerSection}>
+            <Text style={styles.footerText}>
+              Join thousands of users sharing anonymous messages
+            </Text>
+          </View>
+        </Animated.View>
       </View>
     </View>
   );
@@ -71,85 +133,123 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xl,
   },
+  
+  // Header Section
+  headerSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: height * 0.08,
+  },
   logoContainer: {
     alignItems: 'center',
-    marginTop: height * 0.1,
   },
   logo: {
-    fontSize: 80,
+    fontSize: 72,
     marginBottom: spacing.md,
   },
   appName: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: 'bold',
     color: 'white',
     marginBottom: spacing.sm,
+    letterSpacing: 1,
   },
   tagline: {
-    fontSize: 18,
+    fontSize: 16,
     color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
+    fontWeight: '400',
   },
-  featuresContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  feature: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: spacing.lg,
+
+  // Features Section
+  featuresSection: {
+    flex: 1.2,
+    justifyContent: 'center',
     paddingVertical: spacing.lg,
-    borderRadius: 25,
-    width: '100%',
+  },
+  featureCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   featureIcon: {
-    fontSize: 32,
-    marginBottom: spacing.sm,
-  },
-  featureText: {
-    fontSize: 18,
-    color: 'white',
-    fontWeight: 'bold',
-    marginBottom: spacing.xs,
-  },
-  featureSubtext: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 28,
+    marginRight: spacing.md,
+    width: 40,
     textAlign: 'center',
   },
-  button: {
+  featureContent: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  featureDescription: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 18,
+  },
+
+  // Action Section
+  actionSection: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  primaryButton: {
     backgroundColor: 'white',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    borderRadius: 30,
+    borderRadius: 25,
     width: '100%',
     alignItems: 'center',
+    marginBottom: spacing.md,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 4,
     },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 6,
   },
-  buttonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: theme.colors.primary,
   },
-  disclaimer: {
+  secondaryButton: {
+    paddingVertical: spacing.sm,
+  },
+  secondaryButtonText: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
+    textDecorationLine: 'underline',
+  },
+
+  // Footer Section
+  footerSection: {
+    alignItems: 'center',
+    paddingBottom: spacing.lg,
+  },
+  footerText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
     textAlign: 'center',
-    lineHeight: 20,
-    marginTop: spacing.lg,
+    lineHeight: 16,
   },
 });
 
