@@ -11,7 +11,6 @@ import {
 import { useAuth } from '@/store/AuthContext';
 import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
 import { MoodType } from '@/types';
-import { GradientBackground } from '@/components/GradientBackground';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();

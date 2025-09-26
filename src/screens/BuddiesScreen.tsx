@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, Buddy } from '@/services/buddiesService';
@@ -62,8 +62,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   };
 
   const filteredBuddies = buddies.filter(buddy => {
-    const matchesSearch = buddy.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         buddy.initials.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = buddy.name.toLowerCase().includes(searchQuery.toLowerCase());
     
     switch (filter) {
       case 'unread':
@@ -149,33 +148,6 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
       <View style={styles.header}>
         <Text style={styles.title}>Buddies</Text>
         <Text style={styles.subtitle}>Your connections and conversations</Text>
-        
-        <View style={styles.navigationButtons}>
-          <TouchableOpacity 
-            style={styles.navButton}
-            onPress={() => onNavigate('notes')}
-          >
-            <Text style={styles.navButtonText}>📝 Notes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.navButton, styles.activeNavButton]}
-            onPress={() => onNavigate('buddies')}
-          >
-            <Text style={styles.activeNavButtonText}>👥 Buddies</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navButton}
-            onPress={() => onNavigate('profile')}
-          >
-            <Text style={styles.navButtonText}>👤 Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navButton}
-            onPress={() => onNavigate('settings')}
-          >
-            <Text style={styles.navButtonText}>⚙️ Settings</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -241,9 +213,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                 <View style={styles.buddyInfo}>
                   <View style={styles.nameContainer}>
                     <Text style={styles.buddyName}>{buddy.name}</Text>
-                    {buddy.isPinned && <Text style={styles.pinIcon}>📌</Text>}
                   </View>
-                  <Text style={styles.buddyUsername}>{buddy.initials}</Text>
                 </View>
                 
                 <View style={styles.buddyStatus}>
@@ -302,48 +272,36 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   header: {
-    backgroundColor: theme.colors.primary,
-    paddingTop: spacing.xl,
+    backgroundColor: '#7c3aed',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '800',
     color: '#fff',
     textAlign: 'center',
-    marginBottom: spacing.xs,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.9)',
     textAlign: 'center',
+    fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
     marginBottom: spacing.lg,
-  },
-  navigationButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  navButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.md,
-  },
-  activeNavButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  navButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  activeNavButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   searchContainer: {
     padding: spacing.md,
@@ -388,24 +346,24 @@ const styles = StyleSheet.create({
   },
   buddiesList: {
     flex: 1,
-    padding: spacing.md,
+    padding: spacing.sm,
   },
   buddyCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: borderRadius.sm,
+    padding: spacing.xs,
+    marginBottom: spacing.xs,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
   },
   buddyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.sm,
+    alignItems: 'center',
+    marginBottom: 2,
   },
   buddyInfo: {
     flex: 1,
@@ -415,26 +373,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buddyName: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '600',
     color: theme.colors.onSurface,
     marginRight: spacing.xs,
   },
   pinIcon: {
-    fontSize: 12,
+    fontSize: 10,
   },
   buddyUsername: {
-    fontSize: 14,
+    fontSize: 10,
     color: '#9ca3af',
   },
   buddyStatus: {
     alignItems: 'flex-end',
   },
   statusIndicator: {
-    width: 8,
-    height: 8,
+    width: 6,
+    height: 6,
     borderRadius: borderRadius.full,
-    marginBottom: spacing.xs,
+    marginBottom: 2,
   },
   onlineIndicator: {
     backgroundColor: '#10b981',
@@ -443,14 +401,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#9ca3af',
   },
   lastSeen: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#9ca3af',
   },
   lastMessage: {
-    fontSize: 14,
+    fontSize: 11,
     color: theme.colors.onSurface,
-    marginBottom: spacing.sm,
-    lineHeight: 20,
+    marginBottom: 2,
+    lineHeight: 15,
   },
   buddyActions: {
     flexDirection: 'row',
@@ -459,26 +417,26 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   actionButton: {
-    padding: spacing.xs,
+    padding: 2,
   },
   actionButtonText: {
-    fontSize: 16,
+    fontSize: 14,
   },
   unreadBadge: {
     backgroundColor: theme.colors.primary,
     borderRadius: borderRadius.full,
-    minWidth: 20,
-    height: 20,
+    minWidth: 14,
+    height: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 3,
   },
   unreadCount: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: 'bold',
   },
   emptyState: {
