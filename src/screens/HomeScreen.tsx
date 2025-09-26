@@ -6,231 +6,130 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
-  ActivityIndicator,
-  Alert,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+
 import { useAuth } from '@/store/AuthContext';
-import { useAdmin } from '@/store/AdminContext';
-import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
-import { realtimeService } from '@/services/realtimeService';
-import { BuddiesService, WhisprNote } from '@/services/buddiesService';
-import { NoteCard } from '@/components/NoteCard';
-import { NavigationMenu } from '@/components/NavigationMenu';
+import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
+import { MoodType } from '@/types';
+import { GradientBackground } from '@/components/GradientBackground';
 
-interface HomeScreenProps {
-  onNavigate: (screen: string) => void;
-  user?: any;
-}
-
-const EmptyState = () => (
-  <View style={styles.centeredContainer}>
-    <Text style={styles.emptyIcon}>💭</Text>
-    <Text style={styles.emptyText}>No new Whisprs</Text>
-    <Text style={styles.emptySubtext}>Pull down to check again!</Text>
-  </View>
-);
-
-const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate, user: propUser }) => {
-  const { user: authUser } = useAuth();
-  const { enableAdminMode } = useAdmin();
-  const user = propUser || authUser;
-  
+const HomeScreen: React.FC = () => {
+  const navigation = useNavigation();
+  const { user, updateMood } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [notes, setNotes] = useState<WhisprNote[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isNewUser, setIsNewUser] = useState(false);
-  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (user?.id) {
-      console.log('Loading notes for user:', user.id);
-      // Temporarily disable real-time service to prevent crashes
-      loadNotes();
-    }
-  }, [user?.id]);
-
-  // Auto-refresh notes every 15 seconds
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const interval = setInterval(() => {
-      loadNotes();
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [user?.id]);
-
-  const loadNotes = async () => {
-    if (!user?.id) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      console.log('Loading Whispr notes for user:', user.id);
-      
-      // Load real notes from database
-      const notesData = await BuddiesService.getWhisprNotes(user.id);
-      console.log(`Loaded ${notesData.length} real notes from database`);
-      
-      setNotes(notesData);
-      setIsNewUser(notesData.length === 0);
-      
-    } catch (err) {
-      console.error('Error loading notes:', err);
-      setError('Failed to load notes - using offline mode');
-      setNotes([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadNotes();
-    setRefreshing(false);
+    // Simulate refresh - in real app, this would fetch new data
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const handleAction = async (action: 'listen' | 'reject', noteId: string) => {
-    if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated.');
-      return;
-    }
-
-    try {
-      if (action === 'listen') {
-        console.log('Listening to note:', noteId);
-        await BuddiesService.listenToNote(noteId, user.id);
-        Alert.alert('Note Listened! 👂', 'You\'ve listened to this note.');
-      } else {
-        console.log('Rejecting note:', noteId);
-        await BuddiesService.rejectNote(noteId, user.id);
-        Alert.alert('Note Rejected', 'This note has been removed from your feed.');
-      }
-      
-      // Remove the note from the list
-      setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
-      
-    } catch (error) {
-      console.error(`Error ${action}ing to note:`, error);
-      Alert.alert('Error', `Failed to ${action} note. Please try again.`);
-    }
+  const handleMoodChange = () => {
+    navigation.navigate('MoodSelection' as never);
   };
 
-  // Admin function to simulate incoming note
-  const simulateIncomingNote = async () => {
-    if (!user?.id) return;
-    
-    try {
-      const testNote: WhisprNote = {
-        id: `test-${Date.now()}`,
-        senderId: 'test-user-id',
-        content: 'This is a test note from admin! 🧪',
-        mood: 'excited',
-        status: 'active',
-        propagationCount: 0,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      
-      // Add the test note to the current notes
-      setNotes(prevNotes => [testNote, ...prevNotes]);
-      
-      Alert.alert('Test Note Added', 'A test note has been added to your feed!');
-    } catch (error) {
-      console.error('Error simulating note:', error);
-      Alert.alert('Error', 'Failed to simulate note.');
-    }
+  const handleFindConnections = () => {
+    navigation.navigate('Connections' as never);
+  };
+
+  const handleViewMessages = () => {
+    navigation.navigate('Messages' as never);
   };
 
   if (!user) {
     return (
-      <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+      <View style={styles.container}>
+        <Text>Loading...</Text>
       </View>
     );
   }
 
+  const currentMoodConfig = moodConfig[user.mood] || { emoji: '😊', color: '#fbbf24', description: 'Unknown mood' };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <LinearGradient
-        colors={['#8B5CF6', '#A78BFA', '#C4B5FD']}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <View style={styles.headerContent}>
-          <View style={styles.titleContainer}>
-            <Text style={styles.whisperIcon}>💬</Text>
-            <Text style={styles.title}>Whispr</Text>
-            <Text style={styles.titleAccent}>Notes</Text>
-          </View>
-          <Text style={styles.subtitle}>Share your thoughts anonymously with the world</Text>
-          <View style={styles.floatingElements}>
-            <Text style={styles.floatingIcon1}>✨</Text>
-            <Text style={styles.floatingIcon2}>🌟</Text>
-            <Text style={styles.floatingIcon3}>💫</Text>
-          </View>
-        </View>
-      </LinearGradient>
-
-      {/* Notes List */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[theme.colors.primary]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {isLoading ? (
-          <ActivityIndicator
-            size="large"
-            color={theme.colors.primary}
-            style={{ marginTop: 50 }}
-          />
-        ) : notes.length === 0 ? (
-          <EmptyState />
-        ) : (
-          notes.map(note => (
-            <NoteCard
-              key={note.id}
-              id={note.id}
-              text={note.content}
-              tag="🌸 Positive Vibe"
-              timeAgo="1m ago"
-              onListen={() => handleAction('listen', note.id)}
-              onReject={() => handleAction('reject', note.id)}
-            />
-          ))
-        )}
+        {/* Current Mood Section */}
+        <View style={styles.moodSection}>
+          <Text style={styles.sectionTitle}>Your Current Mood</Text>
+          <View style={styles.currentMoodCard}>
+            <Text style={styles.moodEmoji}>{currentMoodConfig.emoji}</Text>
+            <Text style={styles.moodName}>
+              {user.mood.charAt(0).toUpperCase() + user.mood.slice(1)}
+            </Text>
+            <Text style={styles.moodDescription}>
+              {currentMoodConfig.description}
+            </Text>
+            <TouchableOpacity style={styles.changeMoodButton} onPress={handleMoodChange}>
+              <Text style={styles.changeMoodButtonText}>Change Mood</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          
+          <TouchableOpacity style={styles.actionCard} onPress={handleFindConnections}>
+            <View style={styles.actionIcon}>
+              <Text style={styles.actionEmoji}>🔍</Text>
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Find Connections</Text>
+              <Text style={styles.actionDescription}>
+                Connect with others who share your mood
+              </Text>
+            </View>
+            <Text style={styles.actionArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard} onPress={handleViewMessages}>
+            <View style={styles.actionIcon}>
+              <Text style={styles.actionEmoji}>💬</Text>
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>View Messages</Text>
+              <Text style={styles.actionDescription}>
+                Check your anonymous conversations
+              </Text>
+            </View>
+            <Text style={styles.actionArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Stats Section */}
+        <View style={styles.statsSection}>
+          <Text style={styles.sectionTitle}>Your Anonymous Journey</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Connections</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Messages</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>1</Text>
+              <Text style={styles.statLabel}>Days Active</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Privacy Notice */}
+        <View style={styles.privacySection}>
+          <Text style={styles.privacyTitle}>🔒 Your Privacy</Text>
+          <Text style={styles.privacyText}>
+            Your identity remains completely anonymous. All messages are encrypted 
+            and your personal information is never stored or shared.
+          </Text>
+        </View>
       </ScrollView>
-
-      {/* Gradient Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fabWrapper}
-        onPress={() => onNavigate('compose')}
-        activeOpacity={0.9}
-      >
-        <LinearGradient
-          colors={['#A78BFA', '#8B5CF6']}
-          style={styles.fab}
-        >
-          <Text style={styles.fabIcon}>✨</Text>
-          <Text style={styles.fabText}>Start Whispr-ing</Text>
-          <Text style={styles.fabArrow}>→</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {/* Navigation Menu */}
-      <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
     </View>
   );
 };
@@ -238,137 +137,150 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate, user: propUser }) =
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  centeredContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    ...theme.shadows.lg,
-  },
-  headerContent: {
-    alignItems: 'center',
-    position: 'relative',
-  },
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  whisperIcon: {
-    fontSize: 28,
-    marginRight: 8,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#fff',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  titleAccent: {
-    fontSize: 32,
-    fontWeight: '300',
-    color: '#fff',
-    marginLeft: 4,
-    opacity: 0.9,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-    fontWeight: '500',
-    lineHeight: 22,
-  },
-  floatingElements: {
-    position: 'absolute',
-    top: -10,
-    left: 0,
-    right: 0,
-    height: 40,
-    justifyContent: 'space-between',
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-  },
-  floatingIcon1: {
-    fontSize: 20,
-    opacity: 0.7,
-    transform: [{ rotate: '-15deg' }],
-  },
-  floatingIcon2: {
-    fontSize: 24,
-    opacity: 0.8,
-    transform: [{ rotate: '10deg' }],
-  },
-  floatingIcon3: {
-    fontSize: 18,
-    opacity: 0.6,
-    transform: [{ rotate: '-5deg' }],
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: 150, // Increased to accommodate FAB above NavigationMenu
+    padding: spacing.lg,
   },
-  emptyIcon: {
-    fontSize: 48,
+  sectionTitle: {
+    ...theme.typography.headlineSmall,
+    color: theme.colors.onSurface,
     marginBottom: spacing.md,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600' as const,
-    lineHeight: 24,
-    color: theme.colors.onSurface,
+  moodSection: {
+    marginBottom: spacing.xl,
+  },
+  currentMoodCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    ...theme.shadows.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  moodEmoji: {
+    fontSize: 48,
     marginBottom: spacing.sm,
   },
-  emptySubtext: {
-    fontSize: 14,
-    fontWeight: '400' as const,
-    lineHeight: 20,
+  moodName: {
+    ...theme.typography.displaySmall,
+    color: theme.colors.onSurface,
+    marginBottom: spacing.xs,
+  },
+  moodDescription: {
+    ...theme.typography.bodyLarge,
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
+    marginBottom: spacing.md,
   },
-  fabWrapper: {
-    position: 'absolute',
-    bottom: 100, // Position above the NavigationMenu (70px height + 30px margin)
-    left: spacing.lg,
-    right: spacing.lg,
-  },
-  fab: {
+  changeMoodButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderRadius: borderRadius.lg,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.xl,
+    ...theme.shadows.sm,
+  },
+  changeMoodButtonText: {
+    ...theme.typography.labelLarge,
+    color: theme.colors.onPrimary,
+  },
+  actionsSection: {
+    marginBottom: spacing.xl,
+  },
+  actionCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: spacing.md,
+    ...theme.shadows.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  actionIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.full,
+    backgroundColor: `${theme.colors.primary}15`,
     justifyContent: 'center',
-    ...theme.shadows.lg,
+    alignItems: 'center',
+    marginRight: spacing.md,
   },
-  fabIcon: {
-    fontSize: 20,
-    marginRight: spacing.sm,
-    color: '#fff',
+  actionEmoji: {
+    fontSize: 28,
   },
-  fabText: {
-    ...theme.typography.titleMedium,
-    color: '#fff',
+  actionContent: {
     flex: 1,
-    textAlign: 'center',
-    fontWeight: '600' as const,
   },
-  fabArrow: {
-    ...theme.typography.titleMedium,
-    color: '#fff',
-    fontWeight: '600' as const,
+  actionTitle: {
+    ...theme.typography.titleLarge,
+    color: theme.colors.onSurface,
+    marginBottom: spacing.xs,
+  },
+  actionDescription: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onSurfaceVariant,
+  },
+  actionArrow: {
+    fontSize: 24,
+    color: theme.colors.primary,
+  },
+  statsSection: {
+    marginBottom: spacing.xl,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: theme.colors.onSurface,
+    textAlign: 'center',
+  },
+  privacySection: {
+    backgroundColor: `${theme.colors.primary}10`,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.primary,
+  },
+  privacyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.primary,
+    marginBottom: spacing.sm,
+  },
+  privacyText: {
+    fontSize: 14,
+    color: theme.colors.onSurface,
+    lineHeight: 20,
   },
 });
 
 export default HomeScreen;
+
+

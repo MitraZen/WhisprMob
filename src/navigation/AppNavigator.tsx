@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { theme, spacing } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
-import WhisprComposeScreen from '@/screens/WhisprComposeScreen';
+import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
+import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
 import BuddiesScreen from '@/screens/BuddiesScreen';
 import ChatScreen from '@/screens/ChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import AdminPanel from '@/screens/AdminPanel';
-import HomeScreen from '@/screens/HomeScreen'; // Import your new HomeScreen
 import { useAuth } from '@/store/AuthContext';
 import { useAdmin } from '@/store/AdminContext';
 
@@ -55,6 +55,12 @@ const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void })
               <Text style={styles.signInButtonText}>Sign In</Text>
             </TouchableOpacity>
             
+            <TouchableOpacity 
+              style={styles.primaryButton} 
+              onPress={() => onNavigate('mood')}
+            >
+              <Text style={styles.primaryButtonText}>Start Whispr-ing</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.featuresContainer}>
@@ -110,12 +116,20 @@ const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => v
       setIsConnecting(true);
       setConnectionStatus('Testing database connection...');
       
-      // For now, skip database testing and create user directly
-      setConnectionStatus('Creating user...');
+      // First test the database connection
+      const { testSupabaseConnection } = await import('@/utils/testSupabase');
+      const testResult = await testSupabaseConnection();
+      
+      if (!testResult.success) {
+        setConnectionStatus(`Database test failed: ${testResult.error}`);
+        return;
+      }
+      
+      setConnectionStatus('Database connected! Creating user...');
       
       // Create user directly using HTTP DatabaseService instead of Supabase client
-      const HttpDatabaseService = require('@/services/httpDatabase').HttpDatabaseService;
-      const generateAnonymousId = require('@/utils/helpers').generateAnonymousId;
+      const { HttpDatabaseService } = await import('@/services/httpDatabase');
+      const { generateAnonymousId } = await import('@/utils/helpers');
       
       const anonymousId = generateAnonymousId();
       const newUser = await HttpDatabaseService.createUser({
@@ -177,12 +191,52 @@ const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => v
   );
 };
 
-// HomeScreen is now imported from @/screens/HomeScreen
+const HomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
+  return (
+    <View style={styles.container}>
+      <View style={styles.whiteContainer}>
+        <View style={styles.content}>
+          <Text style={styles.screenTitle}>Welcome to Whispr! 🎉</Text>
+          <Text style={styles.screenSubtitle}>
+            You're now connected to the anonymous messaging network
+          </Text>
+          
+          <View style={styles.homeFeatureCard}>
+            <Text style={styles.cardTitle}>🏠 Home</Text>
+            <Text style={styles.cardText}>Your dashboard for anonymous connections</Text>
+          </View>
+          
+          <View style={styles.homeFeatureCard}>
+            <Text style={styles.cardTitle}>💬 Messages</Text>
+            <Text style={styles.cardText}>Chat with anonymous users sharing your mood</Text>
+          </View>
+          
+          <View style={styles.homeFeatureCard}>
+            <Text style={styles.cardTitle}>👥 Connections</Text>
+            <Text style={styles.cardText}>Find and connect with like-minded people</Text>
+          </View>
+          
+          <View style={styles.homeFeatureCard}>
+            <Text style={styles.cardTitle}>👤 Profile</Text>
+            <Text style={styles.cardText}>Manage your anonymous profile and settings</Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.logoutButton} 
+            onPress={() => onNavigate('welcome')}
+          >
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
 
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
-  const { isAuthenticated, isLoading, user, logout } = useAuth();
+  const { isAuthenticated, isLoading, isProfileComplete, user, logout } = useAuth();
   const { isAdminMode } = useAdmin();
 
   const navigate = (screen: string, params?: any) => {
@@ -195,7 +249,7 @@ const AppNavigator = () => {
   // When the user becomes authenticated, default to notes screen
   React.useEffect(() => {
     if (isAuthenticated) {
-      const authScreens = new Set(['welcome', 'signin', 'signup', 'mood']);
+      const authScreens = new Set(['welcome', 'signin', 'signup', 'mood', 'profileCompletion']);
       if (authScreens.has(currentScreen)) {
         setCurrentScreen('notes');
       }
@@ -215,6 +269,17 @@ const AppNavigator = () => {
     return <AdminPanel onClose={() => navigate('welcome')} />;
   }
 
+  if (isAuthenticated && isProfileComplete === false) {
+    console.log('AppNavigator - Rendering ProfileCompletionScreen with user:', user);
+    return (
+      <ProfileCompletionScreen
+        onComplete={() => navigate('notes')}
+        onSkip={() => navigate('notes')}
+        user={user}
+        onNavigate={navigate}
+      />
+    );
+  }
 
   switch (currentScreen) {
     case 'welcome':
@@ -235,10 +300,17 @@ const AppNavigator = () => {
       );
     case 'mood':
       return <MoodSelectionScreen onNavigate={navigate} />;
+    case 'profileCompletion':
+      return (
+        <ProfileCompletionScreen
+          onComplete={() => navigate('notes')}
+          onSkip={() => navigate('notes')}
+          user={user}
+          onNavigate={navigate}
+        />
+      );
     case 'notes':
-      return <HomeScreen onNavigate={navigate} user={user} />;
-    case 'compose':
-      return <WhisprComposeScreen onNavigate={navigate} user={user} />;
+      return <WhisprNotesScreen onNavigate={navigate} user={user} />;
     case 'buddies':
       if (isAuthenticated) return <BuddiesScreen onNavigate={navigate} user={user} />;
       return <WelcomeScreen onNavigate={navigate} />;
@@ -546,178 +618,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
-  },
-  // New HomeScreen styles
-  header: {
-    backgroundColor: '#7c3aed', // Purple color
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    ...theme.shadows.md,
-  },
-  headerGradient: {
-    backgroundColor: '#7c3aed', // Purple color to match header
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    ...theme.shadows.lg,
-  },
-  headerContent: {
-    alignItems: 'center',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center', // Center the title
-    width: '100%',
-  },
-  titleColumn: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  title: {
-    ...theme.typography.displaySmall,
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 2,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  subtitle: {
-    ...theme.typography.bodyLarge,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-    fontWeight: '500',
-  },
-  notesContainer: {
-    flex: 1,
-    padding: spacing.md,
-  },
-  noteCard: {
-    borderRadius: borderRadius.xl,
-    marginBottom: spacing.md,
-    marginHorizontal: spacing.sm,
-    backgroundColor: '#FFE066', // Sample gradient color
-    ...theme.shadows.md,
-    overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  noteCardInner: {
-    padding: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: borderRadius.xl,
-  },
-  noteHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  moodIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  noteMoodPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    backgroundColor: '#FFB84D', // Sample gradient color
-    ...theme.shadows.sm,
-  },
-  moodText: {
-    fontSize: 10,
-    color: '#fff',
-    fontWeight: '600',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  timestamp: {
-    fontSize: 10,
-    color: '#9ca3af',
-  },
-  noteContent: {
-    fontSize: 14,
-    color: theme.colors.onSurface,
-    lineHeight: 20,
-    marginBottom: spacing.sm,
-    fontWeight: '400',
-  },
-  noteActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'space-around',
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.full,
-    ...theme.shadows.sm,
-  },
-  listenButton: {
-    backgroundColor: '#10b981',
-  },
-  rejectButton: {
-    backgroundColor: '#ef4444',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: spacing.xs,
-  },
-  // Floating Action Button
-  fabButton: {
-    position: 'absolute',
-    bottom: 100, // Above navigation menu
-    left: '50%',
-    marginLeft: -100, // Half of button width to center
-    width: 200,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#7c3aed', // Purple color
-    ...theme.shadows.lg,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  fabContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: spacing.md,
-  },
-  fabIcon: {
-    fontSize: 20,
-    color: '#fff',
-    marginRight: spacing.sm,
-  },
-  fabText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-  },
-  fabArrow: {
-    fontSize: 18,
-    color: '#fff',
-    marginLeft: spacing.sm,
   },
 });
 

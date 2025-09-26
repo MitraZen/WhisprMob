@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
-// import LinearGradient from 'react-native-linear-gradient';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import LinearGradient from 'react-native-linear-gradient';
+import { theme } from '@/utils/theme';
 
 interface GradientBackgroundProps {
   children?: React.ReactNode;
@@ -41,11 +41,13 @@ export const GradientBackground: React.FC<GradientBackgroundProps> = ({
   };
 
   return (
-    <View
-      style={[styles.gradient, style, { backgroundColor: getGradientColors()[0] }]}
+    <LinearGradient
+      colors={getGradientColors()}
+      {...getGradientDirection()}
+      style={[styles.gradient, style]}
     >
       {children}
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -54,8 +56,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-
-
 
 
 

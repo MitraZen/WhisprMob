@@ -10,7 +10,7 @@ export const SUPABASE_CONFIG = {
   anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxWvgFuA62-0IVGejwg',
   
   // Optional: Service role key for admin operations
-  serviceRoleKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NzQ0MTQxNSwiZXhwIjoyMDczMDE3NDE1fQ.xzlB0HwNrnS0nG2oJCodOcTZqGNyHJHjez48UQK4Vl4',
+  serviceRoleKey: 'your-service-role-key-here',
 };
 
 // Instructions for getting your Supabase credentials:

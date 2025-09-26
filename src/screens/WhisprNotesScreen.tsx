@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
-import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/theme';
+import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
-import { notificationService } from '@/services/notificationService';
 
 interface WhisprNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -13,11 +13,13 @@ interface WhisprNotesScreenProps {
 }
 
 export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate, user }) => {
+  const [message, setMessage] = useState('');
+  const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
-  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const { enableAdminMode } = useAdmin();
 
   // Load notes from database
@@ -71,6 +73,50 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     }
   };
 
+  const handleSendNote = async () => {
+    if (!message.trim()) {
+      Alert.alert('Empty Message', 'Please enter a message to send.');
+      return;
+    }
+
+    if (!selectedMood) {
+      Alert.alert('No Mood Selected', 'Please select a mood for your message.');
+      return;
+    }
+
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
+
+    setIsSending(true);
+    const messageContent = message.trim();
+    const mood = selectedMood;
+    
+    // Clear form immediately for better UX
+    setMessage('');
+    setSelectedMood(null);
+
+    try {
+      console.log('Sending Whispr note:', { content: messageContent, mood, userId: user.id });
+      const noteId = await BuddiesService.sendWhisprNote(user.id, messageContent, mood);
+      console.log('Note sent successfully:', noteId);
+      
+      Alert.alert('Success', 'Your Whispr note has been sent! 🌟');
+      
+      // Reload notes to show the new one
+      await loadNotes();
+      
+    } catch (error) {
+      console.error('Error sending note:', error);
+      Alert.alert('Error', 'Failed to send note. Please try again.');
+      // Restore form data if sending failed
+      setMessage(messageContent);
+      setSelectedMood(mood);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const handleListen = async (noteId: string) => {
     if (!user?.id) {
@@ -82,19 +128,6 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       const result = await BuddiesService.listenToNote(noteId, user.id);
       
       if (result?.success) {
-        // Send notification for listening to a note (simulating receiving)
-        try {
-          const note = notes.find(n => n.id === noteId);
-          if (note) {
-            await notificationService.showNoteNotification(
-              'Note Listened! 👂',
-              `You've connected with ${note.sender_username || 'someone'}! Check your Buddies tab to start chatting.`
-            );
-          }
-        } catch (notificationError) {
-          console.warn('Failed to send note notification:', notificationError);
-        }
-        
         Alert.alert(
           'Note Listened! 👂', 
           'You\'ve connected with this person! Check your Buddies tab to start chatting.',
@@ -103,39 +136,14 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           ]
         );
         
-        // Remove the listened note from the list
-        setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+        // Reload notes to update the status
+        await loadNotes();
       } else {
         Alert.alert('Error', 'Failed to listen to note. Please try again.');
       }
     } catch (error) {
       console.error('Error listening to note:', error);
       Alert.alert('Error', 'Failed to listen to note. Please try again.');
-    }
-  };
-
-  const simulateIncomingNote = async () => {
-    const sampleNotes = [
-      "Feeling grateful today! 🌟",
-      "Having a wonderful day! ☀️",
-      "Life is beautiful! ✨",
-      "Feeling hopeful! 🌈",
-      "Today is amazing! 🎉",
-      "Feeling blessed! 🙏",
-      "Everything is going great! 🚀",
-      "Feeling positive! 💪"
-    ];
-    
-    const randomNote = sampleNotes[Math.floor(Math.random() * sampleNotes.length)];
-    
-    try {
-      await notificationService.showNoteNotification(
-        'New Whispr Note',
-        randomNote
-      );
-      Alert.alert('Simulation', `Simulated Whispr note: "${randomNote}"`);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to simulate note notification');
     }
   };
 
@@ -179,7 +187,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const handleLike = (noteId: string) => {
     setNotes(prev => prev.map(note => 
       note.id === noteId 
-        ? { ...note, likes: (note as any).likes ? (note as any).likes + 1 : 1 }
+        ? { ...note, likes: note.likes + 1 }
         : note
     ));
   };
@@ -189,62 +197,24 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     Alert.alert('Reply', 'Reply functionality coming soon!');
   };
 
-  const toggleNoteExpansion = (noteId: string) => {
-    setExpandedNotes(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(noteId)) {
-        newSet.delete(noteId);
-      } else {
-        newSet.add(noteId);
-      }
-      return newSet;
-    });
-  };
-
-  const getMoodGradient = (mood: string) => {
-    const gradients = {
-      happy: ['#FFE066', '#FFB84D'],
-      sad: ['#B3D9FF', '#87CEEB'],
-      excited: ['#FF6B6B', '#FF8E8E'],
-      calm: ['#A8E6CF', '#88D8A3'],
-      angry: ['#FFB3BA', '#FF9999'],
-      hopeful: ['#DDA0DD', '#E6E6FA'],
-      anxious: ['#F0E68C', '#F5DEB3'],
-      grateful: ['#98FB98', '#90EE90'],
-      lonely: ['#D3D3D3', '#C0C0C0'],
-      peaceful: ['#E0F6FF', '#B0E0E6'],
-    };
-    return gradients[mood as keyof typeof gradients] || ['#F0F0F0', '#E0E0E0'];
-  };
-
-  const truncateText = (text: string, maxLength: number = 80) => {
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-  };
-
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.header}>
-        <View style={styles.headerGradient}>
-          <View style={styles.headerContent}>
-            <View style={styles.titleRow}>
-              <View style={styles.titleColumn}>
-                <Text style={styles.title}>Whispr Notes</Text>
-                <Text style={styles.subtitle}>Send anonymous message to world</Text>
-              </View>
-            </View>
-          </View>
-          
-          {isNewUser && (
-            <View style={styles.newUserBanner}>
-              <Text style={styles.newUserBannerText}>
-                🎉 Welcome! You're seeing a limited set of notes. Listen to notes to discover more!
-              </Text>
-            </View>
-          )}
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Whispr Notes</Text>
+          <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
         </View>
+        
+        {isNewUser && (
+          <View style={styles.newUserBanner}>
+            <Text style={styles.newUserBannerText}>
+              🎉 Welcome! You're seeing a limited set of notes. Listen to notes to discover more!
+            </Text>
+          </View>
+        )}
       </View>
 
       <ScrollView style={styles.notesContainer} showsVerticalScrollIndicator={false}>
@@ -262,19 +232,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           </View>
         ) : notes.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <View style={styles.emptyIllustration}>
-              <Text style={styles.emptyIcon}>💭</Text>
-              <View style={styles.floatingBubbles}>
-                <Text style={styles.bubble1}>✨</Text>
-                <Text style={styles.bubble2}>🌟</Text>
-                <Text style={styles.bubble3}>💫</Text>
-              </View>
-            </View>
             <Text style={styles.emptyText}>No Whispr notes yet</Text>
-            <Text style={styles.emptySubtext}>Be the first to share your thoughts with the world!</Text>
-            <TouchableOpacity style={styles.createFirstNoteButton}>
-              <Text style={styles.createFirstNoteText}>Create your first note</Text>
-            </TouchableOpacity>
+            <Text style={styles.emptySubtext}>Be the first to share your thoughts!</Text>
           </View>
         ) : (
           <>
@@ -286,74 +245,89 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                 </Text>
               </View>
             )}
-                {notes.map((note) => {
-                  const isExpanded = expandedNotes.has(note.id);
-                  const gradient = getMoodGradient(note.mood);
-                  
-                  return (
-                    <TouchableOpacity 
-                      key={note.id} 
-                      style={[styles.noteCard, { backgroundColor: gradient[0] }]}
-                      onPress={() => toggleNoteExpansion(note.id)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.noteCardInner}>
-                        <View style={styles.noteHeader}>
-                          <View style={styles.moodIndicator}>
-                            <View style={[styles.noteMoodPill, { backgroundColor: gradient[1] }]}>
-                              <Text style={styles.moodEmoji}>
-                                {getMoodConfig(note.mood).emoji}
-                              </Text>
-                              <Text style={styles.moodText}>
-                                {getMoodConfig(note.mood).description}
-                              </Text>
-                            </View>
-                          </View>
-                          <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
-                        </View>
-                        
-                        <Text style={styles.noteContent}>
-                          {isExpanded ? note.content : truncateText(note.content)}
+                {notes.map((note) => (
+                  <View key={note.id} style={styles.noteCard}>
+                    <View style={styles.noteHeader}>
+                      <View style={styles.moodIndicator}>
+                        <Text style={styles.moodEmoji}>
+                          {getMoodConfig(note.mood).emoji}
                         </Text>
-                        
-                        {!isExpanded && note.content.length > 80 && (
-                          <Text style={styles.expandHint}>Tap to expand...</Text>
-                        )}
-                        
-                        <View style={styles.noteActions}>
-                          <TouchableOpacity 
-                            style={[styles.actionButton, styles.listenButton]}
-                            onPress={() => handleListen(note.id)}
-                          >
-                            <Text style={styles.actionButtonText}>👂 Listen</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity 
-                            style={[styles.actionButton, styles.rejectButton]}
-                            onPress={() => handleReject(note.id)}
-                          >
-                            <Text style={styles.actionButtonText}>❌ Reject</Text>
-                          </TouchableOpacity>
-                        </View>
+                        <Text style={styles.moodText}>
+                          {getMoodConfig(note.mood).description}
+                        </Text>
                       </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                      <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
+                    </View>
+                    
+                    <Text style={styles.noteContent}>{note.content}</Text>
+                    
+                    <View style={styles.noteActions}>
+                      <TouchableOpacity 
+                        style={styles.actionButton}
+                        onPress={() => handleListen(note.id)}
+                      >
+                        <Text style={styles.actionButtonText}>👂 Listen</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.actionButton}
+                        onPress={() => handleReject(note.id)}
+                      >
+                        <Text style={styles.actionButtonText}>❌ Reject</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
           </>
         )}
       </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity 
-        style={styles.fabButton}
-        onPress={() => onNavigate('compose')}
-        activeOpacity={0.8}
-      >
-        <View style={styles.fabContent}>
-          <Text style={styles.fabIcon}>✨</Text>
-          <Text style={styles.fabText}>Start Whispr-ing</Text>
-          <Text style={styles.fabArrow}>→</Text>
+      <View style={styles.composeContainer}>
+        <View style={styles.moodSelector}>
+          <Text style={styles.moodLabel}>Select your mood:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {Object.entries(moodConfig).map(([moodType, config]) => (
+              <TouchableOpacity
+                key={moodType}
+                style={[
+                  styles.moodButton,
+                  selectedMood === moodType && styles.selectedMoodButton,
+                ]}
+                onPress={() => setSelectedMood(moodType as MoodType)}
+                disabled={isSending}
+              >
+                <Text style={styles.moodButtonEmoji}>{config.emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
-      </TouchableOpacity>
+
+        <View style={styles.messageInputContainer}>
+          <TextInput
+            style={styles.messageInput}
+            placeholder="What's on your mind?"
+            placeholderTextColor="#9ca3af"
+            value={message}
+            onChangeText={setMessage}
+            multiline
+            maxLength={500}
+            editable={!isSending}
+          />
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (!message.trim() || !selectedMood || isSending) && styles.sendButtonDisabled,
+            ]}
+            onPress={handleSendNote}
+            disabled={!message.trim() || !selectedMood || isSending}
+          >
+            {isSending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.sendButtonText}>Send</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
       
       {/* Bottom Navigation Menu */}
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
@@ -364,61 +338,38 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   );
 };
 
-const { width } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
   },
   header: {
-    backgroundColor: '#7c3aed', // Purple color
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    ...theme.shadows.md,
-  },
-  headerGradient: {
-    backgroundColor: '#7c3aed', // Purple color to match header
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    backgroundColor: theme.colors.primary,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
     ...theme.shadows.lg,
   },
   headerContent: {
-    alignItems: 'center',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center', // Center the title
-    width: '100%',
-  },
-  titleColumn: {
-    flex: 1,
     alignItems: 'center',
   },
   title: {
     ...theme.typography.displaySmall,
     color: '#fff',
     textAlign: 'center',
-    marginBottom: 2,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    marginBottom: spacing.xs,
   },
   subtitle: {
     ...theme.typography.bodyLarge,
     color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
-    marginBottom: spacing.sm,
-    fontWeight: '500',
+    marginBottom: spacing.lg,
   },
   newUserBanner: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: spacing.sm,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
@@ -433,21 +384,15 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   noteCard: {
+    backgroundColor: theme.colors.surface,
     borderRadius: borderRadius.xl,
+    padding: spacing.lg,
     marginBottom: spacing.md,
-    marginHorizontal: spacing.sm,
+    marginHorizontal: spacing.xs,
     ...theme.shadows.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  noteCardInner: {
-    padding: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: borderRadius.xl,
   },
   noteHeader: {
     flexDirection: 'row',
@@ -459,69 +404,109 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  noteMoodPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    ...theme.shadows.sm,
-  },
   moodEmoji: {
-    fontSize: 12,
-    marginRight: 4,
+    fontSize: 16,
+    marginRight: spacing.xs,
   },
   moodText: {
-    fontSize: 10,
-    color: '#fff',
-    fontWeight: '600',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    fontSize: 12,
+    color: theme.colors.onSurface,
+    fontWeight: '500',
   },
   timestamp: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#9ca3af',
   },
   noteContent: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.onSurface,
-    lineHeight: 20,
-    marginBottom: spacing.sm,
-    fontWeight: '400',
-  },
-  expandHint: {
-    fontSize: 10,
-    color: '#9ca3af',
-    fontStyle: 'italic',
-    marginBottom: spacing.xs,
+    lineHeight: 22,
+    marginBottom: spacing.md,
   },
   noteActions: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'space-around',
+    gap: spacing.lg,
   },
   actionButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.full,
-    ...theme.shadows.sm,
-  },
-  listenButton: {
-    backgroundColor: '#10b981',
-  },
-  rejectButton: {
-    backgroundColor: '#ef4444',
   },
   actionButtonText: {
-    fontSize: 12,
-    color: '#fff',
+    fontSize: 14,
+    color: theme.colors.onSurface,
+  },
+  composeContainer: {
+    backgroundColor: theme.colors.surface,
+    padding: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    ...theme.shadows.lg,
+  },
+  moodSelector: {
+    marginBottom: spacing.md,
+  },
+  moodLabel: {
+    fontSize: 14,
     fontWeight: '600',
-    marginLeft: spacing.xs,
+    color: theme.colors.onSurface,
+    marginBottom: spacing.sm,
+  },
+  moodButton: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    ...theme.shadows.sm,
+  },
+  selectedMoodButton: {
+    backgroundColor: theme.colors.primary + '15',
+    borderColor: theme.colors.primary,
+    ...theme.shadows.md,
+  },
+  moodButtonEmoji: {
+    fontSize: 20,
+  },
+  messageInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+  },
+  messageInput: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    color: theme.colors.onSurface,
+    maxHeight: 100,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  sendButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 60,
+    ...theme.shadows.md,
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   loadingContainer: {
     alignItems: 'center',
@@ -556,111 +541,32 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-  },
-  emptyIllustration: {
-    position: 'relative',
-    marginBottom: spacing.xl,
-  },
-  emptyIcon: {
-    fontSize: 80,
-    textAlign: 'center',
-  },
-  floatingBubbles: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  bubble1: {
-    position: 'absolute',
-    top: 10,
-    right: 20,
-    fontSize: 20,
-    opacity: 0.7,
-  },
-  bubble2: {
-    position: 'absolute',
-    top: 30,
-    left: 10,
-    fontSize: 16,
-    opacity: 0.5,
-  },
-  bubble3: {
-    position: 'absolute',
-    bottom: 20,
-    right: 10,
-    fontSize: 18,
-    opacity: 0.6,
   },
   emptyText: {
-    fontSize: 20,
+    fontSize: 16,
     color: theme.colors.onSurface,
     textAlign: 'center',
     marginBottom: spacing.sm,
-    fontWeight: '600',
   },
   emptySubtext: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#9ca3af',
     textAlign: 'center',
-    marginBottom: spacing.xl,
-    lineHeight: 22,
   },
-  createFirstNoteButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.full,
-    ...theme.shadows.md,
+  newUserBanner: {
+    backgroundColor: '#e0f2fe',
+    padding: spacing.md,
+    margin: spacing.md,
+    borderRadius: borderRadius.md,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.primary,
   },
-  createFirstNoteText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Floating Action Button
-  fabButton: {
-    position: 'absolute',
-    bottom: 100, // Above navigation menu
-    left: '50%',
-    marginLeft: -100, // Half of button width to center
-    width: 200,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4F46E5', // Blue-purple gradient start color
-    ...theme.shadows.lg,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  fabContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: spacing.md,
-  },
-  fabIcon: {
-    fontSize: 20,
-    color: '#fff',
-    marginRight: spacing.sm,
-  },
-  fabText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-  },
-  fabArrow: {
-    fontSize: 18,
-    color: '#fff',
-    marginLeft: spacing.sm,
-  },
-});
+      newUserBannerText: {
+        fontSize: 14,
+        color: '#0369a1',
+        textAlign: 'center',
+        lineHeight: 20,
+      },
+    });
 
 export default WhisprNotesScreen;

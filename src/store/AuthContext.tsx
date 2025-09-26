@@ -2,7 +2,6 @@ import React, { createContext, useContext, useReducer, useEffect, ReactNode } fr
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
-import PermissionInitializer from '@/services/permissionInitializer';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -86,11 +85,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Check profile completeness
           const complete = await FlexibleDatabaseService.isProfileComplete(dbUser.id);
           setIsProfileComplete(complete);
-          
-          // Initialize permissions after successful authentication
-          PermissionInitializer.initializePermissions(dbUser.id).catch(error => {
-            console.error('AuthContext - Error initializing permissions:', error);
-          });
         } else {
           // User no longer exists in database, clear local storage
           await StorageService.removeItem('user');
@@ -126,11 +120,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await StorageService.setItem('user', newUser);
       dispatch({ type: 'LOGIN_SUCCESS', payload: newUser });
       
-      // Initialize permissions after successful login
-      PermissionInitializer.initializePermissions(newUser.id).catch(error => {
-        console.error('AuthContext - Error initializing permissions after login:', error);
-      });
-      
       console.log('User logged in successfully with ID:', newUser.id);
     } catch (error) {
       console.error('Login error:', error);
@@ -146,11 +135,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
       const complete = await FlexibleDatabaseService.isProfileComplete(user.id);
       setIsProfileComplete(complete);
-      
-      // Initialize permissions after setting authenticated user
-      PermissionInitializer.initializePermissions(user.id).catch(error => {
-        console.error('AuthContext - Error initializing permissions after setAuthenticatedUser:', error);
-      });
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
     }
