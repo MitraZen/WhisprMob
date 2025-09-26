@@ -353,7 +353,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         <>
           {/* Profile Cover Section */}
           <View
-            style={[styles.profileCover, { backgroundColor: getMoodGradient(profileData.mood)[0] }]}
+            style={[styles.profileCover, { backgroundColor: '#7c3aed' }]}
           >
             <View style={styles.coverContent}>
               <TouchableOpacity 
@@ -364,6 +364,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                 <Text style={styles.backButtonText}>‹</Text>
               </TouchableOpacity>
               
+              {/* Profile Title */}
+              <View style={styles.profileTitleSection}>
+                <Text style={styles.profileTitle}>Profile</Text>
+              </View>
+              
               <Animated.View 
                 style={[
                   styles.profileHeader,
@@ -373,7 +378,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                   }
                 ]}
               >
-                {/* Left side - Avatar and Mood Selector */}
+                {/* Left side - Avatar */}
                 <View style={styles.leftSection}>
                   <View style={styles.avatarContainer}>
                     <View
@@ -384,7 +389,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                       </Text>
                     </View>
                   </View>
-                  
+                </View>
+                
+                {/* Center - Mood Selector */}
+                <View style={styles.centerSection}>
                   <TouchableOpacity 
                     style={styles.moodButton}
                     onPress={() => setShowMoodModal(true)}
@@ -398,7 +406,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                 {/* Right side - User Info */}
                 <View style={styles.rightSection}>
                   <Text style={styles.displayName}>{profileData.displayName}</Text>
-                  <Text style={styles.username}>{profileData.username}</Text>
                   <Text style={styles.moodDescription}>
                     {getMoodConfig(profileData.mood).description}
                   </Text>
@@ -876,19 +883,38 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
   },
+  profileTitleSection: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
+  },
+  profileTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+    letterSpacing: 0.5,
+  },
   profileHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingLeft: 64, // leave space for back button
     paddingBottom: spacing.lg, // pushes stats row down
+    position: 'relative',
   },
   leftSection: {
-    flexDirection: 'column',
     alignItems: 'center',
-    gap: spacing.sm,
+    width: 60, // Fixed width for avatar
+  },
+  centerSection: {
+    position: 'absolute',
+    left: '50%',
+    transform: [{ translateX: -25 }], // Half of mood button width (50/2)
+    alignItems: 'center',
   },
   avatarContainer: {
     width: 60,
@@ -911,21 +937,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   moodButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     ...theme.shadows.sm,
   },
   moodEmoji: {
-    fontSize: 18,
+    fontSize: 24,
   },
   rightSection: {
     flex: 1,
     alignItems: 'flex-end',
     paddingLeft: spacing.md,
+    marginLeft: 60, // Account for left section width
   },
   displayName: {
     fontSize: 22,
@@ -934,16 +961,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     textAlign: 'right',
   },
-  username: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: spacing.xs,
-    textAlign: 'right',
-  },
   moodDescription: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'right',
+    marginTop: spacing.xs,
   },
   // Scroll Content
   scrollContent: {
