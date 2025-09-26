@@ -11,6 +11,8 @@ android/app/build/
 android/app/.cxx/
 android/build/
 android/.gradle/
+android/gradle.properties
+android/local.properties
 ios/build/
 ios/Pods/
 ios/DerivedData/
@@ -58,6 +60,11 @@ secrets/
 *.key
 *.pem
 *.p12
+*.keystore
+*.jks
+*.p12
+android/app/*.keystore
+android/app/*.jks
 
 # Database files
 *.db
