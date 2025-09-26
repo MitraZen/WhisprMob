@@ -210,7 +210,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
           }
         ]}
       >
-        <View style={styles.headerTop}>
+        <View style={styles.headerContent}>
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => onNavigate('notes')}
@@ -218,22 +218,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
           >
             <Text style={styles.backButtonIcon}>‹</Text>
           </TouchableOpacity>
-          <View style={styles.headerTitleContainer}>
+          
+          <View style={styles.headerText}>
             <Text style={styles.title}>Settings</Text>
             <Text style={styles.subtitle}>Manage your account and preferences</Text>
-          </View>
-        </View>
-        
-        {/* User Preview */}
-        <View style={styles.userPreview}>
-          <View style={styles.userAvatar}>
-            <Text style={styles.userAvatarText}>
-              {user?.username?.charAt(0)?.toUpperCase() || 'U'}
-            </Text>
-          </View>
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{user?.username || 'User'}</Text>
-            <Text style={styles.userMood}>{user?.mood || '😊'} {user?.mood || 'Happy'}</Text>
           </View>
         </View>
       </Animated.View>
@@ -652,7 +640,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#7c3aed',
     paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md, // Reduced from lg to md
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
     shadowColor: '#7c3aed',
@@ -661,10 +649,13 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 12,
   },
-  headerTop: {
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+  },
+  headerText: {
+    flex: 1,
+    alignItems: 'center',
   },
   backButton: {
     width: 40,
@@ -679,9 +670,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     fontWeight: 'bold',
-  },
-  headerTitleContainer: {
-    flex: 1,
   },
   title: {
     fontSize: 28,
@@ -700,40 +688,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.2)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
-  },
-  userPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  userAvatarText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: spacing.xs,
-  },
-  userMood: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
   },
   navigationButtons: {
     flexDirection: 'row',

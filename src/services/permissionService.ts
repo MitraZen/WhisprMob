@@ -231,9 +231,22 @@ class PermissionService {
   }
 
   /**
+   * Check if we should show request rationale for a permission
+   */
+  async shouldShowRequestRationale(permissionType: keyof PermissionStatus): Promise<boolean> {
+    try {
+      if (!PermissionModule) return false;
+      return await PermissionModule.shouldShowRequestRationale(permissionType);
+    } catch (error) {
+      console.error('Error checking request rationale:', error);
+      return false;
+    }
+  }
+
+  /**
    * Request a specific permission with user-friendly messaging
    */
-  async requestPermissionWithDialog(permissionType: string): Promise<boolean> {
+  async requestPermissionWithDialog(permissionType: keyof PermissionStatus): Promise<boolean> {
     const permissionMessages: { [key: string]: string } = {
       notifications: 'Whispr needs notification permission to send you important updates and messages.',
       storage: 'Whispr needs storage permission to save your data and media files.',

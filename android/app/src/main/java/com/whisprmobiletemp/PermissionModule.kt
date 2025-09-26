@@ -188,6 +188,22 @@ class PermissionModule(reactContext: ReactApplicationContext) : ReactContextBase
         }
     }
     
+    @ReactMethod
+    fun shouldShowRequestRationale(permissionType: String, promise: Promise) {
+        try {
+            val activity = getCurrentActivity()
+            if (activity == null) {
+                promise.resolve(false)
+                return
+            }
+            
+            val shouldShow = permissionManager.shouldShowRequestRationale(permissionType, activity as Activity)
+            promise.resolve(shouldShow)
+        } catch (e: Exception) {
+            promise.reject("PERMISSION_ERROR", e.message)
+        }
+    }
+    
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
         if (requestCode == PermissionManager.PERMISSION_REQUEST_CODE) {
             val callback = permissionCallback
