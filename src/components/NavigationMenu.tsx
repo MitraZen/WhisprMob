@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 
 interface NavigationMenuProps {
@@ -45,58 +45,55 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: theme.colors.glass,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
-    paddingBottom: spacing.sm,
-    ...theme.shadows.lg,
-    backdropFilter: 'blur(10px)',
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16, // Extra padding for home indicator
+    paddingTop: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
   },
   menuContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   menuItem: {
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.lg,
     flex: 1,
     marginHorizontal: spacing.xs,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    ...theme.shadows.sm,
+    backgroundColor: 'transparent',
+    minHeight: 60,
+    justifyContent: 'center',
   },
   activeMenuItem: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-    shadowColor: theme.colors.primary,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    backgroundColor: 'rgba(124, 58, 237, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.2)',
   },
   menuIcon: {
-    fontSize: 20,
+    fontSize: 22,
     marginBottom: spacing.xs,
+    opacity: 0.8,
   },
   menuLabel: {
-    fontSize: 12,
-    color: theme.colors.onSurface,
-    fontWeight: '600',
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '500',
     textAlign: 'center',
+    marginTop: 2,
   },
   activeMenuLabel: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+    color: '#7c3aed',
+    fontWeight: '600',
   },
   firstMenuItem: {
     marginLeft: 0,

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions
+} from 'react-native';
 import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/theme';
 import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
@@ -20,53 +23,34 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+  const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
   const { enableAdminMode } = useAdmin();
 
-  // Load notes from database
+  // Load notes
   useEffect(() => {
-    if (user?.id) {
-      loadNotes();
-    }
+    if (user?.id) loadNotes();
   }, [user?.id]);
 
-  // Auto-refresh notes every 15 seconds
   useEffect(() => {
     if (!user?.id) return;
-
-    const interval = setInterval(() => {
-      loadNotes();
-    }, 15000); // Refresh every 15 seconds
-
+    const interval = setInterval(loadNotes, 15000);
     return () => clearInterval(interval);
   }, [user?.id]);
 
   const loadNotes = async () => {
     if (!user?.id) return;
-    
     setIsLoading(true);
     setError(null);
-    
     try {
-      console.log('Loading Whispr notes for user:', user.id);
-      
-      // Check if user is new (has no buddies) and load fewer notes
       const buddies = await BuddiesService.getBuddies(user.id);
       const userIsNew = !buddies || buddies.length === 0;
       setIsNewUser(userIsNew);
-      
-      let notesData;
-      if (userIsNew) {
-        console.log('New user detected, loading limited notes');
-        notesData = await BuddiesService.getNewUserNotes(user.id, 5);
-      } else {
-        console.log('Existing user, loading full notes');
-        notesData = await BuddiesService.getWhisprNotes(user.id);
-      }
-      
-      console.log(`Loaded ${notesData.length} notes successfully (${userIsNew ? 'new user' : 'existing user'})`);
+      let notesData = userIsNew
+        ? await BuddiesService.getNewUserNotes(user.id, 5)
+        : await BuddiesService.getWhisprNotes(user.id);
       setNotes(notesData);
     } catch (err) {
-      console.error('Error loading notes:', err);
       setError(err instanceof Error ? err.message : 'Failed to load notes');
     } finally {
       setIsLoading(false);
@@ -74,233 +58,193 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   };
 
   const handleSendNote = async () => {
-    if (!message.trim()) {
-      Alert.alert('Empty Message', 'Please enter a message to send.');
+    if (!message.trim() || !selectedMood || !user?.id) {
+      Alert.alert('Error', 'Please enter a message and select a mood.');
       return;
     }
-
-    if (!selectedMood) {
-      Alert.alert('No Mood Selected', 'Please select a mood for your message.');
-      return;
-    }
-
-    if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated.');
-      return;
-    }
-
     setIsSending(true);
-    const messageContent = message.trim();
+    const content = message.trim();
     const mood = selectedMood;
-    
-    // Clear form immediately for better UX
     setMessage('');
     setSelectedMood(null);
-
     try {
-      console.log('Sending Whispr note:', { content: messageContent, mood, userId: user.id });
-      const noteId = await BuddiesService.sendWhisprNote(user.id, messageContent, mood);
-      console.log('Note sent successfully:', noteId);
-      
+      await BuddiesService.sendWhisprNote(user.id, content, mood);
       Alert.alert('Success', 'Your Whispr note has been sent! 🌟');
-      
-      // Reload notes to show the new one
       await loadNotes();
-      
-    } catch (error) {
-      console.error('Error sending note:', error);
-      Alert.alert('Error', 'Failed to send note. Please try again.');
-      // Restore form data if sending failed
-      setMessage(messageContent);
+    } catch {
+      setMessage(content);
       setSelectedMood(mood);
+      Alert.alert('Error', 'Failed to send note. Try again.');
     } finally {
       setIsSending(false);
     }
   };
 
   const handleListen = async (noteId: string) => {
-    if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated.');
-      return;
-    }
-
+    setActionLoading(prev => new Set(prev).add(noteId));
     try {
       const result = await BuddiesService.listenToNote(noteId, user.id);
-      
       if (result?.success) {
-        Alert.alert(
-          'Note Listened! 👂', 
-          'You\'ve connected with this person! Check your Buddies tab to start chatting.',
-          [
-            { text: 'OK', onPress: () => onNavigate('buddies') }
-          ]
-        );
-        
-        // Reload notes to update the status
+        Alert.alert('Note Listened! 👂', 'You\'ve acknowledged this note.');
         await loadNotes();
-      } else {
-        Alert.alert('Error', 'Failed to listen to note. Please try again.');
       }
-    } catch (error) {
-      console.error('Error listening to note:', error);
-      Alert.alert('Error', 'Failed to listen to note. Please try again.');
+    } catch {
+      Alert.alert('Error', 'Failed to listen to note.');
+    } finally {
+      setActionLoading(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(noteId);
+        return newSet;
+      });
     }
   };
 
   const handleReject = async (noteId: string) => {
-    if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated.');
-      return;
-    }
-
+    setActionLoading(prev => new Set(prev).add(noteId));
     try {
-      console.log('Rejecting note:', noteId, 'for user:', user.id);
       const result = await BuddiesService.rejectNote(noteId, user.id);
-      console.log('Reject result:', result ? 'Success' : 'Failed');
-      
       if (result?.success) {
         Alert.alert('Note Rejected', 'The note has been rejected.');
-        
-        // Reload notes to update the status
         await loadNotes();
-      } else {
-        Alert.alert('Error', 'Failed to reject note. Please try again.');
       }
-    } catch (error) {
-      console.error('Error rejecting note:', error);
-      Alert.alert('Error', 'Failed to reject note. Please try again.');
+    } catch {
+      Alert.alert('Error', 'Failed to reject note.');
+    } finally {
+      setActionLoading(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(noteId);
+        return newSet;
+      });
     }
   };
 
-  const formatTimestamp = (timestamp: Date): string => {
-    const now = new Date();
-    const diff = now.getTime() - timestamp.getTime();
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return timestamp.toLocaleDateString();
+  const formatTimestamp = (ts: Date | string) => {
+    const date = ts instanceof Date ? ts : new Date(ts);
+    const diff = Date.now() - date.getTime();
+    const min = Math.floor(diff / 60000), hr = Math.floor(diff / 3600000);
+    if (min < 1) return 'Just now';
+    if (min < 60) return `${min}m ago`;
+    if (hr < 24) return `${hr}h ago`;
+    return date.toLocaleDateString();
   };
 
-  const handleLike = (noteId: string) => {
-    setNotes(prev => prev.map(note => 
-      note.id === noteId 
-        ? { ...note, likes: note.likes + 1 }
-        : note
-    ));
+  const toggleExpand = (id: string) => {
+    setExpandedNotes(prev => {
+      const newSet = new Set(prev);
+      newSet.has(id) ? newSet.delete(id) : newSet.add(id);
+      return newSet;
+    });
   };
 
-  const handleReply = (noteId: string) => {
-    // Navigate to chat or show reply interface
-    Alert.alert('Reply', 'Reply functionality coming soon!');
-  };
+  const truncateText = (txt: string, max = 80) =>
+    txt.length > max ? txt.substring(0, max) + '...' : txt;
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.title}>Whispr Notes</Text>
           <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
+          {isNewUser && (
+            <View style={styles.newUserBanner}>
+              <Text style={styles.newUserBannerText}>
+                🎉 Welcome! You're seeing a limited set of notes. Listen to discover more!
+              </Text>
+            </View>
+          )}
         </View>
-        
-        {isNewUser && (
-          <View style={styles.newUserBanner}>
-            <Text style={styles.newUserBannerText}>
-              🎉 Welcome! You're seeing a limited set of notes. Listen to notes to discover more!
-            </Text>
-          </View>
-        )}
       </View>
 
+      {/* Notes List */}
       <ScrollView style={styles.notesContainer} showsVerticalScrollIndicator={false}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading notes...</Text>
+            <Text>Loading notes...</Text>
           </View>
         ) : error ? (
-          <View style={styles.errorContainer}>
+          <View>
             <Text style={styles.errorText}>❌ {error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadNotes}>
+            <TouchableOpacity onPress={loadNotes} style={styles.retryButton}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : notes.length === 0 ? (
           <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>💭</Text>
             <Text style={styles.emptyText}>No Whispr notes yet</Text>
             <Text style={styles.emptySubtext}>Be the first to share your thoughts!</Text>
           </View>
         ) : (
-          <>
-            {isNewUser && (
-              <View style={styles.newUserBanner}>
-                <Text style={styles.newUserBannerText}>
-                  🎉 Welcome! You're seeing a curated selection of notes. 
-                  Listen to notes to make connections and see more!
-                </Text>
-              </View>
-            )}
-                {notes.map((note) => (
-                  <View key={note.id} style={styles.noteCard}>
-                    <View style={styles.noteHeader}>
-                      <View style={styles.moodIndicator}>
-                        <Text style={styles.moodEmoji}>
-                          {getMoodConfig(note.mood).emoji}
-                        </Text>
-                        <Text style={styles.moodText}>
-                          {getMoodConfig(note.mood).description}
-                        </Text>
-                      </View>
-                      <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
-                    </View>
-                    
-                    <Text style={styles.noteContent}>{note.content}</Text>
-                    
-                    <View style={styles.noteActions}>
-                      <TouchableOpacity 
-                        style={styles.actionButton}
-                        onPress={() => handleListen(note.id)}
-                      >
-                        <Text style={styles.actionButtonText}>👂 Listen</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.actionButton}
-                        onPress={() => handleReject(note.id)}
-                      >
-                        <Text style={styles.actionButtonText}>❌ Reject</Text>
-                      </TouchableOpacity>
-                    </View>
+          notes.map(note => {
+            const expanded = expandedNotes.has(note.id);
+            return (
+              <TouchableOpacity
+                key={note.id}
+                style={[styles.noteCard]}
+                activeOpacity={0.9}
+                onPress={() => toggleExpand(note.id)}
+              >
+                <View style={styles.noteHeader}>
+                  <View style={styles.moodIndicator}>
+                    <Text style={styles.moodEmoji}>{getMoodConfig(note.mood || 'happy').emoji}</Text>
+                    <Text style={styles.moodText}>{getMoodConfig(note.mood || 'happy').description}</Text>
                   </View>
-                ))}
-          </>
+                  <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
+                </View>
+                <Text style={styles.noteContent}>
+                  {expanded ? note.content : truncateText(note.content)}
+                </Text>
+                {!expanded && note.content.length > 80 && (
+                  <Text style={styles.expandHint}>Tap to expand...</Text>
+                )}
+                <View style={styles.noteActions}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.listenButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
+                    onPress={() => handleListen(note.id)}
+                    disabled={actionLoading.has(note.id)}
+                  >
+                    {actionLoading.has(note.id) ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.actionButtonText}>👂 Listen</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.rejectButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
+                    onPress={() => handleReject(note.id)}
+                    disabled={actionLoading.has(note.id)}
+                  >
+                    {actionLoading.has(note.id) ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.actionButtonText}>❌ Reject</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
 
+      {/* Compose Area */}
       <View style={styles.composeContainer}>
         <View style={styles.moodSelector}>
           <Text style={styles.moodLabel}>Select your mood:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {Object.entries(moodConfig).map(([moodType, config]) => (
+            {Object.entries(moodConfig).map(([type, config]) => (
               <TouchableOpacity
-                key={moodType}
-                style={[
-                  styles.moodButton,
-                  selectedMood === moodType && styles.selectedMoodButton,
-                ]}
-                onPress={() => setSelectedMood(moodType as MoodType)}
-                disabled={isSending}
+                key={type}
+                style={[styles.moodButton, selectedMood === type && styles.selectedMoodButton]}
+                onPress={() => setSelectedMood(type as MoodType)}
               >
                 <Text style={styles.moodButtonEmoji}>{config.emoji}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
-
         <View style={styles.messageInputContainer}>
           <TextInput
             style={styles.messageInput}
@@ -309,264 +253,137 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
             value={message}
             onChangeText={setMessage}
             multiline
-            maxLength={500}
-            editable={!isSending}
           />
           <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (!message.trim() || !selectedMood || isSending) && styles.sendButtonDisabled,
-            ]}
+            style={[styles.sendButton, (!message.trim() || !selectedMood || isSending) && styles.sendButtonDisabled]}
             onPress={handleSendNote}
             disabled={!message.trim() || !selectedMood || isSending}
           >
-            {isSending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
-            )}
+            {isSending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendButtonText}>Send</Text>}
           </TouchableOpacity>
         </View>
       </View>
-      
-      {/* Bottom Navigation Menu */}
+
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
-      
-      {/* Debug Overlay */}
       <DebugOverlay onToggleAdmin={enableAdminMode} />
     </KeyboardAvoidingView>
   );
 };
 
+const { width } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    backgroundColor: theme.colors.primary,
-    paddingTop: spacing.xl,
+    backgroundColor: '#7c3aed',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
-    ...theme.shadows.lg,
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12,
   },
   headerContent: {
     alignItems: 'center',
   },
   title: {
-    ...theme.typography.displaySmall,
+    fontSize: 28,
+    fontWeight: '800',
     color: '#fff',
-    textAlign: 'center',
-    marginBottom: spacing.xs,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+    letterSpacing: 0.5,
   },
   subtitle: {
-    ...theme.typography.bodyLarge,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  newUserBanner: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.9)',
     marginTop: spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  newUserBannerText: {
-    ...theme.typography.bodyMedium,
-    color: '#fff',
     textAlign: 'center',
     fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  notesContainer: {
-    flex: 1,
-    padding: spacing.md,
+  newUserBanner: {
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
+  newUserBannerText: { color: '#fff', textAlign: 'center' },
+  notesContainer: { flex: 1, padding: spacing.md },
   noteCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: borderRadius.xl,
-    padding: spacing.lg,
+    padding: spacing.md,
     marginBottom: spacing.md,
-    marginHorizontal: spacing.xs,
     ...theme.shadows.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    overflow: 'hidden',
   },
-  noteHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  moodIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  moodEmoji: {
-    fontSize: 16,
-    marginRight: spacing.xs,
-  },
-  moodText: {
-    fontSize: 12,
-    color: theme.colors.onSurface,
-    fontWeight: '500',
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#9ca3af',
-  },
-  noteContent: {
-    fontSize: 16,
-    color: theme.colors.onSurface,
-    lineHeight: 22,
-    marginBottom: spacing.md,
-  },
-  noteActions: {
-    flexDirection: 'row',
-    gap: spacing.lg,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    fontSize: 14,
-    color: theme.colors.onSurface,
-  },
+  noteHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
+  moodIndicator: { flexDirection: 'row', alignItems: 'center' },
+  moodEmoji: { fontSize: 16, marginRight: spacing.xs },
+  moodText: { fontSize: 12, fontWeight: '600', color: theme.colors.onSurface },
+  timestamp: { fontSize: 10, color: '#9ca3af' },
+  noteContent: { fontSize: 14, color: theme.colors.onSurface, marginBottom: spacing.sm },
+  expandHint: { fontSize: 10, fontStyle: 'italic', color: '#9ca3af' },
+  noteActions: { flexDirection: 'row', justifyContent: 'space-around' },
+  actionButton: { flex: 1, alignItems: 'center', padding: spacing.sm, borderRadius: borderRadius.full },
+  listenButton: { backgroundColor: '#10b981' },
+  rejectButton: { backgroundColor: '#ef4444' },
+  actionButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  emptyContainer: { alignItems: 'center', marginTop: spacing.xl },
+  emptyIcon: { fontSize: 60 },
+  emptyText: { fontSize: 18, fontWeight: '600', marginTop: spacing.md },
+  emptySubtext: { fontSize: 14, color: '#9ca3af' },
   composeContainer: {
     backgroundColor: theme.colors.surface,
-    padding: spacing.lg,
+    padding: spacing.md,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    ...theme.shadows.lg,
   },
-  moodSelector: {
-    marginBottom: spacing.md,
-  },
-  moodLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.onSurface,
-    marginBottom: spacing.sm,
-  },
+  moodSelector: { marginBottom: spacing.md },
+  moodLabel: { fontSize: 14, fontWeight: '600', marginBottom: spacing.sm },
   moodButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
+    width: 48, height: 48, borderRadius: borderRadius.full,
     backgroundColor: theme.colors.surfaceVariant,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    ...theme.shadows.sm,
+    justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm,
   },
-  selectedMoodButton: {
-    backgroundColor: theme.colors.primary + '15',
-    borderColor: theme.colors.primary,
-    ...theme.shadows.md,
-  },
-  moodButtonEmoji: {
-    fontSize: 20,
-  },
-  messageInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm,
-  },
+  selectedMoodButton: { borderColor: theme.colors.primary, borderWidth: 2 },
+  moodButtonEmoji: { fontSize: 20 },
+  messageInputContainer: { flexDirection: 'row', alignItems: 'flex-end' },
   messageInput: {
-    flex: 1,
-    backgroundColor: theme.colors.surfaceVariant,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: theme.colors.onSurface,
-    maxHeight: 100,
-    textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    ...theme.shadows.sm,
+    flex: 1, borderRadius: borderRadius.lg, padding: spacing.md,
+    backgroundColor: theme.colors.surfaceVariant, color: theme.colors.onSurface,
   },
-  sendButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 60,
-    ...theme.shadows.md,
+  sendButton: { marginLeft: spacing.sm, backgroundColor: theme.colors.primary, padding: spacing.md, borderRadius: borderRadius.lg },
+  sendButtonDisabled: { backgroundColor: '#9ca3af' },
+  sendButtonText: { color: '#fff', fontWeight: '600' },
+  loadingContainer: { 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    padding: spacing.xl 
   },
-  sendButtonDisabled: {
-    backgroundColor: '#9ca3af',
+  errorText: { 
+    color: '#ef4444', 
+    textAlign: 'center', 
+    marginBottom: spacing.md 
   },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  retryButton: { 
+    backgroundColor: theme.colors.primary, 
+    padding: spacing.md, 
+    borderRadius: borderRadius.lg, 
+    alignItems: 'center' 
   },
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
+  retryButtonText: { 
+    color: '#fff', 
+    fontWeight: '600' 
   },
-  loadingText: {
-    marginTop: spacing.md,
-    fontSize: 16,
-    color: theme.colors.onSurface,
+  actionButtonDisabled: { 
+    opacity: 0.6 
   },
-  errorContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
-  errorText: {
-    fontSize: 16,
-    color: theme.colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  retryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.md,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: theme.colors.onSurface,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-  newUserBanner: {
-    backgroundColor: '#e0f2fe',
-    padding: spacing.md,
-    margin: spacing.md,
-    borderRadius: borderRadius.md,
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.primary,
-  },
-      newUserBannerText: {
-        fontSize: 14,
-        color: '#0369a1',
-        textAlign: 'center',
-        lineHeight: 20,
-      },
-    });
+});
 
 export default WhisprNotesScreen;

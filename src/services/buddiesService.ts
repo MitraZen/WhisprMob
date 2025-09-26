@@ -349,11 +349,11 @@ export class BuddiesService {
       const userProfile = await this.getUserProfile(userId);
       const userMood = userProfile?.mood || 'happy';
       
-      // Get notes from users that the current user is NOT already buddies with
-      // This prevents showing notes from existing connections
-      const data = await this.request('GET', 
-        `whispr_notes?status=eq.active&is_active=eq.true&sender_id=not.in.(${await this.getExistingBuddyIds(userId)})&order=created_at.desc&limit=50`
-      );
+      // Get notes from ALL users (including existing buddies)
+      // Users can listen to notes from existing buddies without triggering add buddy
+      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&order=created_at.desc&limit=50`;
+      
+      const data = await this.request('GET', queryString);
 
       if (!data) {
         return [];

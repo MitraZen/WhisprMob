@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform } from 'react-native';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { notificationService } from '@/services/notificationService';
@@ -650,11 +650,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   header: {
-    backgroundColor: theme.colors.primary,
-    paddingTop: spacing.lg,
+    backgroundColor: '#7c3aed',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12,
   },
   headerTop: {
     flexDirection: 'row',
@@ -680,13 +685,21 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#fff',
-    marginBottom: spacing.xs,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   userPreview: {
     flexDirection: 'row',

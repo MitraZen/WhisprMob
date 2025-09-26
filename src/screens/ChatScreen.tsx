@@ -326,13 +326,17 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    paddingTop: spacing.xxxl,
+    backgroundColor: '#7c3aed',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
     borderBottomLeftRadius: borderRadius.xl,
     borderBottomRightRadius: borderRadius.xl,
-    ...theme.shadows.lg,
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12,
   },
   backButton: {
     marginRight: spacing.md,
