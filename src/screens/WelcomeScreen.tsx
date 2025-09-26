@@ -12,6 +12,11 @@ import { theme, spacing } from '@/utils/theme';
 const { width, height } = Dimensions.get('window');
 
 const WelcomeScreen: React.FC = () => {
+  const navigation = useNavigation();
+
+  const handleGetStarted = () => {
+    navigation.navigate('MoodSelection' as never);
+  };
 
   return (
     <View style={styles.container}>
@@ -41,6 +46,9 @@ const WelcomeScreen: React.FC = () => {
             </View>
           </View>
 
+          <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
+            <Text style={styles.buttonText}>Start Whispr-ing</Text>
+          </TouchableOpacity>
 
           <Text style={styles.disclaimer}>
             Connect with others who share your current mood. 
@@ -114,6 +122,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
+  },
+  button: {
+    backgroundColor: 'white',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: 30,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  buttonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
   },
   disclaimer: {
     fontSize: 14,

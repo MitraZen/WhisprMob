@@ -39,6 +39,3 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 *.sql
-# APK files (too large for GitHub)
-*.apk
-apk-files/
