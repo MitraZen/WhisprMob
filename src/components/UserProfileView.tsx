@@ -210,7 +210,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.md,
-    backdropFilter: 'blur(8px)',
   },
   modalContent: {
     backgroundColor: theme.colors.glass,
@@ -223,7 +222,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     ...theme.shadows.xl,
-    backdropFilter: 'blur(20px)',
   },
   header: {
     flexDirection: 'row',

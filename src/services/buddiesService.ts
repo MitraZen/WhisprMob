@@ -288,34 +288,6 @@ export class BuddiesService {
     }
   }
 
-  // Block a user
-  static async blockUser(blockedUserId: string, reason?: string): Promise<boolean> {
-    try {
-      await this.rpcRequest('block_user', {
-        blocked_user_id_param: blockedUserId,
-        reason_param: reason || null
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error blocking user:', error);
-      throw error;
-    }
-  }
-
-  // Unblock a user
-  static async unblockUser(blockedUserId: string): Promise<boolean> {
-    try {
-      await this.rpcRequest('unblock_user', {
-        blocked_user_id_param: blockedUserId
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error unblocking user:', error);
-      throw error;
-    }
-  }
 
   // Get blocked users
   static async getBlockedUsers(): Promise<any[]> {

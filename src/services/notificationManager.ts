@@ -63,7 +63,7 @@ class NotificationManagerClass implements NotificationManager {
           const latestMessage = messages[0]; // First message is newest due to inverted FlatList
           
           // Only notify for messages from others
-          if (latestMessage.sender_id !== this.userId) {
+          if (latestMessage.senderId !== this.userId) {
             try {
               await notificationService.showMessageNotification(
                 'New Message',
@@ -98,7 +98,7 @@ class NotificationManagerClass implements NotificationManager {
         const latestNote = notes[0]; // First note is newest
         
         // Only notify for notes from others
-        if (latestNote.sender_id !== this.userId) {
+        if (latestNote.senderId !== this.userId) {
           try {
             await notificationService.showNoteNotification(
               'New Whispr Note',

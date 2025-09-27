@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Modal, Animated, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Modal, Animated, Dimensions, Platform } from 'react-native';
 import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/theme';
 import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';

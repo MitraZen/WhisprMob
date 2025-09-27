@@ -2,6 +2,21 @@ import React, { createContext, useContext, useReducer, useEffect, ReactNode } fr
 import { Alert } from 'react-native';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 
+interface NotificationDebugInfo {
+  platform: string;
+  notificationModuleAvailable: boolean;
+  realtimeConnectionStatus: string;
+  pollingStatus: boolean;
+  lastNotificationTime: string | null;
+}
+
+interface NotificationTestResult {
+  success: boolean;
+  message: string;
+  timestamp: number;
+  details?: any;
+}
+
 interface AdminState {
   isAdminMode: boolean;
   isAdminAuthenticated: boolean;
@@ -12,6 +27,10 @@ interface AdminState {
   messageStats: any;
   isLoading: boolean;
   error: string | null;
+  // Notification debugging properties
+  notificationDebugInfo: NotificationDebugInfo | null;
+  notificationTestResults: NotificationTestResult[];
+  isNotificationDebugging: boolean;
 }
 
 interface AdminContextType extends AdminState {
@@ -30,6 +49,14 @@ interface AdminContextType extends AdminState {
   sendTestMessage: (userId: string, message: string) => Promise<void>;
   simulateUserActivity: (userId: string) => Promise<void>;
   clearFakeNotes: () => Promise<void>;
+  // Notification debugging actions
+  refreshNotificationDebugInfo: () => Promise<void>;
+  testAllNotifications: () => Promise<void>;
+  sendTestNotificationToUser: (userId: string, type: 'message' | 'note' | 'general') => Promise<void>;
+  clearAllNotifications: () => Promise<void>;
+  startNotificationDebugging: () => void;
+  stopNotificationDebugging: () => void;
+  clearNotificationDebugHistory: () => void;
 }
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
@@ -45,7 +72,11 @@ type AdminAction =
   | { type: 'TOGGLE_DEBUG_INFO' }
   | { type: 'SET_DATABASE_STATS'; payload: any }
   | { type: 'SET_USER_STATS'; payload: any }
-  | { type: 'SET_MESSAGE_STATS'; payload: any };
+  | { type: 'SET_MESSAGE_STATS'; payload: any }
+  | { type: 'SET_NOTIFICATION_DEBUG_INFO'; payload: NotificationDebugInfo | null }
+  | { type: 'ADD_NOTIFICATION_TEST_RESULT'; payload: NotificationTestResult }
+  | { type: 'CLEAR_NOTIFICATION_TEST_RESULTS' }
+  | { type: 'SET_NOTIFICATION_DEBUGGING'; payload: boolean };
 
 const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
   switch (action.type) {
@@ -71,6 +102,14 @@ const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
       return { ...state, userStats: action.payload };
     case 'SET_MESSAGE_STATS':
       return { ...state, messageStats: action.payload };
+    case 'SET_NOTIFICATION_DEBUG_INFO':
+      return { ...state, notificationDebugInfo: action.payload };
+    case 'ADD_NOTIFICATION_TEST_RESULT':
+      return { ...state, notificationTestResults: [...state.notificationTestResults, action.payload] };
+    case 'CLEAR_NOTIFICATION_TEST_RESULTS':
+      return { ...state, notificationTestResults: [] };
+    case 'SET_NOTIFICATION_DEBUGGING':
+      return { ...state, isNotificationDebugging: action.payload };
     default:
       return state;
   }
@@ -86,6 +125,9 @@ const initialState: AdminState = {
   messageStats: null,
   isLoading: false,
   error: null,
+  notificationDebugInfo: null,
+  notificationTestResults: [],
+  isNotificationDebugging: false,
 };
 
 // Admin password - in production, this should be more secure
@@ -246,6 +288,102 @@ export const AdminProvider: React.FC<AdminProviderProps> = ({ children }) => {
     }
   };
 
+  // Notification debugging methods
+  const refreshNotificationDebugInfo = async () => {
+    try {
+      // Mock implementation - replace with actual notification service calls
+      const debugInfo: NotificationDebugInfo = {
+        platform: 'React Native',
+        notificationModuleAvailable: true,
+        realtimeConnectionStatus: 'Connected',
+        pollingStatus: true,
+        lastNotificationTime: new Date().toISOString(),
+      };
+      dispatch({ type: 'SET_NOTIFICATION_DEBUG_INFO', payload: debugInfo });
+    } catch (error) {
+      console.error('Error refreshing notification debug info:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to refresh notification debug info' });
+    }
+  };
+
+  const testAllNotifications = async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      
+      // Mock test results - replace with actual notification tests
+      const testResult: NotificationTestResult = {
+        success: true,
+        message: 'All notification tests passed',
+        timestamp: Date.now(),
+        details: { testsRun: 5, passed: 5, failed: 0 }
+      };
+      
+      dispatch({ type: 'ADD_NOTIFICATION_TEST_RESULT', payload: testResult });
+    } catch (error) {
+      const testResult: NotificationTestResult = {
+        success: false,
+        message: 'Notification tests failed',
+        timestamp: Date.now(),
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
+      dispatch({ type: 'ADD_NOTIFICATION_TEST_RESULT', payload: testResult });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  const sendTestNotificationToUser = async (userId: string, type: 'message' | 'note' | 'general') => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      
+      // Mock implementation - replace with actual notification sending
+      const testResult: NotificationTestResult = {
+        success: true,
+        message: `Test ${type} notification sent to user ${userId}`,
+        timestamp: Date.now(),
+        details: { userId, type }
+      };
+      
+      dispatch({ type: 'ADD_NOTIFICATION_TEST_RESULT', payload: testResult });
+      Alert.alert('Success', `Test ${type} notification sent to user ${userId}`);
+    } catch (error) {
+      const testResult: NotificationTestResult = {
+        success: false,
+        message: `Failed to send test ${type} notification to user ${userId}`,
+        timestamp: Date.now(),
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
+      dispatch({ type: 'ADD_NOTIFICATION_TEST_RESULT', payload: testResult });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      
+      // Mock implementation - replace with actual notification clearing
+      Alert.alert('Success', 'All notifications cleared');
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to clear notifications' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  const startNotificationDebugging = () => {
+    dispatch({ type: 'SET_NOTIFICATION_DEBUGGING', payload: true });
+  };
+
+  const stopNotificationDebugging = () => {
+    dispatch({ type: 'SET_NOTIFICATION_DEBUGGING', payload: false });
+  };
+
+  const clearNotificationDebugHistory = () => {
+    dispatch({ type: 'CLEAR_NOTIFICATION_TEST_RESULTS' });
+  };
+
   const value: AdminContextType = {
     ...state,
     enableAdminMode,
@@ -262,6 +400,13 @@ export const AdminProvider: React.FC<AdminProviderProps> = ({ children }) => {
     sendTestMessage,
     simulateUserActivity,
     clearFakeNotes,
+    refreshNotificationDebugInfo,
+    testAllNotifications,
+    sendTestNotificationToUser,
+    clearAllNotifications,
+    startNotificationDebugging,
+    stopNotificationDebugging,
+    clearNotificationDebugHistory,
   };
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;

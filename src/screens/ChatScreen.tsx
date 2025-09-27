@@ -205,7 +205,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         ) : error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>❌ {error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadMessages}>
+            <TouchableOpacity style={styles.retryButton} onPress={() => loadMessages()}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>

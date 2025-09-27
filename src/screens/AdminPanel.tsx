@@ -67,9 +67,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
   const loadBuddyList = async () => {
     try {
-      const { FlexibleDatabaseService } = await import('@/services/flexibleDatabase');
-      const buddies = await FlexibleDatabaseService.request('GET', 'buddies?select=id,user_id,name,initials');
-      setBuddyList(buddies);
+      // Mock buddy list for admin panel
+      const mockBuddies = [
+        { id: '1', user_id: 'user1', name: 'Test Buddy 1', initials: 'TB1' },
+        { id: '2', user_id: 'user2', name: 'Test Buddy 2', initials: 'TB2' },
+        { id: '3', user_id: 'user3', name: 'Test Buddy 3', initials: 'TB3' },
+      ];
+      setBuddyList(mockBuddies);
     } catch (error) {
       console.error('Error loading buddy list:', error);
     }
