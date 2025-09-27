@@ -174,7 +174,7 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
         throw new Error('Failed to save profile');
       }
 
-      markProfileComplete();
+      markProfileComplete(true);
       onComplete(profileData);
     } catch (error) {
       console.error('Profile completion error:', error);

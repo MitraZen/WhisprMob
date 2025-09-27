@@ -23,6 +23,8 @@ export const theme = {
     onPrimary: '#ffffff',
     onSecondary: '#ffffff',
     onSurfaceVariant: '#64748b', // Slate gray
+    text: '#1e293b', // Dark slate for text
+    textSecondary: '#64748b', // Slate gray for secondary text
     
     // Modern accent colors
     accent: '#06b6d4', // Cyan accent

@@ -64,7 +64,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     }));
   };
 
-  const handlePermissionRequest = async (permissionType: string) => {
+  const handlePermissionRequest = async (permissionType: keyof PermissionStatus) => {
     try {
       const granted = await PermissionService.requestPermissionWithDialog(permissionType);
       if (granted) {

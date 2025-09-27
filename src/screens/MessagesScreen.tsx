@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 
-
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { Chat, Message } from '@/types';
 import { formatTimestamp } from '@/utils/helpers';
@@ -16,15 +15,19 @@ type RootStackParamList = {
   Chat: { chatId: string };
 };
 
+type MessagesScreenNavigationProp = {
+  navigate: (screen: keyof RootStackParamList, params?: any) => void;
+};
+
 
 
 const MessagesScreen: React.FC = () => {
-  const navigation = useNavigation<MessagesScreenNavigationProp>();
   const [chats] = useState<Chat[]>([]); // In real app, this would come from state/store
 
   const renderChatItem = ({ item }: { item: Chat }) => {
     const handleChatPress = () => {
-      navigation.navigate('Chat', { chatId: item.id });
+      // Navigation would be handled by parent component
+      console.log('Navigate to chat:', item.id);
     };
 
     return (

@@ -13,7 +13,6 @@ import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
 import { MoodType } from '@/types';
 
 const HomeScreen: React.FC = () => {
-  const navigation = useNavigation();
   const { user, updateMood } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -24,15 +23,18 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleMoodChange = () => {
-    navigation.navigate('MoodSelection' as never);
+    // Navigation would be handled by parent component
+    console.log('Navigate to mood selection');
   };
 
   const handleFindConnections = () => {
-    navigation.navigate('Connections' as never);
+    // Navigation would be handled by parent component
+    console.log('Navigate to connections');
   };
 
   const handleViewMessages = () => {
-    navigation.navigate('Messages' as never);
+    // Navigation would be handled by parent component
+    console.log('Navigate to messages');
   };
 
   if (!user) {

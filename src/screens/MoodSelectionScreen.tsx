@@ -14,7 +14,6 @@ import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
 import { MoodType } from '@/types';
 
 const MoodSelectionScreen: React.FC = () => {
-  const navigation = useNavigation();
   const { login } = useAuth();
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [isLoading, setIsLoading] = useState(false);
