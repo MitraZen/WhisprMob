@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { spacing, borderRadius } from '@/utils/themes';
+import { useTheme } from '@/store/ThemeContext';
 
 interface NavigationMenuProps {
   currentScreen: string;
@@ -8,12 +9,15 @@ interface NavigationMenuProps {
 }
 
 export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, onNavigate }) => {
+  const { theme } = useTheme();
   const menuItems = [
     { id: 'notes', label: 'Notes', icon: '📝' },
     { id: 'buddies', label: 'Buddies', icon: '👥' },
     { id: 'profile', label: 'Profile', icon: '👤' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
+  
+  const styles = createStyles(theme);
 
   return (
     <View style={styles.container}>
@@ -43,16 +47,16 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: theme.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+    borderTopColor: theme.colors.border,
     paddingBottom: Platform.OS === 'ios' ? 34 : 16, // Extra padding for home indicator
     paddingTop: spacing.sm,
-    shadowColor: '#000',
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: theme.colors.text === '#ffffff' ? 0.3 : 0.1,
     shadowRadius: 8,
     elevation: 8,
   },

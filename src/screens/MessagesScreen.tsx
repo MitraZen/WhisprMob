@@ -6,7 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
 } from 'react-native';
-
+import { useNavigation } from '@react-navigation/native';
 
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { Chat, Message } from '@/types';
@@ -16,7 +16,9 @@ type RootStackParamList = {
   Chat: { chatId: string };
 };
 
-
+type MessagesScreenNavigationProp = {
+  navigate: (screen: keyof RootStackParamList, params?: any) => void;
+};
 
 const MessagesScreen: React.FC = () => {
   const navigation = useNavigation<MessagesScreenNavigationProp>();

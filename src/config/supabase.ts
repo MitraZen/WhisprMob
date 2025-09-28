@@ -2,28 +2,17 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUPABASE_CONFIG } from './env';
 
-// Create Supabase client with React Native specific configuration
+// Create Supabase client with minimal configuration to avoid protocol issues
 export const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
   auth: {
-    // Enable automatic token refresh
     autoRefreshToken: true,
-    // Persist session in AsyncStorage
     persistSession: true,
-    // Detect session from URL
     detectSessionInUrl: false,
-    // Use AsyncStorage for session persistence
     storage: AsyncStorage,
   },
-  // React Native specific settings
   global: {
     headers: {
       'X-Client-Info': 'whispr-mobile-app',
-    },
-  },
-  // Disable real-time for now to avoid protocol issues
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
     },
   },
 });

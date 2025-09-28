@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { spacing, borderRadius } from '@/utils/themes';
+import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, Buddy } from '@/services/buddiesService';
 
@@ -10,69 +11,95 @@ interface BuddiesScreenProps {
 }
 
 export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }) => {
+  const { theme } = useTheme();
   const [buddies, setBuddies] = useState<Buddy[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'pinned' | 'online'>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  
+  const styles = createStyles(theme);
 
-  // Load buddies from database
+  // Load buddies from database (initial load)
   useEffect(() => {
-    loadBuddies();
+    loadBuddies(true);
   }, [user?.id]);
 
-  // Auto-refresh buddies every 10 seconds
+  // Auto-refresh buddies every 10 seconds (silent, no loader)
   useEffect(() => {
     if (!user?.id) return;
-
     const interval = setInterval(() => {
-      loadBuddies();
-    }, 10000); // Refresh every 10 seconds
-
+      loadBuddies(false);
+    }, 10000);
     return () => clearInterval(interval);
   }, [user?.id]);
 
-  const loadBuddies = async () => {
+  const loadBuddies = async (showLoader = false) => {
     if (!user?.id) return;
-    
-    setIsLoading(true);
+  
+    if (showLoader) setIsLoading(true);
     setError(null);
-    
+  
     try {
-      console.log('Loading buddies for user:', user.id);
       const buddiesData = await BuddiesService.getBuddies(user.id);
-      console.log(`Loaded ${buddiesData.length} buddies successfully`);
-      setBuddies(buddiesData);
+  
+      setBuddies((prevBuddies) => {
+        // If lengths differ, definitely update
+        if (prevBuddies.length !== buddiesData.length) return buddiesData;
+  
+        // Compare old vs new
+        let changed = false;
+        const merged = buddiesData.map((newBuddy) => {
+          const oldBuddy = prevBuddies.find((b) => b.id === newBuddy.id);
+          if (!oldBuddy) {
+            changed = true;
+            return newBuddy;
+          }
+  
+          const isSame =
+            oldBuddy.name === newBuddy.name &&
+            oldBuddy.unreadCount === newBuddy.unreadCount &&
+            oldBuddy.isPinned === newBuddy.isPinned &&
+            oldBuddy.isOnline === newBuddy.isOnline &&
+            oldBuddy.lastMessage === newBuddy.lastMessage &&
+            oldBuddy.lastMessageTime?.toString() === newBuddy.lastMessageTime?.toString();
+  
+          if (!isSame) changed = true;
+          return isSame ? oldBuddy : newBuddy;
+        });
+  
+        return changed ? merged : prevBuddies;
+      });
+  
+      setLastUpdated(new Date());
     } catch (err) {
       console.error('Error loading buddies:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load buddies');
-      
-      // Show fallback message
-      Alert.alert(
-        'Error Loading Buddies',
-        'Unable to load your buddies. Please check your connection and try again.',
-        [
-          { text: 'Retry', onPress: loadBuddies },
-          { text: 'Cancel', style: 'cancel' }
-        ]
-      );
+  
+      // Only show alert if it's the *first load* or a manual retry
+      if (showLoader) {
+        setError(err instanceof Error ? err.message : 'Failed to load buddies');
+        Alert.alert(
+          'Error Loading Buddies',
+          'Unable to load your buddies. Please check your connection and try again.',
+          [
+            { text: 'Retry', onPress: () => loadBuddies(true) },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      }
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // always reset
     }
   };
 
   const filteredBuddies = buddies.filter(buddy => {
     const matchesSearch = buddy.name.toLowerCase().includes(searchQuery.toLowerCase());
-    
     switch (filter) {
-      case 'unread':
-        return matchesSearch && buddy.unreadCount > 0;
-      case 'pinned':
-        return matchesSearch && buddy.isPinned;
-      case 'online':
-        return matchesSearch && buddy.isOnline;
-      default:
-        return matchesSearch;
+      case 'unread': return matchesSearch && buddy.unreadCount > 0;
+      case 'pinned': return matchesSearch && buddy.isPinned;
+      case 'online': return matchesSearch && buddy.isOnline;
+      default: return matchesSearch;
     }
   });
 
@@ -80,11 +107,13 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     onNavigate('chat', { buddy });
   };
 
+  // ✅ Instant local state updates (no reload needed)
   const handlePinToggle = async (buddyId: string) => {
     try {
       await BuddiesService.toggleBuddyPin(buddyId, user.id);
-      // Reload buddies to reflect the change
-      await loadBuddies();
+      setBuddies(prev => prev.map(b =>
+        b.id === buddyId ? { ...b, isPinned: !b.isPinned } : b
+      ));
     } catch (error) {
       console.error('Error toggling pin:', error);
       Alert.alert('Error', 'Failed to update buddy pin status');
@@ -97,17 +126,15 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
       'Are you sure you want to clear all messages with this buddy? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Clear', 
+        {
+          text: 'Clear',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Starting to clear chat for buddy:', buddyId);
               await BuddiesService.clearChatHistory(buddyId);
-              
-              // Reload buddies to reflect the change
-              await loadBuddies();
-              
+              setBuddies(prev => prev.map(b =>
+                b.id === buddyId ? { ...b, lastMessage: '', unreadCount: 0 } : b
+              ));
               Alert.alert('Success', 'Chat history cleared successfully');
             } catch (error) {
               console.error('Error clearing chat:', error);
@@ -123,21 +150,17 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const handleDeleteBuddy = (buddy: Buddy) => {
     Alert.alert(
       'Delete Buddy',
-      `Are you sure you want to remove ${buddy.name} from your buddies list? This will end your relationship and remove all chat history.`,
+      `Are you sure you want to remove ${buddy.name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
+        {
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Deleting buddy:', buddy.id);
               await BuddiesService.deleteBuddy(buddy.id, user.id);
-              
-              // Reload buddies to reflect the change
-              await loadBuddies();
-              
-              Alert.alert('Success', `${buddy.name} has been removed from your buddies list`);
+              setBuddies(prev => prev.filter(b => b.id !== buddy.id));
+              Alert.alert('Success', `${buddy.name} has been removed`);
             } catch (error) {
               console.error('Error deleting buddy:', error);
               const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -152,20 +175,16 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const handleBlockUser = (buddy: Buddy) => {
     Alert.alert(
       'Block User',
-      `Are you sure you want to block ${buddy.name}? This will remove them from your buddies list and prevent them from contacting you.`,
+      `Are you sure you want to block ${buddy.name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Block', 
+        {
+          text: 'Block',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Blocking user:', buddy.buddyUserId);
               await BuddiesService.blockUser(buddy.buddyUserId || buddy.id, user.id);
-              
-              // Reload buddies to reflect the change
-              await loadBuddies();
-              
+              setBuddies(prev => prev.filter(b => b.id !== buddy.id));
               Alert.alert('Success', `${buddy.name} has been blocked`);
             } catch (error) {
               console.error('Error blocking user:', error);
@@ -184,32 +203,19 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
       `What would you like to do with ${buddy.name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete Buddy', 
-          style: 'destructive',
-          onPress: () => handleDeleteBuddy(buddy)
-        },
-        { 
-          text: 'Block User', 
-          style: 'destructive',
-          onPress: () => handleBlockUser(buddy)
-        },
-        { 
-          text: 'Clear Chat', 
-          onPress: () => handleClearChat(buddy.id)
-        },
+        { text: 'Delete Buddy', style: 'destructive', onPress: () => handleDeleteBuddy(buddy) },
+        { text: 'Block User', style: 'destructive', onPress: () => handleBlockUser(buddy) },
+        { text: 'Clear Chat', onPress: () => handleClearChat(buddy.id) },
       ]
     );
   };
 
   const formatLastSeen = (lastMessageTime?: Date): string => {
     if (!lastMessageTime) return 'No messages';
-    
     const now = new Date();
     const diff = now.getTime() - lastMessageTime.getTime();
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
-
     if (minutes < 1) return 'now';
     if (minutes < 60) return `${minutes}m`;
     if (hours < 24) return `${hours}h`;
@@ -218,14 +224,10 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
 
   const getFilterCount = (filterType: typeof filter): number => {
     switch (filterType) {
-      case 'unread':
-        return buddies.filter(b => b.unreadCount > 0).length;
-      case 'pinned':
-        return buddies.filter(b => b.isPinned).length;
-      case 'online':
-        return buddies.filter(b => b.isOnline).length;
-      default:
-        return buddies.length;
+      case 'unread': return buddies.filter(b => b.unreadCount > 0).length;
+      case 'pinned': return buddies.filter(b => b.isPinned).length;
+      case 'online': return buddies.filter(b => b.isOnline).length;
+      default: return buddies.length;
     }
   };
 
@@ -275,7 +277,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
         ) : error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>❌ {error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadBuddies}>
+            <TouchableOpacity style={styles.retryButton} onPress={() => loadBuddies(true)}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -303,7 +305,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                     <Text style={styles.buddyName}>{buddy.name}</Text>
                   </View>
                 </View>
-                
+
                 <View style={styles.buddyStatus}>
                   <View style={[
                     styles.statusIndicator,
@@ -342,7 +344,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                     <Text style={styles.actionButtonText}>⋯</Text>
                   </TouchableOpacity>
                 </View>
-                
+
                 {buddy.unreadCount > 0 && (
                   <View style={styles.unreadBadge}>
                     <Text style={styles.unreadCount}>{buddy.unreadCount}</Text>
@@ -353,21 +355,27 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           ))
         )}
       </ScrollView>
-      
+
+      {/* ✅ Last Updated Timestamp */}
+      {lastUpdated && (
+        <View style={styles.lastUpdatedContainer}>
+          <Text style={styles.lastUpdatedText}>
+            Last updated at {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
+      )}
+
       {/* Bottom Navigation Menu */}
       <NavigationMenu currentScreen="buddies" onNavigate={onNavigate} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+const createStyles = (theme: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     backgroundColor: '#7c3aed',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
     shadowColor: '#7c3aed',
@@ -426,22 +434,14 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     backgroundColor: '#f3f4f6',
   },
-  activeFilterButton: {
-    backgroundColor: theme.colors.primary,
-  },
+  activeFilterButton: { backgroundColor: theme.colors.primary },
   filterButtonText: {
     fontSize: 12,
     color: theme.colors.onSurface,
     fontWeight: '500',
   },
-  activeFilterButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  buddiesList: {
-    flex: 1,
-    padding: spacing.sm,
-  },
+  activeFilterButtonText: { color: '#fff', fontWeight: '600' },
+  buddiesList: { flex: 1, padding: spacing.sm },
   buddyCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: borderRadius.md,
@@ -459,45 +459,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  buddyInfo: {
-    flex: 1,
-  },
-  nameContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  buddyInfo: { flex: 1 },
+  nameContainer: { flexDirection: 'row', alignItems: 'center' },
   buddyName: {
     fontSize: 18,
     fontWeight: '600',
     color: theme.colors.onSurface,
     marginRight: spacing.xs,
   },
-  pinIcon: {
-    fontSize: 10,
-  },
-  buddyUsername: {
-    fontSize: 10,
-    color: '#9ca3af',
-  },
-  buddyStatus: {
-    alignItems: 'flex-end',
-  },
+  buddyStatus: { alignItems: 'flex-end' },
   statusIndicator: {
     width: 8,
     height: 8,
     borderRadius: borderRadius.full,
     marginBottom: spacing.xs,
   },
-  onlineIndicator: {
-    backgroundColor: '#10b981',
-  },
-  offlineIndicator: {
-    backgroundColor: '#9ca3af',
-  },
-  lastSeen: {
-    fontSize: 12,
-    color: '#9ca3af',
-  },
+  onlineIndicator: { backgroundColor: '#10b981' },
+  offlineIndicator: { backgroundColor: '#9ca3af' },
+  lastSeen: { fontSize: 12, color: '#9ca3af' },
   lastMessage: {
     fontSize: 14,
     color: theme.colors.onSurface,
@@ -509,16 +488,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  actionButton: {
-    padding: spacing.xs,
-  },
-  actionButtonText: {
-    fontSize: 16,
-  },
+  actionButtons: { flexDirection: 'row', gap: spacing.xs },
+  actionButton: { padding: spacing.xs },
+  actionButtonText: { fontSize: 16 },
   unreadBadge: {
     backgroundColor: theme.colors.primary,
     borderRadius: borderRadius.full,
@@ -528,39 +500,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.xs,
   },
-  unreadCount: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
+  unreadCount: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  emptyState: { alignItems: 'center', paddingVertical: spacing.xxl },
   emptyStateText: {
     fontSize: 16,
     color: theme.colors.onSurface,
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
-  loadingText: {
-    marginTop: spacing.md,
-    fontSize: 16,
-    color: theme.colors.onSurface,
-  },
-  errorContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
+  emptyStateSubtext: { fontSize: 14, color: '#9ca3af', textAlign: 'center' },
+  loadingContainer: { alignItems: 'center', paddingVertical: spacing.xxl },
+  loadingText: { marginTop: spacing.md, fontSize: 16, color: theme.colors.onSurface },
+  errorContainer: { alignItems: 'center', paddingVertical: spacing.xxl },
   errorText: {
     fontSize: 16,
     color: theme.colors.error,
@@ -573,11 +524,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
   },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  retryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  lastUpdatedContainer: { alignItems: 'center', paddingVertical: spacing.sm },
+  lastUpdatedText: { fontSize: 12, color: '#9ca3af' },
 });
 
 export default BuddiesScreen;

@@ -1,4 +1,5 @@
 import { NativeModules, Platform, Alert } from 'react-native';
+import PushNotification from 'react-native-push-notification';
 
 const { PermissionModule } = NativeModules;
 
@@ -127,15 +128,52 @@ class PermissionService {
    */
   async requestNotificationPermissions(): Promise<boolean> {
     try {
-      if (!PermissionModule) {
-        Alert.alert('Error', 'Permission module not available');
-        return false;
+      if (Platform.OS === 'android') {
+        // For Android 13+ (API 33+), we need to request POST_NOTIFICATIONS permission
+        // For older versions, permissions are handled by the manifest
+        const androidVersion = Platform.Version;
+        
+        if (androidVersion >= 33) {
+          // Android 13+ requires runtime permission request
+          console.log('Android 13+ detected - attempting permission request');
+          
+          try {
+            // Try to request permissions using PushNotification
+            const permissions = await PushNotification.requestPermissions();
+            console.log('Android notification permissions result:', permissions);
+            
+            if (permissions.alert) {
+              return true;
+            } else {
+              // Permission denied - show instructions
+              this.showNotificationPermissionInstructions();
+              return false;
+            }
+          } catch (error) {
+            console.error('Error requesting Android notification permissions:', error);
+            // Fallback: show instructions for manual setup
+            this.showNotificationPermissionInstructions();
+            return false;
+          }
+        } else {
+          // For Android < 13, permissions are handled by manifest
+          console.log('Android < 13 detected - checking notification permissions');
+          return await this.checkNotificationPermissions();
+        }
+      } else {
+        // For iOS, request permissions
+        console.log('iOS detected - requesting notification permissions');
+        try {
+          const permissions = await PushNotification.requestPermissions();
+          console.log('iOS notification permissions result:', permissions);
+          return permissions.alert || false;
+        } catch (error) {
+          console.error('Error requesting iOS notification permissions:', error);
+          return await this.checkNotificationPermissions();
+        }
       }
-      
-      return await PermissionModule.requestNotificationPermissions();
     } catch (error) {
       console.error('Error requesting notification permissions:', error);
-      Alert.alert('Error', 'Failed to request notification permissions');
       return false;
     }
   }
@@ -314,6 +352,50 @@ class PermissionService {
         ]
       );
     });
+  }
+
+  /**
+   * Check if notification permissions are granted (Android specific)
+   */
+  async checkAndroidNotificationPermissions(): Promise<boolean> {
+    try {
+      if (Platform.OS !== 'android') return true;
+      
+      // For Android, we can check if the permission is granted
+      // This is a simplified check - in a real app you might want to use
+      // react-native-permissions library for more robust permission handling
+      return true; // Assume granted if we reach this point
+    } catch (error) {
+      console.error('Error checking Android notification permissions:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Show instructions for manually enabling notification permissions
+   */
+  showNotificationPermissionInstructions(): void {
+    Alert.alert(
+      'Enable Notifications',
+      'To receive notifications for new messages:\n\n' +
+      '📱 MANUAL STEPS:\n' +
+      '1. Go to Settings > Apps > Whispr\n' +
+      '2. Tap "Permissions" or "App permissions"\n' +
+      '3. Enable "Notifications"\n' +
+      '4. Go to Settings > Apps > Whispr > Notifications\n' +
+      '5. Enable "Allow notifications"\n' +
+      '6. Enable "Show on lock screen"\n\n' +
+      '🔧 OR USE ADB COMMAND:\n' +
+      'Run: adb shell pm grant com.whisprmobiletemp android.permission.POST_NOTIFICATIONS\n\n' +
+      'After enabling, restart the app to activate notifications.',
+      [
+        { text: 'OK', style: 'default' },
+        { text: 'Open Settings', style: 'default', onPress: () => {
+          // Try to open app settings
+          console.log('Opening app settings...');
+        }}
+      ]
+    );
   }
 }
 

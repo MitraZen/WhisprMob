@@ -46,6 +46,27 @@ export interface WhisprNote {
 }
 
 export class BuddiesService {
+  // Test network connectivity to Supabase
+  static async testNetworkConnection(): Promise<boolean> {
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/user_profiles?select=id&limit=1`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('Supabase connection test:', response.status, response.ok);
+      return response.ok;
+    } catch (error) {
+      console.error('Supabase connection test failed:', error);
+      return false;
+    }
+  }
+
   private static async request(
     method: string,
     path: string,
@@ -68,6 +89,7 @@ export class BuddiesService {
     };
 
     try {
+      // Reduced logging for performance
       const response = await fetch(url, options);
       
       if (!response.ok) {
@@ -98,8 +120,7 @@ export class BuddiesService {
       'Content-Type': 'application/json',
     };
 
-    console.log(`RPC Request to ${functionName}:`, { url, params });
-
+    // Reduced logging for performance
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -107,16 +128,12 @@ export class BuddiesService {
         body: JSON.stringify(params),
       });
 
-      console.log(`RPC Response status: ${response.status}`);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`RPC Error response: ${errorText}`);
         throw new Error(`RPC error! status: ${response.status}, message: ${errorText}`);
       }
 
       const result = await response.json();
-      console.log(`RPC Response result:`, result);
       return result;
     } catch (error) {
       console.error(`BuddiesService RPC error for ${functionName}:`, error);
@@ -139,7 +156,6 @@ export class BuddiesService {
 
       // Transform database buddies to mobile app format
       return data.map((buddy: any) => {
-        console.log('BuddiesService.getBuddies - Raw buddy data:', buddy);
         const transformedBuddy = {
           id: buddy.id,
           name: buddy.name,
@@ -156,7 +172,6 @@ export class BuddiesService {
           updatedAt: new Date(buddy.updated_at),
           buddyUserId: buddy.buddy_user_id || buddy.user_id || buddy.id, // Add buddy user ID for profile viewing
         };
-        console.log('BuddiesService.getBuddies - Transformed buddy:', transformedBuddy);
         return transformedBuddy;
       });
     } catch (error) {
@@ -288,34 +303,6 @@ export class BuddiesService {
     }
   }
 
-  // Block a user
-  static async blockUser(blockedUserId: string, reason?: string): Promise<boolean> {
-    try {
-      await this.rpcRequest('block_user', {
-        blocked_user_id_param: blockedUserId,
-        reason_param: reason || null
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error blocking user:', error);
-      throw error;
-    }
-  }
-
-  // Unblock a user
-  static async unblockUser(blockedUserId: string): Promise<boolean> {
-    try {
-      await this.rpcRequest('unblock_user', {
-        blocked_user_id_param: blockedUserId
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error unblocking user:', error);
-      throw error;
-    }
-  }
 
   // Get blocked users
   static async getBlockedUsers(): Promise<any[]> {

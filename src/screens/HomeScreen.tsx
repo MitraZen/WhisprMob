@@ -7,15 +7,20 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import { useAuth } from '@/store/AuthContext';
-import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
+import { useTheme } from '@/store/ThemeContext';
+import { moodConfig, spacing, borderRadius } from '@/utils/themes';
 import { MoodType } from '@/types';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const { user, updateMood } = useAuth();
+  const { theme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
+  
+  const styles = createStyles(theme);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -133,7 +138,7 @@ const HomeScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
