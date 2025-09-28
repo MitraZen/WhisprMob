@@ -562,5 +562,19 @@ export class FlexibleDatabaseService {
       throw error;
     }
   }
+
+  static async getBuddies(userId?: string): Promise<any[]> {
+    try {
+      let url = 'buddies?select=id,user_id,name,initials,status';
+      if (userId) {
+        url += `&user_id=eq.${userId}`;
+      }
+      const data = await this.request('GET', url);
+      return data || [];
+    } catch (error) {
+      console.error('Error getting buddies:', error);
+      return [];
+    }
+  }
 }
 

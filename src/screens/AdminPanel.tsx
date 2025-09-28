@@ -68,7 +68,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const loadBuddyList = async () => {
     try {
       const { FlexibleDatabaseService } = await import('@/services/flexibleDatabase');
-      const buddies = await FlexibleDatabaseService.request('GET', 'buddies?select=id,user_id,name,initials');
+      const buddies = await FlexibleDatabaseService.getBuddies();
       setBuddyList(buddies);
     } catch (error) {
       console.error('Error loading buddy list:', error);
@@ -150,6 +150,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       ]
     );
   };
+
 
   const handleSimulateActivity = () => {
     if (!selectedUserId.trim()) {
@@ -434,6 +435,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             )}
           </View>
         )}
+
 
         {/* Logout */}
         <View style={styles.section}>

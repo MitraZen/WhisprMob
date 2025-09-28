@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, RefreshControl } from 'react-native';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { spacing, borderRadius } from '@/utils/themes';
+import { useTheme } from '@/store/ThemeContext';
 import { BuddiesService, BuddyMessage } from '@/services/buddiesService';
 import { UserProfileView } from '@/components/UserProfileView';
 
@@ -11,6 +12,7 @@ interface ChatScreenProps {
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user }) => {
+  const { theme } = useTheme();
   const [messages, setMessages] = useState<BuddyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -18,6 +20,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const styles = createStyles(theme);
   const [showProfileView, setShowProfileView] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -205,7 +209,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
         ) : error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>❌ {error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadMessages}>
+            <TouchableOpacity style={styles.retryButton} onPress={() => loadMessages()}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -306,7 +310,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

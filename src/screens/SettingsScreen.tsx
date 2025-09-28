@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform } from 'react-native';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { spacing, borderRadius } from '@/utils/themes';
+import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { notificationService } from '@/services/notificationService';
 import PermissionService, { PermissionStatus } from '../services/permissionService';
@@ -13,8 +14,8 @@ interface SettingsScreenProps {
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user, onLogout }) => {
+  const { theme, isDark, toggleTheme } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkModeEnabled, setDarkModeEnabled] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{ [key: string]: boolean }>({});
@@ -28,6 +29,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   });
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  
+  const styles = createStyles(theme);
 
   // Initialize animations and load permissions
   React.useEffect(() => {
@@ -66,7 +69,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
 
   const handlePermissionRequest = async (permissionType: string) => {
     try {
-      const granted = await PermissionService.requestPermissionWithDialog(permissionType);
+      const granted = await PermissionService.requestPermissionWithDialog(permissionType as keyof PermissionStatus);
       if (granted) {
         // Reload permission status to get the updated state
         await loadPermissionStatus();
@@ -494,10 +497,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
               icon="🌙"
               rightComponent={
                 <Switch
-                  value={darkModeEnabled}
-                  onValueChange={setDarkModeEnabled}
+                  value={isDark}
+                  onValueChange={toggleTheme}
                   trackColor={{ false: '#e5e7eb', true: '#dbeafe' }}
-                  thumbColor={darkModeEnabled ? theme.colors.primary : '#f3f4f6'}
+                  thumbColor={isDark ? theme.colors.primary : '#f3f4f6'}
                 />
               }
             />
@@ -629,7 +632,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

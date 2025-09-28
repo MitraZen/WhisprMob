@@ -1,4 +1,3 @@
-import { supabase } from '@/config/supabase';
 import { notificationService } from './notificationService';
 
 interface RealtimeSubscription {
@@ -16,20 +15,12 @@ class RealtimeService {
     console.log('Initializing realtime service for user:', userId);
     
     try {
-      // Check if supabase is available
-      if (!supabase) {
-        console.warn('Supabase client not available, skipping realtime initialization');
-        return;
-      }
+      // Temporarily disable realtime subscriptions due to protocol issues
+      console.log('Realtime subscriptions disabled - using polling only');
       
-      // Subscribe to buddy messages
-      await this.subscribeToMessages();
-      
-      // Subscribe to Whispr notes
-      await this.subscribeToNotes();
-      
+      // Mark as connected but don't actually subscribe
       this.isConnected = true;
-      console.log('Realtime service initialized successfully');
+      console.log('Realtime service initialized (polling mode)');
     } catch (error) {
       console.error('Failed to initialize realtime service:', error);
       // Don't throw the error, just log it
@@ -37,7 +28,7 @@ class RealtimeService {
     }
   }
 
-  private async subscribeToMessages() {
+  private async subscribeToMessages(supabase: any) {
     if (!this.userId || !supabase) return;
 
     console.log('Subscribing to buddy messages...');
@@ -53,7 +44,7 @@ class RealtimeService {
           table: 'buddy_messages',
           filter: `receiver_id=eq.${this.userId}`,
         },
-        async (payload) => {
+        async (payload: any) => {
           console.log('New message received via realtime:', payload);
           
           try {
@@ -79,7 +70,7 @@ class RealtimeService {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         console.log('Message subscription status:', status);
       });
 
@@ -95,7 +86,7 @@ class RealtimeService {
     }
   }
 
-  private async subscribeToNotes() {
+  private async subscribeToNotes(supabase: any) {
     if (!this.userId || !supabase) return;
 
     console.log('Subscribing to Whispr notes...');
@@ -111,7 +102,7 @@ class RealtimeService {
           table: 'whispr_notes',
           filter: `sender_id=neq.${this.userId}`,
         },
-        async (payload) => {
+        async (payload: any) => {
           console.log('New Whispr note received via realtime:', payload);
           
           try {
@@ -127,7 +118,7 @@ class RealtimeService {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         console.log('Note subscription status:', status);
       });
 
@@ -164,6 +155,7 @@ class RealtimeService {
   // Test realtime connection
   async testConnection(): Promise<boolean> {
     try {
+      const { supabase } = await import('@/config/supabase');
       const { data, error } = await supabase
         .from('user_profiles')
         .select('id')

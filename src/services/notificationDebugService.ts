@@ -37,7 +37,7 @@ class NotificationDebugService {
         notificationModuleAvailable: !!NotificationModule,
         notificationChannels: await this.getNotificationChannels(),
         notificationPermissions: await this.getNotificationPermissions(),
-        realtimeConnectionStatus: realtimeService.getConnectionStatus(),
+        realtimeConnectionStatus: realtimeService.getConnectionStatus().isConnected ? 'Connected' : 'Disconnected',
         pollingStatus: notificationManager.isPolling(),
         lastNotificationTime: this.getLastNotificationTime(),
         notificationHistory: this.getNotificationHistory(),

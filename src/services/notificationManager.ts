@@ -10,9 +10,11 @@ interface NotificationManager {
 class NotificationManagerClass implements NotificationManager {
   private pollingInterval: NodeJS.Timeout | null = null;
   private isPollingActive = false;
-  private lastMessageCounts: { [buddyId: string]: number } = {};
-  private lastNoteCount = 0;
+  private lastMessageIds: { [buddyId: string]: string[] } = {};
+  private lastNoteIds: string[] = [];
   private userId: string | null = null;
+  private lastNetworkCheck = 0;
+  private networkCheckInterval = 60000; // Check network every 60 seconds
 
   startPolling(userId: string) {
     if (this.isPollingActive) {
@@ -22,11 +24,15 @@ class NotificationManagerClass implements NotificationManager {
     this.userId = userId;
     this.isPollingActive = true;
     
-    // Poll every 5 seconds for new messages and notes
+    // Clear previous notification history to avoid duplicates
+    this.lastMessageIds = {};
+    this.lastNoteIds = [];
+    
+    // Poll every 30 seconds for new messages and notes (optimized for performance)
     this.pollingInterval = setInterval(async () => {
       await this.checkForNewMessages();
       await this.checkForNewNotes();
-    }, 5000);
+    }, 30000);
 
     console.log('Notification polling started for user:', userId);
   }
@@ -49,36 +55,52 @@ class NotificationManagerClass implements NotificationManager {
     if (!this.userId) return;
 
     try {
-      // Get all buddies
+      // Test network connectivity only if we haven't checked recently
+      const now = Date.now();
+      if (now - this.lastNetworkCheck > this.networkCheckInterval) {
+        const isConnected = await BuddiesService.testNetworkConnection();
+        this.lastNetworkCheck = now;
+        if (!isConnected) {
+          console.warn('Network connection failed, skipping message check');
+          return;
+        }
+      }
+
+      // Use BuddiesService for message checking (it has the correct methods)
       const buddies = await BuddiesService.getBuddies(this.userId);
       
       for (const buddy of buddies) {
-        // Get messages for this buddy
-        const messages = await BuddiesService.getMessages(buddy.id);
-        const currentCount = messages.length;
-        const lastCount = this.lastMessageCounts[buddy.id] || 0;
-
-        // If there are new messages and they're not from the current user
-        if (currentCount > lastCount && messages.length > 0) {
-          const latestMessage = messages[0]; // First message is newest due to inverted FlatList
+        try {
+          // Get messages for this buddy
+          const messages = await BuddiesService.getMessages(buddy.id);
+          const lastKnownIds = this.lastMessageIds[buddy.id] || [];
           
-          // Only notify for messages from others
-          if (latestMessage.sender_id !== this.userId) {
+          // Find new messages (not in our last known list)
+          const newMessages = messages.filter(message => 
+            !lastKnownIds.includes(message.id) && 
+            message.senderId !== this.userId
+          );
+
+          // Send notifications for new messages
+          for (const message of newMessages) {
             try {
               await notificationService.showMessageNotification(
                 'New Message',
-                latestMessage.content,
+                message.content || 'New message received',
                 buddy.name || buddy.initials || 'Buddy'
               );
-              console.log('Notification sent for new message from:', buddy.name);
+              console.log('Background notification sent for new message from:', buddy.name, 'Content:', message.content);
             } catch (error) {
               console.warn('Failed to send message notification:', error);
             }
           }
-        }
 
-        // Update the count
-        this.lastMessageCounts[buddy.id] = currentCount;
+          // Update the known message IDs (keep last 50 to avoid memory issues)
+          const currentIds = messages.map(m => m.id).slice(0, 50);
+          this.lastMessageIds[buddy.id] = currentIds;
+        } catch (buddyError) {
+          console.warn(`Failed to check messages for buddy ${buddy.name}:`, buddyError);
+        }
       }
     } catch (error) {
       console.error('Error checking for new messages:', error);
@@ -89,30 +111,41 @@ class NotificationManagerClass implements NotificationManager {
     if (!this.userId) return;
 
     try {
-      // Get Whispr notes
-      const notes = await BuddiesService.getWhisprNotes(this.userId);
-      const currentCount = notes.length;
-
-      // If there are new notes
-      if (currentCount > this.lastNoteCount && notes.length > 0) {
-        const latestNote = notes[0]; // First note is newest
-        
-        // Only notify for notes from others
-        if (latestNote.sender_id !== this.userId) {
-          try {
-            await notificationService.showNoteNotification(
-              'New Whispr Note',
-              latestNote.content
-            );
-            console.log('Notification sent for new Whispr note');
-          } catch (error) {
-            console.warn('Failed to send note notification:', error);
-          }
+      // Skip network check if we already checked recently (shared with messages)
+      const now = Date.now();
+      if (now - this.lastNetworkCheck > this.networkCheckInterval) {
+        const isConnected = await BuddiesService.testNetworkConnection();
+        this.lastNetworkCheck = now;
+        if (!isConnected) {
+          console.warn('Network connection failed, skipping notes check');
+          return;
         }
       }
 
-      // Update the count
-      this.lastNoteCount = currentCount;
+      // Use BuddiesService for notes checking (it has the correct methods)
+      const notes = await BuddiesService.getWhisprNotes(this.userId);
+      
+      // Find new notes (not in our last known list)
+      const newNotes = notes.filter(note => 
+        !this.lastNoteIds.includes(note.id) && 
+        note.senderId !== this.userId
+      );
+
+      // Send notifications for new notes
+      for (const note of newNotes) {
+        try {
+          await notificationService.showNoteNotification(
+            'New Whispr Note',
+            note.content || 'New note received'
+          );
+          console.log('Background notification sent for new Whispr note, Content:', note.content);
+        } catch (error) {
+          console.warn('Failed to send note notification:', error);
+        }
+      }
+
+      // Update the known note IDs (keep last 50 to avoid memory issues)
+      this.lastNoteIds = notes.map(n => n.id).slice(0, 50);
     } catch (error) {
       console.error('Error checking for new notes:', error);
     }

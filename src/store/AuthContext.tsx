@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
@@ -67,6 +68,68 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     checkAuthStatus();
   }, []);
 
+  // AppState listener for notification services
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      console.log('AppState changed to:', nextAppState);
+      
+      if (nextAppState === 'active' && state.isAuthenticated && state.user) {
+        console.log('App became active - initializing notification services for user:', state.user.id);
+        await initializeNotificationServicesSafely(state.user.id);
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        console.log('App went to background - stopping notification services');
+        await stopNotificationServicesSafely();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      subscription?.remove();
+    };
+  }, [state.isAuthenticated, state.user]);
+
+  // Safe notification service initialization
+  const initializeNotificationServicesSafely = async (userId: string) => {
+    try {
+      console.log('Safely initializing notification services for user:', userId);
+      
+      // Import services dynamically to avoid circular dependencies
+      const { realtimeService } = await import('@/services/realtimeService');
+      const { notificationManager } = await import('@/services/notificationManager');
+      
+      // Initialize realtime service for live notifications
+      await realtimeService.initialize(userId);
+      
+      // Start notification polling as backup
+      notificationManager.startPolling(userId);
+      
+      console.log('Notification services initialized successfully');
+    } catch (error) {
+      console.error('Error initializing notification services:', error);
+      // Don't throw - let the app continue without notifications
+    }
+  };
+
+  // Safe notification service cleanup
+  const stopNotificationServicesSafely = async () => {
+    try {
+      console.log('Safely stopping notification services');
+      
+      // Import services dynamically
+      const { notificationManager } = await import('@/services/notificationManager');
+      const { realtimeService } = await import('@/services/realtimeService');
+      
+      // Stop services
+      notificationManager.stopPolling();
+      realtimeService.disconnect();
+      
+      console.log('Notification services stopped successfully');
+    } catch (error) {
+      console.error('Error stopping notification services:', error);
+    }
+  };
+
   const checkAuthStatus = async () => {
     try {
       console.log('AuthContext - Checking auth status...');
@@ -85,6 +148,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Check profile completeness
           const complete = await FlexibleDatabaseService.isProfileComplete(dbUser.id);
           setIsProfileComplete(complete);
+          
+          // Initialize notification services for existing user
+          await initializeNotificationServicesSafely(dbUser.id);
         } else {
           // User no longer exists in database, clear local storage
           await StorageService.removeItem('user');
@@ -120,6 +186,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await StorageService.setItem('user', newUser);
       dispatch({ type: 'LOGIN_SUCCESS', payload: newUser });
       
+      // Initialize notification services after successful login
+      await initializeNotificationServicesSafely(newUser.id);
+      
       console.log('User logged in successfully with ID:', newUser.id);
     } catch (error) {
       console.error('Login error:', error);
@@ -135,6 +204,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
       const complete = await FlexibleDatabaseService.isProfileComplete(user.id);
       setIsProfileComplete(complete);
+      
+      // Initialize notification services after setting authenticated user
+      await initializeNotificationServicesSafely(user.id);
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
     }
@@ -142,10 +214,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     try {
-             if (state.user) {
-               // Update user's online status to false
-               await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
-             }
+      // Stop notification services before logout
+      await stopNotificationServicesSafely();
+      
+      if (state.user) {
+        // Update user's online status to false
+        await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
+      }
       
       // Clear local storage
       await StorageService.removeItem('user');

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Modal, Animated, Dimensions } from 'react-native';
-import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/theme';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Modal, Animated, Dimensions, Platform } from 'react-native';
+import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
+import { useTheme } from '@/store/ThemeContext';
 import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
@@ -14,10 +15,13 @@ interface ProfileScreenProps {
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }) => {
   const { logout } = useAuth();
+  const { theme } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const [showDangerZone, setShowDangerZone] = useState(false);
   const [showMoodModal, setShowMoodModal] = useState(false);
+  
+  const styles = createStyles(theme);
   // Comprehensive list of countries
   const countries = [
     'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
@@ -839,7 +843,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
