@@ -1,6 +1,6 @@
 {
   "name": "whispr-mobile",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Whispr - Anonymous messaging and mood-based connections",
   "main": "index.js",
   "scripts": {

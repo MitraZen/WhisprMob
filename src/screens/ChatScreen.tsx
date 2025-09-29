@@ -11,7 +11,7 @@ interface ChatScreenProps {
   user: any;
 }
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, buddy, user }) => {
   const { theme } = useTheme();
   const [messages, setMessages] = useState<BuddyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -20,6 +20,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
   const styles = createStyles(theme);
   const [showProfileView, setShowProfileView] = useState(false);
@@ -33,23 +34,23 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
     }
   }, [buddy?.id]);
 
-  // Auto-refresh messages every 5 seconds
+  // Auto-refresh messages every 10 seconds (silent, no loader)
   useEffect(() => {
     if (!buddy?.id) return;
 
     const interval = setInterval(() => {
-      loadMessages();
-    }, 5000); // Refresh every 5 seconds
+      loadMessages(false, true); // Silent refresh
+    }, 10000); // Refresh every 10 seconds (less frequent)
 
     return () => clearInterval(interval);
   }, [buddy?.id]);
 
-  const loadMessages = async (isRefresh = false) => {
+  const loadMessages = async (isRefresh = false, isSilent = false) => {
     if (!buddy?.id) return;
     
-    if (isRefresh) {
+    if (isRefresh && !isSilent) {
       setIsRefreshing(true);
-    } else {
+    } else if (!isSilent) {
       setIsLoading(true);
     }
     setError(null);
@@ -58,7 +59,35 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       console.log('Loading messages for buddy:', buddy.id);
       const messagesData = await BuddiesService.getMessages(buddy.id);
       console.log(`Loaded ${messagesData.length} messages successfully`);
-      setMessages(messagesData);
+      
+      // Smart state update - only update if messages actually changed
+      setMessages((prevMessages) => {
+        // If lengths differ, definitely update
+        if (prevMessages.length !== messagesData.length) return messagesData;
+        
+        // Compare old vs new messages
+        let changed = false;
+        const merged = messagesData.map((newMessage) => {
+          const oldMessage = prevMessages.find((m) => m.id === newMessage.id);
+          if (!oldMessage) {
+            changed = true;
+            return newMessage;
+          }
+          
+          const isSame =
+            oldMessage.content === newMessage.content &&
+            oldMessage.senderId === newMessage.senderId &&
+            oldMessage.timestamp?.toString() === newMessage.timestamp?.toString() &&
+            oldMessage.isRead === newMessage.isRead;
+          
+          if (!isSame) changed = true;
+          return isSame ? oldMessage : newMessage;
+        });
+        
+        return changed ? merged : prevMessages;
+      });
+      
+      setLastUpdated(new Date());
       
       // Mark messages as read
       await BuddiesService.markMessagesAsRead(buddy.id, user.id);
@@ -66,9 +95,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       console.error('Error loading messages:', err);
       setError(err instanceof Error ? err.message : 'Failed to load messages');
     } finally {
-      if (isRefresh) {
+      if (isRefresh && !isSilent) {
         setIsRefreshing(false);
-      } else {
+      } else if (!isSilent) {
         setIsLoading(false);
       }
     }
@@ -96,8 +125,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       const messageId = await BuddiesService.sendMessage(buddy.id, messageContent, 'text', user.id);
       console.log('Message sent successfully:', messageId);
       
-      // Reload messages to get the latest
-      await loadMessages();
+      // Reload messages to get the latest (silent refresh)
+      await loadMessages(false, true);
       
     } catch (error) {
       console.error('Error sending message:', error);
@@ -175,7 +204,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
               <Text style={styles.buddyName}>{buddy.name}</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.buddyUsername}>{buddy.initials}</Text>
+          <View style={styles.buddyMeta}>
+            <Text style={styles.buddyUsername}>{buddy.initials}</Text>
+            {lastUpdated && (
+              <Text style={styles.lastUpdatedText}>
+                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            )}
+          </View>
         </View>
 
                <TouchableOpacity 
@@ -308,7 +344,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, buddy, user 
       )}
     </KeyboardAvoidingView>
   );
-};
+});
 
 const createStyles = (theme: any) => StyleSheet.create({
   container: {
@@ -363,6 +399,15 @@ const createStyles = (theme: any) => StyleSheet.create({
   buddyUsername: {
     ...theme.typography.bodySmall,
     color: 'rgba(255, 255, 255, 0.8)',
+  },
+  buddyMeta: {
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  lastUpdatedText: {
+    ...theme.typography.bodySmall,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 10,
     marginTop: spacing.xs,
   },
   moreButton: {
