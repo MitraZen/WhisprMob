@@ -804,15 +804,106 @@ export class BuddiesService {
         console.error('❌ Error verifying deletion:', error);
       }
       
-      console.log('=== USER ACCOUNT DELETION COMPLETED SUCCESSFULLY ===');
-      console.log('Note: User may still exist in auth.users table. To completely remove:');
-      console.log('1. Go to Supabase Dashboard > SQL Editor');
-      console.log('2. Run: DELETE FROM auth.users WHERE id = \'' + userId + '\';');
+      // Attempt to delete from auth.users using admin API
+      console.log('Step 6: Attempting to delete auth user...');
+      try {
+        const authDeleteResult = await this.deleteAuthUser(userId);
+        if (authDeleteResult) {
+          console.log('✅ Successfully deleted auth user');
+        } else {
+          console.log('⚠️ Auth user deletion requires manual intervention');
+        }
+      } catch (error) {
+        console.error('❌ Error deleting auth user:', error);
+        console.log('⚠️ Auth user will need manual deletion from Supabase Dashboard');
+      }
+      
+      console.log('=== USER ACCOUNT DELETION COMPLETED ===');
       return true;
     } catch (error) {
       console.error('=== USER ACCOUNT DELETION FAILED ===');
       console.error('Error details:', error);
       throw error;
+    }
+  }
+
+  // Attempt to delete auth user using database function
+  private static async deleteAuthUser(userId: string): Promise<boolean> {
+    try {
+      // First try using the database function (more reliable)
+      const dbFunctionResult = await this.deleteUserViaDatabaseFunction(userId);
+      if (dbFunctionResult) {
+        return true;
+      }
+      
+      // If database function fails, try admin API
+      const response = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        console.log('✅ Auth user deleted successfully via admin API');
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.log('⚠️ Admin API auth deletion failed:', response.status, errorText);
+        
+        // If admin API fails, provide instructions for manual deletion
+        console.log('Manual deletion required:');
+        console.log('1. Go to Supabase Dashboard > Authentication > Users');
+        console.log('2. Find user with ID:', userId);
+        console.log('3. Click "Delete User"');
+        console.log('OR run SQL: DELETE FROM auth.users WHERE id = \'' + userId + '\';');
+        
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error calling admin API for auth user deletion:', error);
+      return false;
+    }
+  }
+
+  // Use database function to delete user completely
+  private static async deleteUserViaDatabaseFunction(userId: string): Promise<boolean> {
+    try {
+      console.log('Attempting to delete user via database function...');
+      
+      const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/rpc/delete_user_by_id`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Database function result:', result);
+        
+        if (result.success) {
+          console.log('✅ User completely deleted via database function');
+          return true;
+        } else {
+          console.log('⚠️ Database function partial success:', result.message);
+          return result.auth_deleted; // Return true if at least auth user was deleted
+        }
+      } else {
+        const errorText = await response.text();
+        console.log('⚠️ Database function failed:', response.status, errorText);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error calling database function:', error);
+      return false;
     }
   }
 
@@ -927,8 +1018,8 @@ export class BuddiesService {
     try {
       console.log('Checking if user exists in auth system for email:', email);
       
-      // Try to get user from auth.users table
-      const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/auth/users?email=eq.${encodeURIComponent(email)}`, {
+      // Try to get user from auth.users table (case-insensitive)
+      const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/auth/users?email=ilike.${encodeURIComponent(email)}`, {
         method: 'GET',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
@@ -971,7 +1062,7 @@ export class BuddiesService {
       
       // Check user_profiles table
       try {
-        const userProfileResponse = await this.request('GET', `user_profiles?email=eq.${encodeURIComponent(email)}&select=*`);
+        const userProfileResponse = await this.request('GET', `user_profiles?email=ilike.${encodeURIComponent(email)}&select=*`);
         console.log('User profile check result:', userProfileResponse);
         if (userProfileResponse && userProfileResponse.length > 0) {
           result.inUserProfiles = true;
@@ -986,7 +1077,7 @@ export class BuddiesService {
       
       // Check auth system
       try {
-        const authResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/auth/users?email=eq.${encodeURIComponent(email)}`, {
+        const authResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/auth/users?email=ilike.${encodeURIComponent(email)}`, {
           method: 'GET',
           headers: {
             'apikey': SUPABASE_CONFIG.anonKey,

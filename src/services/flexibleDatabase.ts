@@ -122,6 +122,8 @@ export class FlexibleDatabaseService {
         createdAt: new Date(user.created_at || user.createdAt || new Date()),
         lastSeen: new Date(user.last_seen || user.lastSeen || new Date()),
         email: user.email,
+        username: user.username, // Include username field
+        username: user.username, // Include username field
       };
     } catch (error) {
       console.error(`Flexible Database error creating user in ${tableName}:`, error);
@@ -146,6 +148,7 @@ export class FlexibleDatabaseService {
         createdAt: new Date(user.created_at || user.createdAt || new Date()),
         lastSeen: new Date(user.last_seen || user.lastSeen || new Date()),
         email: user.email,
+        username: user.username, // Include username field
       };
     } catch (error) {
       console.error(`Flexible Database error fetching user by ID from ${tableName}:`, error);
@@ -156,7 +159,7 @@ export class FlexibleDatabaseService {
   // Flexible user lookup by email
   static async getUserByEmail(email: string, tableName: string = 'user_profiles'): Promise<User | null> {
     try {
-      const data = await this.request('GET', `${tableName}?email=eq.${email}`);
+      const data = await this.request('GET', `${tableName}?email=ilike.${email}`);
       
       if (!data || data.length === 0) {
         return null;
@@ -170,6 +173,7 @@ export class FlexibleDatabaseService {
         createdAt: new Date(user.created_at || user.createdAt || new Date()),
         lastSeen: new Date(user.last_seen || user.lastSeen || new Date()),
         email: user.email,
+        username: user.username, // Include username field
       };
     } catch (error) {
       console.error(`Flexible Database error fetching user by email from ${tableName}:`, error);
@@ -291,6 +295,7 @@ export class FlexibleDatabaseService {
         createdAt: new Date(user.created_at || user.createdAt || new Date()),
         lastSeen: new Date(user.last_seen || user.lastSeen || new Date()),
         email: user.email,
+        username: user.username, // Include username field
       }));
     } catch (error) {
       console.error(`Flexible Database error finding users by mood in ${tableName}:`, error);
