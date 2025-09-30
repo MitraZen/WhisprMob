@@ -29,7 +29,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
 
     setIsCheckingUsername(true);
     try {
-      const response = await fetch(`https://bkfonnecvqlppivnrgxe.supabase.co/rest/v1/user_profiles?username=eq.@${username}`, {
+      const response = await fetch(`https://bkfonnecvqlppivnrgxe.supabase.co/rest/v1/user_profiles?username=ilike.${username}`, {
         method: 'GET',
         headers: {
           'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxVvgFuA62-0IVGejwg',
@@ -318,6 +318,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg, // Will be overridden by dynamic padding
   },
   title: {
     fontSize: 32,

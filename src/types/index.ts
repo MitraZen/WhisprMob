@@ -5,6 +5,7 @@ export interface User {
   createdAt: Date;
   lastSeen: Date;
   email?: string;
+  username?: string;
 }
 
 export interface Message {

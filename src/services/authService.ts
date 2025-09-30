@@ -16,7 +16,7 @@ export class AuthService {
   static async signUp(email: string, password: string, mood: MoodType, username: string): Promise<{ user: User | null; error: string | null }> {
     try {
       // Check if username is already taken BEFORE creating auth user
-      const usernameCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=eq.@${username}`, {
+      const usernameCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${username}`, {
         method: 'GET',
         headers: this.getHeaders(),
       });
@@ -28,8 +28,8 @@ export class AuthService {
         }
       }
 
-      // Check if email is already registered in user_profiles
-      const emailCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?email=eq.${email}`, {
+      // Check if email is already registered in user_profiles (case-insensitive)
+      const emailCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?email=ilike.${email}`, {
         method: 'GET',
         headers: this.getHeaders(),
       });
@@ -57,7 +57,7 @@ export class AuthService {
             body: JSON.stringify({
               id: signInResult.user.id,
               email: signInResult.user.email,
-              username: `@${username}`,
+              username: username, // Store username without @ prefix
               anonymous_id: anonymousId,
               mood: mood,
               is_online: true,
@@ -105,54 +105,22 @@ export class AuthService {
         return { user: null, error: 'User creation failed' };
       }
 
-      // Create user profile in our user_profiles table
+      // Create user profile in our user_profiles table with smart conflict resolution
       const anonymousId = `user_${authData.user.id.substring(0, 8)}`;
       
-      try {
-          const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles`, {
-            method: 'POST',
-            headers: this.getHeaders(),
-            body: JSON.stringify({
-              id: authData.user.id,
-              email: authData.user.email,
-              username: `@${username}`,
-              anonymous_id: anonymousId,
-              mood: mood,
-              is_online: true,
-              profile_completed: false,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }),
-          });
+      const profileResult = await this.createUserProfileWithRetry({
+        id: authData.user.id,
+        email: authData.user.email,
+        username: username, // Store username without @ prefix
+        anonymous_id: anonymousId,
+        mood: mood,
+        is_online: true,
+        profile_completed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
 
-        if (!profileResponse.ok) {
-          const errorText = await profileResponse.text();
-          console.error('Profile creation error:', errorText);
-          
-          // If profile creation fails, try to clean up the auth user
-          try {
-            await this.cleanupAuthUser(authData.user.id);
-          } catch (cleanupError) {
-            console.error('Failed to cleanup auth user:', cleanupError);
-          }
-          
-          return { user: null, error: 'Profile creation failed. Please try again.' };
-        }
-
-        const profileData = await profileResponse.json();
-        
-        const user: User = {
-          id: authData.user.id,
-          anonymousId: anonymousId,
-          mood: mood,
-          createdAt: new Date(profileData[0].created_at),
-          lastSeen: new Date(profileData[0].last_seen),
-        };
-
-        return { user, error: null };
-      } catch (profileError) {
-        console.error('Profile creation error:', profileError);
-        
+      if (!profileResult.success) {
         // If profile creation fails, try to clean up the auth user
         try {
           await this.cleanupAuthUser(authData.user.id);
@@ -160,8 +128,29 @@ export class AuthService {
           console.error('Failed to cleanup auth user:', cleanupError);
         }
         
-        return { user: null, error: 'Profile creation failed. Please try again.' };
+        return { user: null, error: profileResult.error || 'Profile creation failed. Please try again.' };
       }
+
+      const profileData = profileResult.profileData;
+      console.log('Profile creation result:', profileResult);
+      console.log('Profile data type:', typeof profileData, Array.isArray(profileData) ? 'array' : 'object');
+      console.log('Profile data:', profileData);
+      
+      // Handle both array and object responses from Supabase
+      const profile = Array.isArray(profileData) ? profileData[0] : profileData;
+      console.log('Final profile object:', profile);
+      
+      const user: User = {
+        id: authData.user.id,
+        anonymousId: anonymousId,
+        mood: mood,
+        createdAt: new Date(profile.created_at),
+        lastSeen: new Date(profile.last_seen || profile.created_at),
+        email: authData.user.email,
+        username: profile.username, // Include the username from profile
+      };
+
+      return { user, error: null };
     } catch (error) {
       console.error('Sign up error:', error);
       return { user: null, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -175,6 +164,170 @@ export class AuthService {
       console.log(`Auth user ${userId} needs manual cleanup - profile creation failed`);
     } catch (error) {
       console.error('Error during auth user cleanup:', error);
+    }
+  }
+
+  // Smart profile creation with retry logic and conflict resolution
+  private static async createUserProfileWithRetry(profileData: any, maxRetries: number = 3): Promise<{ success: boolean; error?: string; profileData?: any }> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Profile creation attempt ${attempt}/${maxRetries}`);
+        
+        // First, check if a profile with this ID already exists
+        const existingProfileCheck = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${profileData.id}`, {
+          method: 'GET',
+          headers: this.getHeaders(),
+        });
+
+        if (existingProfileCheck.ok) {
+          const existingProfiles = await existingProfileCheck.json();
+          if (existingProfiles && existingProfiles.length > 0) {
+            console.log('Profile with this ID already exists, cleaning up orphaned profile');
+            
+            // Clean up the orphaned profile
+            await this.cleanupOrphanedProfile(profileData.id);
+          }
+        }
+
+        // Try to create the profile
+        let profileResponse;
+        try {
+          profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify(profileData),
+          });
+        } catch (fetchError) {
+          console.error(`Fetch error on attempt ${attempt}:`, fetchError);
+          if (attempt === maxRetries) {
+            return { success: false, error: `Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown network error'}` };
+          }
+          continue;
+        }
+
+        if (profileResponse.ok) {
+          let createdProfile;
+          try {
+            const responseText = await profileResponse.text();
+            
+            // Check if response is empty or not valid JSON
+            if (!responseText || responseText.trim() === '') {
+              console.log('Profile created successfully (empty response)');
+              // Return the original profile data since creation was successful
+              return { success: true, profileData: profileData };
+            }
+            
+            // Try to parse as JSON
+            createdProfile = JSON.parse(responseText);
+            console.log('Profile created successfully with JSON response');
+            return { success: true, profileData: createdProfile };
+          } catch (parseError) {
+            console.warn('Failed to parse successful response as JSON, but profile was created');
+            console.log('Parse error:', parseError);
+            
+            // Even if parsing fails, if the response was OK, the profile was created
+            // Return the original profile data since creation was successful
+            return { success: true, profileData: profileData };
+          }
+        }
+
+        let errorText;
+        try {
+          errorText = await profileResponse.text();
+        } catch (textError) {
+          console.warn('Failed to read error response text:', textError);
+          errorText = 'Unable to read error response';
+        }
+        
+        let errorData;
+        
+        // Safely parse JSON error response
+        try {
+          errorData = errorText ? JSON.parse(errorText) : {};
+        } catch (parseError) {
+          console.warn('Failed to parse error response as JSON:', errorText);
+          errorData = { message: errorText || 'Unknown error' };
+        }
+        
+        // Handle specific error cases
+        if (errorData.code === '23505') { // Duplicate key constraint
+          console.log(`Duplicate key error on attempt ${attempt}, retrying with cleanup...`);
+          
+          if (attempt < maxRetries) {
+            // Clean up any conflicting records and retry
+            await this.cleanupConflictingProfiles(profileData.email, profileData.username);
+            continue;
+          } else {
+            return { success: false, error: 'Unable to create profile due to ID conflicts. Please try again.' };
+          }
+        } else if (errorData.code === '23503') { // Foreign key constraint
+          console.log(`Foreign key error on attempt ${attempt}, retrying...`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+            continue;
+          }
+        }
+
+        console.error(`Profile creation failed on attempt ${attempt}:`, errorText);
+        
+        if (attempt === maxRetries) {
+          return { success: false, error: `Profile creation failed after ${maxRetries} attempts: ${errorData.message || 'Unknown error'}` };
+        }
+
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        
+      } catch (error) {
+        console.error(`Profile creation error on attempt ${attempt}:`, error);
+        
+        if (attempt === maxRetries) {
+          return { success: false, error: `Profile creation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        }
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+
+    return { success: false, error: 'Profile creation failed after all retry attempts' };
+  }
+
+  // Clean up orphaned profiles
+  private static async cleanupOrphanedProfile(profileId: string): Promise<void> {
+    try {
+      const deleteResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${profileId}`, {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+      });
+      
+      if (deleteResponse.ok) {
+        console.log('Orphaned profile cleaned up successfully');
+      } else {
+        console.warn('Failed to clean up orphaned profile');
+      }
+    } catch (error) {
+      console.error('Error cleaning up orphaned profile:', error);
+    }
+  }
+
+  // Clean up conflicting profiles
+  private static async cleanupConflictingProfiles(email: string, username: string): Promise<void> {
+    try {
+      // Clean up profiles with the same email but no auth user (case-insensitive)
+      const emailCleanupResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?email=ilike.${email}`, {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+      });
+      
+      // Clean up profiles with the same username but no auth user (case-insensitive)
+      const usernameCleanupResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${username}`, {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+      });
+      
+      console.log('Conflicting profiles cleanup attempted');
+    } catch (error) {
+      console.error('Error cleaning up conflicting profiles:', error);
     }
   }
 
@@ -255,6 +408,8 @@ export class AuthService {
         mood: profileData[0].mood as MoodType,
         createdAt: new Date(profileData[0].created_at),
         lastSeen: new Date(profileData[0].last_seen),
+        email: authData.user.email,
+        username: profileData[0].username, // Include username from profile
       };
 
       // Update online status

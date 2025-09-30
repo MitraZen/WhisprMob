@@ -18,7 +18,6 @@ import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 
 interface ProfileCompletionScreenProps {
   onComplete: (profileData: ProfileData) => void;
-  onSkip: () => void;
   user?: any;
   onNavigate?: (screen: string) => void;
 }
@@ -60,7 +59,6 @@ const countries = [
 
 export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = ({ 
   onComplete, 
-  onSkip, 
   user, 
   onNavigate 
 }) => {
@@ -350,13 +348,6 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={onSkip}
-            disabled={isLoading}
-          >
-            <Text style={styles.skipButtonText}>Skip for Now</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -526,7 +517,6 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     marginTop: spacing.xl,
-    gap: spacing.md,
   },
   completeButton: {
     backgroundColor: theme.colors.primary,
@@ -543,15 +533,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  skipButton: {
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  skipButtonText: {
-    color: theme.colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
   },
   // Modal styles
   modalContainer: {

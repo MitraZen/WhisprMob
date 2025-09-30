@@ -264,10 +264,13 @@ const AppNavigator = () => {
 
   if (isAuthenticated && isProfileComplete === false) {
     console.log('AppNavigator - Rendering ProfileCompletionScreen with user:', user);
+    console.log('AppNavigator - isProfileComplete:', isProfileComplete);
     return (
       <ProfileCompletionScreen
-        onComplete={() => navigate('notes')}
-        onSkip={() => navigate('notes')}
+        onComplete={() => {
+          console.log('Profile completed - navigating to notes');
+          navigate('notes');
+        }}
         user={user}
         onNavigate={navigate}
       />
@@ -297,7 +300,6 @@ const AppNavigator = () => {
       return (
         <ProfileCompletionScreen
           onComplete={() => navigate('notes')}
-          onSkip={() => navigate('notes')}
           user={user}
           onNavigate={navigate}
         />

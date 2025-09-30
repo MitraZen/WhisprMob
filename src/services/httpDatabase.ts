@@ -41,6 +41,8 @@ export class HttpDatabaseService {
         mood: data[0].mood as MoodType,
         createdAt: new Date(data[0].created_at),
         lastSeen: new Date(data[0].last_seen),
+        email: data[0].email,
+        username: data[0].username, // Include username field
       };
     } catch (error) {
       console.error('HTTP Database error creating user:', error);
@@ -69,6 +71,8 @@ export class HttpDatabaseService {
         mood: data[0].mood as MoodType,
         createdAt: new Date(data[0].created_at),
         lastSeen: new Date(data[0].last_seen),
+        email: data[0].email,
+        username: data[0].username, // Include username field
       };
     } catch (error) {
       console.error('HTTP Database error fetching user:', error);
