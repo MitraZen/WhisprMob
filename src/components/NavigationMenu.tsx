@@ -12,9 +12,10 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
   const { theme } = useTheme();
   const menuItems = [
     { id: 'notes', label: 'Notes', icon: '📝' },
+    { id: 'sentNotes', label: 'Sent', icon: '📤' },
     { id: 'buddies', label: 'Buddies', icon: '👥' },
+    { id: 'notifications', label: 'Alerts', icon: '🔔' },
     { id: 'profile', label: 'Profile', icon: '👤' },
-    { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
   
   const styles = createStyles(theme);
@@ -68,15 +69,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   menuItem: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.lg,
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.lg,
     marginHorizontal: spacing.xs,
     backgroundColor: 'transparent',
-    minHeight: 60,
-    justifyContent: 'center',
+    height: 64, // consistent item height
   },
   activeMenuItem: {
     backgroundColor: 'rgba(124, 58, 237, 0.1)',
@@ -84,16 +85,17 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderColor: 'rgba(124, 58, 237, 0.2)',
   },
   menuIcon: {
-    fontSize: 22,
-    marginBottom: spacing.xs,
-    opacity: 0.8,
+    fontSize: 24,
+    lineHeight: 28, // ensures uniform vertical spacing
+    marginBottom: 4,
+    textAlign: 'center',
   },
   menuLabel: {
     fontSize: 11,
     color: '#6b7280',
     fontWeight: '500',
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: 0,
   },
   activeMenuLabel: {
     color: '#7c3aed',
