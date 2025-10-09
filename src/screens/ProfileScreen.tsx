@@ -19,6 +19,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const { theme } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
+  
+  // Animation values for form inputs
+  const editInputScale = useRef(new Animated.Value(1)).current;
+  const selectButtonScale = useRef(new Animated.Value(1)).current;
   const [showDangerZone, setShowDangerZone] = useState(false);
   const [showMoodModal, setShowMoodModal] = useState(false);
   
@@ -347,6 +351,41 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
     return (moodConfig as any).gradient || ['#667eea', '#764ba2'];
   };
 
+  // Enhanced form input animations
+  const animateInputFocus = (animatedValue: Animated.Value, callback?: () => void) => {
+    Animated.sequence([
+      Animated.timing(animatedValue, {
+        toValue: 1.02,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(animatedValue, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      if (callback) callback();
+    });
+  };
+
+  const animateButtonPress = (animatedValue: Animated.Value, callback?: () => void) => {
+    Animated.sequence([
+      Animated.timing(animatedValue, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(animatedValue, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      if (callback) callback();
+    });
+  };
+
   return (
     <View style={styles.container}>
       {isLoadingProfile ? (
@@ -499,14 +538,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Bio</Text>
                 {isEditing ? (
-                  <TextInput
-                    style={styles.editInput}
-                    value={profileData.bio}
-                    onChangeText={(value) => handleTextChange('bio', value)}
-                    multiline
-                    placeholder="Tell us about yourself..."
-                    placeholderTextColor="#9ca3af"
-                  />
+                  <Animated.View style={{ transform: [{ scale: editInputScale }] }}>
+                    <TextInput
+                      style={styles.editInput}
+                      value={profileData.bio}
+                      onChangeText={(value) => handleTextChange('bio', value)}
+                      onFocus={() => animateInputFocus(editInputScale)}
+                      multiline
+                      placeholder="Tell us about yourself..."
+                      placeholderTextColor="#9ca3af"
+                    />
+                  </Animated.View>
                 ) : (
                   <Text style={styles.detailValue}>{profileData.bio}</Text>
                 )}
@@ -515,15 +557,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Age</Text>
                 {isEditing ? (
-                  <TouchableOpacity 
-                    style={styles.selectButton}
-                    onPress={() => setShowDateModal(true)}
-                  >
-                    <Text style={styles.selectButtonText}>
-                      {profileData.age === 'Not specified' ? 'Select Age' : profileData.age}
-                    </Text>
-                    <Text style={styles.selectArrow}>▼</Text>
-                  </TouchableOpacity>
+                  <Animated.View style={{ transform: [{ scale: selectButtonScale }] }}>
+                    <TouchableOpacity 
+                      style={styles.selectButton}
+                      onPress={() => animateButtonPress(selectButtonScale, () => setShowDateModal(true))}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.selectButtonText}>
+                        {profileData.age === 'Not specified' ? 'Select Age' : profileData.age}
+                      </Text>
+                      <Icon name="chevron-down" size={16} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </Animated.View>
                 ) : (
                   <Text style={styles.detailValue}>{profileData.age}</Text>
                 )}
@@ -532,15 +577,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Location</Text>
                 {isEditing ? (
-                  <TouchableOpacity 
-                    style={styles.selectButton}
-                    onPress={() => setShowCountryModal(true)}
-                  >
-                    <Text style={styles.selectButtonText}>
-                      {profileData.location === 'Not specified' ? 'Select Country' : profileData.location}
-                    </Text>
-                    <Text style={styles.selectArrow}>▼</Text>
-                  </TouchableOpacity>
+                  <Animated.View style={{ transform: [{ scale: selectButtonScale }] }}>
+                    <TouchableOpacity 
+                      style={styles.selectButton}
+                      onPress={() => animateButtonPress(selectButtonScale, () => setShowCountryModal(true))}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.selectButtonText}>
+                        {profileData.location === 'Not specified' ? 'Select Country' : profileData.location}
+                      </Text>
+                      <Icon name="chevron-down" size={16} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </Animated.View>
                 ) : (
                   <Text style={styles.detailValue}>{profileData.location}</Text>
                 )}
@@ -549,15 +597,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Gender</Text>
                 {isEditing ? (
-                  <TouchableOpacity 
-                    style={styles.selectButton}
-                    onPress={() => setShowGenderModal(true)}
-                  >
-                    <Text style={styles.selectButtonText}>
-                      {profileData.gender === 'Not specified' ? 'Select Gender' : profileData.gender}
-                    </Text>
-                    <Text style={styles.selectArrow}>▼</Text>
-                  </TouchableOpacity>
+                  <Animated.View style={{ transform: [{ scale: selectButtonScale }] }}>
+                    <TouchableOpacity 
+                      style={styles.selectButton}
+                      onPress={() => animateButtonPress(selectButtonScale, () => setShowGenderModal(true))}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.selectButtonText}>
+                        {profileData.gender === 'Not specified' ? 'Select Gender' : profileData.gender}
+                      </Text>
+                      <Icon name="chevron-down" size={16} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </Animated.View>
                 ) : (
                   <Text style={styles.detailValue}>{profileData.gender}</Text>
                 )}
@@ -938,7 +989,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   leftSection: {
     alignItems: 'center',
-    width: 60, // Fixed width for avatar
+    width: 70, // Fixed width for avatar
   },
   centerSection: {
     position: 'absolute',
@@ -947,24 +998,42 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
   },
   avatarContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    padding: 3,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    padding: 4,
     backgroundColor: '#fff',
-    ...theme.shadows.lg,
+    // Enhanced shadow with gradient effect
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    // Subtle border for definition
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   avatarGradient: {
     width: '100%',
     height: '100%',
-    borderRadius: 27,
+    borderRadius: 31,
     justifyContent: 'center',
     alignItems: 'center',
+    // Enhanced gradient-like effect using multiple shadows
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   avatarText: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
+    // Text shadow for better readability
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   moodButton: {
     width: 50,
@@ -982,7 +1051,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     flex: 1,
     alignItems: 'flex-end',
     paddingLeft: spacing.md,
-    marginLeft: 60, // Account for left section width
+    marginLeft: 70, // Account for left section width
   },
   displayName: {
     fontSize: 22,
@@ -1110,19 +1179,44 @@ const createStyles = (theme: any) => StyleSheet.create({
   editInput: {
     fontSize: 16,
     color: theme.colors.onSurface,
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
+    backgroundColor: '#f8fafc',
+    borderRadius: borderRadius.lg,
     padding: spacing.md,
     minHeight: 80,
     textAlignVertical: 'top',
+    // Enhanced styling with shadows and borders
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    // Focus state styling
+    ...Platform.select({
+      ios: {
+        borderColor: '#d1d5db',
+      },
+      android: {
+        borderColor: '#e5e7eb',
+      },
+    }),
   },
   selectButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
+    backgroundColor: '#f8fafc',
+    borderRadius: borderRadius.lg,
     padding: spacing.md,
+    // Enhanced styling with shadows
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   selectButtonText: {
     fontSize: 16,
@@ -1205,9 +1299,11 @@ const createStyles = (theme: any) => StyleSheet.create({
   // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    // Enhanced backdrop with blur effect simulation
+    backdropFilter: 'blur(8px)',
   },
   moodModalContent: {
     backgroundColor: theme.colors.surface,
@@ -1215,6 +1311,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     padding: spacing.lg,
     width: '90%',
     maxHeight: '80%',
+    // Enhanced shadow for floating effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 20,
+    // Subtle border for definition
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   modalTitle: {
     fontSize: 20,
@@ -1231,14 +1336,29 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   moodOption: {
     width: '30%',
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.lg,
+    backgroundColor: '#f8fafc',
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
     alignItems: 'center',
     marginBottom: spacing.md,
+    // Enhanced styling with shadows
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   moodOptionSelected: {
     backgroundColor: theme.colors.primary,
+    // Enhanced shadow for selected state
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   moodOptionEmoji: {
     fontSize: 32,
@@ -1263,16 +1383,34 @@ const createStyles = (theme: any) => StyleSheet.create({
   // Additional modal styles
   modalContent: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
     width: '80%',
     maxWidth: 300,
+    // Enhanced shadow for floating effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 20,
+    // Subtle border for definition
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   genderOption: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+    // Enhanced styling
+    backgroundColor: '#f8fafc',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   genderOptionText: {
     fontSize: 16,
@@ -1293,11 +1431,20 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   dateModalContent: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
     width: '90%',
     maxWidth: 400,
     maxHeight: '80%',
+    // Enhanced shadow for floating effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 20,
+    // Subtle border for definition
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   datePickerContainer: {
     flexDirection: 'row',
@@ -1374,15 +1521,24 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   countryModalContent: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
     width: '90%',
     maxWidth: 400,
     maxHeight: '80%',
+    // Enhanced shadow for floating effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 20,
+    // Subtle border for definition
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   searchInput: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
+    backgroundColor: '#f8fafc',
+    borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     fontSize: 16,
@@ -1390,6 +1546,12 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    // Enhanced styling with shadows
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   countryList: {
     maxHeight: 300,
@@ -1400,6 +1562,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+    // Enhanced styling
+    backgroundColor: '#f8fafc',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   countryOptionText: {
     fontSize: 16,
