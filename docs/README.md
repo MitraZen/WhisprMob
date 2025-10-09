@@ -1,181 +1,192 @@
-# Whispr Mobile App
+# 📚 Whispr Mobile App Documentation
 
-A React Native mobile application for anonymous messaging and mood-based connections.
+Welcome to the comprehensive documentation for the Whispr Mobile App - an anonymous messaging and mood-based connection platform.
 
-## Features
+## 📖 Table of Contents
 
-- 🔒 **100% Anonymous**: Complete privacy protection
-- 💭 **Mood-Based Matching**: Connect with others who share your emotions
-- 🛡️ **End-to-End Encryption**: Secure message transmission
-- 💬 **Real-Time Chat**: Instant messaging with WebSocket support
-- 📱 **Cross-Platform**: Works on both iOS and Android
+- [🚀 Quick Start](#-quick-start)
+- [🏗️ Architecture](#️-architecture)
+- [⚙️ Setup & Installation](#️-setup--installation)
+- [🗄️ Database](#️-database)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [📋 Guides](#-guides)
+- [📊 Reports](#-reports)
+- [🚀 Releases](#-releases)
 
-## Tech Stack
+---
 
-- **React Native 0.73** with TypeScript
-- **React Navigation 6** for navigation
-- **React Native Paper** for UI components
-- **TanStack Query** for data fetching
-- **Zustand** for state management
-- **Custom Chat Interface** for messaging
-- **Crypto-JS** for encryption
-- **AsyncStorage** for local storage
+## 🚀 Quick Start
 
-## Getting Started
+For immediate setup, see:
+- **[Main README](../README.md)** - Project overview and quick setup
+- **[Android Setup Guide](setup/android-setup-guide.md)** - Android development environment
+- **[JDK Installation Guide](setup/jdk17-installation-guide.md)** - Java development kit setup
 
-### Prerequisites
+---
 
-- Node.js 18+
-- React Native CLI
-- Android Studio (for Android development)
-- Xcode (for iOS development)
+## 🏗️ Architecture
 
-### Quick Setup
+Understanding the app's core architecture and logic:
 
-**Windows Users:**
+### Core Documentation
+- **[Buddy Logic Documentation](architecture/WHISPR_BUDDY_LOGIC_DOCUMENTATION.md)** - Complete buddy system flow
+- **[App Flow Diagram](architecture/WHISPR_APP_FLOW_DIAGRAM.md)** - Visual app flow representation
+- **[App Flow Guide](architecture/WHISPR_APP_FLOW_GUIDE.md)** - Detailed app navigation flow
+- **[Screen Propagation Documentation](architecture/SCREEN_PROPAGATION_DOCUMENTATION.md)** - Screen state management
+
+### Key Features
+- 🔒 **100% Anonymous** messaging system
+- 💭 **Mood-based matching** algorithm
+- 🛡️ **End-to-end encryption** for security
+- 💬 **Real-time chat** with WebSocket support
+
+---
+
+## ⚙️ Setup & Installation
+
+Complete setup guides for development environment:
+
+- **[Android Setup Guide](setup/android-setup-guide.md)** - Android Studio, SDK, and emulator setup
+- **[JDK 17 Installation Guide](setup/jdk17-installation-guide.md)** - Java Development Kit installation
+- **[Admin Setup Guide](setup/ADMIN_SETUP.md)** - Administrative panel configuration
+
+### Development Tools
+- React Native 0.81.4 with TypeScript
+- Supabase for backend services
+- Android Studio for mobile development
+- Node.js 18+ for package management
+
+---
+
+## 🗄️ Database
+
+Database setup, migration, and optimization:
+
+### Setup & Configuration
+- **[Database Setup Guide](database/DATABASE_SETUP_GUIDE.md)** - Initial database configuration
+- **[Supabase Migration Guide](database/SUPABASE_MIGRATION_GUIDE.md)** - Migration procedures
+- **[Supabase Config Update Guide](database/SUPABASE_CONFIG_UPDATE_GUIDE.md)** - Configuration updates
+
+### Performance & Optimization
+- **[Database Performance Improvements](database/DATABASE_PERFORMANCE_IMPROVEMENTS.md)** - Performance optimization
+- **[Database Optimization Plan](database/DATABASE_OPTIMIZATION_PLAN.md)** - Optimization strategies
+- **[Database Egress Fix](database/DATABASE_EGRESS_FIX.md)** - Network optimization
+
+### Migration & Fixes
+- **[Complete Migration Plan](database/COMPLETE_MIGRATION_PLAN.md)** - Full migration procedure
+- **[Simple Migration Steps](database/SIMPLE_MIGRATION_STEPS.md)** - Simplified migration guide
+- **[Critical Database Fix](database/CRITICAL_DATABASE_FIX.md)** - Critical issue resolutions
+
+---
+
+## 🔧 Troubleshooting
+
+Solutions for common issues and problems:
+
+### Authentication & Email
+- **[Auth Troubleshooting Guide](troubleshooting/AUTH_TROUBLESHOOTING_GUIDE.md)** - Authentication issues
+- **[Reset Link Troubleshooting](troubleshooting/RESET_LINK_TROUBLESHOOTING.md)** - Password reset problems
+- **[SMTP Setup Guide](troubleshooting/SMTP_SETUP_GUIDE.md)** - Email configuration
+- **[Final SMTP Checklist](troubleshooting/FINAL_SMTP_CHECKLIST.md)** - SMTP verification steps
+
+### Configuration & Setup
+- **[SMTP Configuration Guide](troubleshooting/smtp-configuration-guide.md)** - Detailed SMTP setup
+- **[Configure Supabase Email Settings](troubleshooting/configure-supabase-email-settings.md)** - Email service setup
+
+### Development Issues
+- **[Metro Troubleshooting Guide](METRO_TROUBLESHOOTING_GUIDE.md)** - Metro bundler issues
+- **[Final Metro Solution](FINAL_METRO_SOLUTION.md)** - Metro configuration fixes
+- **[Theme Fix Documentation](THEME_FIX_DOCUMENTATION.md)** - UI theme issues
+
+---
+
+## 📋 Guides
+
+Step-by-step guides for specific tasks:
+
+- **[Export with pgdump Guide](guides/export-with-pgdump.md)** - Database export procedures
+- **[Test Reset Link Locally](guides/test-reset-link-locally.md)** - Local testing procedures
+- **[Production Build Guide](PRODUCTION_BUILD_GUIDE.md)** - Production deployment
+- **[Admin Notification Debug Guide](ADMIN_NOTIFICATION_DEBUG_GUIDE.md)** - Debug notifications
+
+---
+
+## 📊 Reports
+
+Project status and analysis reports:
+
+### Performance & Status
+- **[Performance Improvements Summary](reports/PERFORMANCE_IMPROVEMENTS_SUMMARY.md)** - Performance enhancements
+- **[Project Cleanup Summary](reports/PROJECT_CLEANUP_SUMMARY.md)** - Cleanup activities
+- **[Whispr App Status](reports/whispr-app-status.md)** - Current app status
+
+### Implementation Reports
+- **[Build Success Report](reports/BUILD_SUCCESS_REPORT.md)** - Build status and results
+- **[Notification Implementation Report](reports/NOTIFICATION_IMPLEMENTATION_REPORT.md)** - Push notifications
+- **[Notification Testing Guide](reports/NOTIFICATION_TESTING_GUIDE.md)** - Testing procedures
+- **[Database Schema Alignment Report](reports/DATABASE_SCHEMA_ALIGNMENT_REPORT.md)** - Schema analysis
+
+---
+
+## 🚀 Releases
+
+Release notes and version information:
+
+### Current Releases
+- **[Release Summary v1.1.0](releases/RELEASE_SUMMARY_v1.1.0.md)** - Latest version summary
+- **[Whispr v1.1.0 Release Notes](releases/Whispr_v1.1.0_ReleaseNotes.md)** - Detailed release notes
+- **[Whispr Build 20250926 Release Notes](releases/Whispr_Build_20250926_ReleaseNotes.md)** - Build-specific notes
+
+### Distribution
+- **[Play Store Release Notes](releases/PLAYSTORE_RELEASE_NOTES.md)** - Google Play Store releases
+
+---
+
+## 🛠️ Development Workflow
+
+### Build Process
+1. **Setup Environment** - Follow setup guides
+2. **Configure Database** - Use database setup guides
+3. **Development** - Use architecture documentation
+4. **Testing** - Follow testing guides
+5. **Deployment** - Use production build guide
+
+### Key Commands
 ```bash
+# Setup (Windows)
 setup.bat
-```
 
-**Mac/Linux Users:**
-```bash
-chmod +x setup.sh
-./setup.sh
-```
+# Setup (Mac/Linux)
+chmod +x setup.sh && ./setup.sh
 
-### Manual Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd Whispr_Mobile_App_Dev
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Install iOS dependencies (iOS only):
-```bash
-cd ios && pod install && cd ..
-```
-
-4. Start the Metro bundler:
-```bash
+# Development
 npm start
-```
-
-5. Run the app:
-```bash
-# Android
 npm run android
 
-# iOS
-npm run ios
+# Build
+npm run build:android
 ```
 
-### Troubleshooting
+---
 
-If you encounter package installation errors:
+## 📞 Support
 
-1. Clear npm cache:
-```bash
-npm cache clean --force
-```
+For additional support:
+- Check **[Troubleshooting](#-troubleshooting)** section first
+- Review **[Architecture](#️-architecture)** for understanding app flow
+- Consult **[Reports](#-reports)** for current status
+- Follow **[Setup Guides](#️-setup--installation)** for environment issues
 
-2. Delete node_modules and package-lock.json:
-```bash
-rm -rf node_modules package-lock.json
-```
+---
 
-3. Reinstall:
-```bash
-npm install
-```
+## 📝 Contributing
 
-## Project Structure
+When adding new documentation:
+1. Place files in appropriate category folders
+2. Update this index with links
+3. Follow existing naming conventions
+4. Include clear descriptions and examples
 
-```
-src/
-├── components/          # Reusable UI components
-├── navigation/          # Navigation configuration
-├── screens/            # Screen components
-├── services/           # API and external services
-├── store/              # State management
-├── types/              # TypeScript type definitions
-└── utils/              # Helper functions and utilities
-```
+---
 
-## Key Features Implementation
-
-### Anonymous Authentication
-- Users create anonymous sessions with mood selection
-- No personal information required
-- Session data stored locally with encryption
-
-### Mood-Based Connections
-- 10 different mood types with emoji representations
-- Algorithm matches users with similar moods
-- Real-time mood updates
-
-### Secure Messaging
-- End-to-end encryption for all messages
-- WebSocket for real-time communication
-- Message history stored locally
-
-### Privacy Protection
-- No user data stored on servers
-- Anonymous IDs for user identification
-- Encrypted local storage
-
-## Development
-
-### Code Style
-- TypeScript for type safety
-- ESLint and Prettier for code formatting
-- Functional components with hooks
-- Custom hooks for reusable logic
-
-### Testing
-```bash
-npm test
-```
-
-### Linting
-```bash
-npm run lint
-```
-
-## API Integration
-
-The app integrates with the Whispr API for:
-- User management
-- Connection matching
-- Message delivery
-- Real-time updates
-
-API endpoints are configured in `src/services/api.ts`.
-
-## Security Considerations
-
-- All messages are encrypted before transmission
-- Anonymous user IDs prevent identity tracking
-- Local storage encryption for sensitive data
-- Secure WebSocket connections
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License.
-
-## Support
-
-For support and questions, please contact the development team.
+*Last updated: 2025-01-24*

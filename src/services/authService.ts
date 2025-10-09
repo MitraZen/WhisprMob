@@ -96,21 +96,44 @@ export class AuthService {
 
       if (!authResponse.ok) {
         const errorData = await authResponse.json();
-        return { user: null, error: errorData.msg || 'Sign up failed' };
+        console.error('Auth signup failed:', {
+          status: authResponse.status,
+          statusText: authResponse.statusText,
+          error: errorData
+        });
+        return { user: null, error: errorData.msg || `Sign up failed: ${authResponse.status}` };
       }
 
       const authData = await authResponse.json();
+      console.log('Auth signup response:', authData);
       
-      if (!authData.user) {
-        return { user: null, error: 'User creation failed' };
+      // Handle different response formats
+      let userId, userEmail;
+      if (authData.user) {
+        // Standard format: { user: { id, email }, session: ... }
+        userId = authData.user.id;
+        userEmail = authData.user.email;
+      } else if (authData.id) {
+        // Alternative format: { id, email, ... }
+        userId = authData.id;
+        userEmail = authData.email;
+      } else {
+        console.error('Auth signup succeeded but no user ID found:', authData);
+        return { user: null, error: 'User creation failed - no user ID in response' };
+      }
+
+      // Validate that we have a valid userId
+      if (!userId || typeof userId !== 'string') {
+        console.error('Invalid userId:', userId, 'Type:', typeof userId);
+        return { user: null, error: 'User creation failed - invalid user ID' };
       }
 
       // Create user profile in our user_profiles table with smart conflict resolution
-      const anonymousId = `user_${authData.user.id.substring(0, 8)}`;
+      const anonymousId = `user_${userId.substring(0, 8)}`;
       
       const profileResult = await this.createUserProfileWithRetry({
-        id: authData.user.id,
-        email: authData.user.email,
+        id: userId,
+        email: userEmail,
         username: username, // Store username without @ prefix
         anonymous_id: anonymousId,
         mood: mood,
@@ -123,7 +146,7 @@ export class AuthService {
       if (!profileResult.success) {
         // If profile creation fails, try to clean up the auth user
         try {
-          await this.cleanupAuthUser(authData.user.id);
+          await this.cleanupAuthUser(userId);
         } catch (cleanupError) {
           console.error('Failed to cleanup auth user:', cleanupError);
         }
@@ -141,12 +164,12 @@ export class AuthService {
       console.log('Final profile object:', profile);
       
       const user: User = {
-        id: authData.user.id,
+        id: userId,
         anonymousId: anonymousId,
         mood: mood,
         createdAt: new Date(profile.created_at),
         lastSeen: new Date(profile.last_seen || profile.created_at),
-        email: authData.user.email,
+        email: userEmail,
         username: profile.username, // Include the username from profile
       };
 
@@ -470,6 +493,88 @@ export class AuthService {
     } catch (error) {
       console.error('Update mood error:', error);
       return false;
+    }
+  }
+
+  // Send password reset email
+  static async resetPassword(email: string): Promise<{ success: boolean; error: string | null }> {
+    try {
+      console.log('Sending password reset email to:', email);
+      
+      const response = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/recover`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Password reset request failed:', errorData);
+        return { 
+          success: false, 
+          error: errorData.msg || errorData.message || 'Failed to send reset email' 
+        };
+      }
+
+      const result = await response.json();
+      console.log('Password reset email sent successfully');
+      
+      return { 
+        success: true, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Password reset error:', error);
+      return { 
+        success: false, 
+        error: 'Network error. Please check your connection and try again.' 
+      };
+    }
+  }
+
+  // Update password with reset token
+  static async updatePassword(accessToken: string, newPassword: string): Promise<{ success: boolean; error: string | null }> {
+    try {
+      console.log('Updating password with reset token');
+      
+      const response = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          password: newPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Password update failed:', errorData);
+        return { 
+          success: false, 
+          error: errorData.msg || errorData.message || 'Failed to update password' 
+        };
+      }
+
+      console.log('Password updated successfully');
+      return { 
+        success: true, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Password update error:', error);
+      return { 
+        success: false, 
+        error: 'Network error. Please check your connection and try again.' 
+      };
     }
   }
 

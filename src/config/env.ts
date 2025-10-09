@@ -4,11 +4,10 @@
 
 export const SUPABASE_CONFIG = {
   // Your Supabase project URL
-  url: 'https://bkfonnecvqlppivnrgxe.supabase.co',
+  url: 'https://axkktejoldizpveydidx.supabase.co',
   
   // Your Supabase anonymous key
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxWvgFuA62-0IVGejwg',
-  
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4a2t0ZWpvbGRpenB2ZXlkaWR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNDE2ODgsImV4cCI6MjA3NDkxNzY4OH0.axo3f_qTDzvk2WYN8Z53B1F4kTeOgP07G2TiOgkQDV4',
   // Optional: Service role key for admin operations
   serviceRoleKey: 'your-service-role-key-here',
 };

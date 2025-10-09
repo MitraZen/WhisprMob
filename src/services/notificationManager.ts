@@ -14,7 +14,10 @@ class NotificationManagerClass implements NotificationManager {
   private lastNoteIds: string[] = [];
   private userId: string | null = null;
   private lastNetworkCheck = 0;
-  private networkCheckInterval = 60000; // Check network every 60 seconds
+  private networkCheckInterval = 300000; // Check network every 5 minutes (increased from 60 seconds)
+  private pollingIntervalMs = 300000; // Poll every 5 minutes (increased from 30 seconds)
+  private maxRetries = 3;
+  private retryCount = 0;
 
   startPolling(userId: string) {
     if (this.isPollingActive) {
@@ -28,11 +31,11 @@ class NotificationManagerClass implements NotificationManager {
     this.lastMessageIds = {};
     this.lastNoteIds = [];
     
-    // Poll every 30 seconds for new messages and notes (optimized for performance)
+    // Poll every 5 minutes for new messages and notes (optimized for performance and reduced egress)
     this.pollingInterval = setInterval(async () => {
       await this.checkForNewMessages();
       await this.checkForNewNotes();
-    }, 30000);
+    }, this.pollingIntervalMs);
 
     console.log('Notification polling started for user:', userId);
   }
@@ -62,17 +65,33 @@ class NotificationManagerClass implements NotificationManager {
         this.lastNetworkCheck = now;
         if (!isConnected) {
           console.warn('Network connection failed, skipping message check');
+          this.retryCount++;
+          if (this.retryCount >= this.maxRetries) {
+            console.log('Max retries reached, stopping polling temporarily');
+            this.stopPolling();
+            // Restart polling after 10 minutes
+            setTimeout(() => {
+              if (this.userId) {
+                this.startPolling(this.userId);
+                this.retryCount = 0;
+              }
+            }, 600000); // 10 minutes
+          }
           return;
         }
+        this.retryCount = 0; // Reset retry count on successful connection
       }
 
       // Use BuddiesService for message checking (it has the correct methods)
       const buddies = await BuddiesService.getBuddies(this.userId);
       
-      for (const buddy of buddies) {
+      // Limit to first 5 buddies to reduce database load
+      const limitedBuddies = buddies.slice(0, 5);
+      
+      for (const buddy of limitedBuddies) {
         try {
           // Get messages for this buddy
-          const messages = await BuddiesService.getMessages(buddy.id);
+          const messages = await BuddiesService.getMessages(buddy.id, this.userId);
           const lastKnownIds = this.lastMessageIds[buddy.id] || [];
           
           // Find new messages (not in our last known list)
@@ -112,21 +131,16 @@ class NotificationManagerClass implements NotificationManager {
 
     try {
       // Skip network check if we already checked recently (shared with messages)
-      const now = Date.now();
-      if (now - this.lastNetworkCheck > this.networkCheckInterval) {
-        const isConnected = await BuddiesService.testNetworkConnection();
-        this.lastNetworkCheck = now;
-        if (!isConnected) {
-          console.warn('Network connection failed, skipping notes check');
-          return;
-        }
-      }
+      // Network check is already handled in checkForNewMessages()
 
       // Use BuddiesService for notes checking (it has the correct methods)
       const notes = await BuddiesService.getWhisprNotes(this.userId);
       
+      // Limit to recent notes only (last 10) to reduce processing
+      const recentNotes = notes.slice(0, 10);
+      
       // Find new notes (not in our last known list)
-      const newNotes = notes.filter(note => 
+      const newNotes = recentNotes.filter(note => 
         !this.lastNoteIds.includes(note.id) && 
         note.senderId !== this.userId
       );
@@ -144,8 +158,8 @@ class NotificationManagerClass implements NotificationManager {
         }
       }
 
-      // Update the known note IDs (keep last 50 to avoid memory issues)
-      this.lastNoteIds = notes.map(n => n.id).slice(0, 50);
+      // Update the known note IDs (keep last 10 to avoid memory issues)
+      this.lastNoteIds = recentNotes.map(n => n.id).slice(0, 10);
     } catch (error) {
       console.error('Error checking for new notes:', error);
     }

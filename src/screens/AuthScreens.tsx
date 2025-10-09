@@ -29,11 +29,11 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
 
     setIsCheckingUsername(true);
     try {
-      const response = await fetch(`https://bkfonnecvqlppivnrgxe.supabase.co/rest/v1/user_profiles?username=ilike.${username}`, {
+      const response = await fetch(`https://axkktejoldizpveydidx.supabase.co/rest/v1/user_profiles?username=ilike.${username}`, {
         method: 'GET',
         headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxVvgFuA62-0IVGejwg',
-          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZm9ubmVjdnFscHBpdm5yZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDE0MTUsImV4cCI6MjA3MzAxNzQxNX0.t0f-n4JT9Lb6LBCxSIf6umH4pxVvgFuA62-0IVGejwg',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4a2t0ZWpvbGRpenB2ZXlkaWR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNDE2ODgsImV4cCI6MjA3NDkxNzY4OH0.axo3f_qTDzvk2WYN8Z53B1F4kTeOgP07G2TiOgkQDV4',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4a2t0ZWpvbGRpenB2ZXlkaWR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNDE2ODgsImV4cCI6MjA3NDkxNzY4OH0.axo3f_qTDzvk2WYN8Z53B1F4kTeOgP07G2TiOgkQDV4',
         },
       });
 
@@ -231,6 +231,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const { setAuthenticatedUser } = useAuth();
 
   const handleSignIn = async () => {
@@ -253,6 +254,32 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
       Alert.alert('Error', 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('Email Required', 'Please enter your email address first, then tap "Forgot Password"');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const { success, error } = await AuthService.resetPassword(email);
+      
+      if (success) {
+        Alert.alert(
+          'Reset Email Sent! 📧',
+          `We've sent a password reset link to ${email}. Check your email and follow the instructions to reset your password.`,
+          [{ text: 'OK', style: 'default' }]
+        );
+      } else {
+        Alert.alert('Reset Failed', error || 'Failed to send reset email. Please try again.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -287,7 +314,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
           <TouchableOpacity
             style={[styles.button, isLoading && styles.buttonDisabled]}
             onPress={handleSignIn}
-            disabled={isLoading}
+            disabled={isLoading || isResettingPassword}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
@@ -297,9 +324,21 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={styles.forgotPasswordButton}
+            onPress={handleForgotPassword}
+            disabled={isLoading || isResettingPassword}
+          >
+            {isResettingPassword ? (
+              <ActivityIndicator color="#6366f1" size="small" />
+            ) : (
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.backButton}
             onPress={onBackToWelcome}
-            disabled={isLoading}
+            disabled={isLoading || isResettingPassword}
           >
             <Text style={styles.backButtonText}>← Back to Welcome</Text>
           </TouchableOpacity>
@@ -446,6 +485,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
+  },
+  forgotPasswordButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
   backButton: {
     paddingHorizontal: spacing.lg,

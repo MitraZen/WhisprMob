@@ -9,9 +9,10 @@ interface ChatScreenProps {
   onNavigate: (screen: string) => void;
   buddy: any;
   user: any;
+  onGoBack?: () => void;
 }
 
-export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, buddy, user }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, buddy, user, onGoBack }) => {
   const { theme } = useTheme();
   const [messages, setMessages] = useState<BuddyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -57,7 +58,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     
     try {
       console.log('Loading messages for buddy:', buddy.id);
-      const messagesData = await BuddiesService.getMessages(buddy.id);
+      const messagesData = await BuddiesService.getMessages(buddy.id, user.id);
       console.log(`Loaded ${messagesData.length} messages successfully`);
       
       // Smart state update - only update if messages actually changed
@@ -138,16 +139,23 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     }
   };
 
-  const formatTimestamp = (timestamp: Date): string => {
+  const formatTimestamp = (timestamp: Date | string | undefined): string => {
+    if (!timestamp) return 'now';
+    
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    
+    // Check if the date is valid
+    if (isNaN(date.getTime())) return 'now';
+    
     const now = new Date();
-    const diff = now.getTime() - timestamp.getTime();
+    const diff = now.getTime() - date.getTime();
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
 
     if (minutes < 1) return 'now';
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
-    return timestamp.toLocaleDateString();
+    return date.toLocaleDateString();
   };
 
   const scrollToBottom = () => {
@@ -184,7 +192,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => onNavigate('buddies')}
+          onPress={() => onGoBack ? onGoBack() : onNavigate('buddies')}
         >
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>

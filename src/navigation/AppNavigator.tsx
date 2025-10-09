@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, BackHandler, Alert } from 'react-native';
 import { theme, spacing } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
 import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
@@ -9,6 +9,9 @@ import ChatScreen from '@/screens/ChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import AdminPanel from '@/screens/AdminPanel';
+import SentNotesScreen from '@/screens/SentNotesScreen';
+import NotificationsScreen from '@/screens/NotificationsScreen';
+import SendNoteScreen from '@/screens/SendNoteScreen';
 import { useAuth } from '@/store/AuthContext';
 import { useAdmin } from '@/store/AdminContext';
 
@@ -229,13 +232,62 @@ const HomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) =>
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
+  const [navigationHistory, setNavigationHistory] = useState<string[]>(['welcome']);
   const { isAuthenticated, isLoading, isProfileComplete, user, logout } = useAuth();
   const { isAdminMode } = useAdmin();
 
   const navigate = (screen: string, params?: any) => {
     setCurrentParams(params ?? null);
     setCurrentScreen(screen);
+    
+    // Add to navigation history (avoid duplicates)
+    setNavigationHistory(prev => {
+      const newHistory = [...prev];
+      if (newHistory[newHistory.length - 1] !== screen) {
+        newHistory.push(screen);
+      }
+      return newHistory;
+    });
   };
+
+  const goBack = () => {
+    setNavigationHistory(prev => {
+      if (prev.length > 1) {
+        const newHistory = [...prev];
+        newHistory.pop(); // Remove current screen
+        const previousScreen = newHistory[newHistory.length - 1];
+        setCurrentScreen(previousScreen);
+        return newHistory;
+      }
+      return prev;
+    });
+  };
+
+  // Handle Android back button
+  useEffect(() => {
+    const backAction = () => {
+      // Use navigation history for more accurate back navigation
+      if (navigationHistory.length > 1) {
+        goBack();
+        return true; // Prevent default behavior
+      } else {
+        // Show exit confirmation when at root screen
+        Alert.alert(
+          'Exit App',
+          'Are you sure you want to exit Whispr?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
+          ]
+        );
+        return true; // Prevent default behavior
+      }
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [navigationHistory, currentScreen]);
 
   console.log('AppNavigator - currentScreen:', currentScreen);
 
@@ -315,6 +367,7 @@ const AppNavigator = () => {
           onNavigate={navigate}
           user={user}
           buddy={currentParams?.buddy}
+          onGoBack={goBack}
         />
       );
       return <WelcomeScreen onNavigate={navigate} />;
@@ -323,6 +376,15 @@ const AppNavigator = () => {
       return <WelcomeScreen onNavigate={navigate} />;
     case 'settings':
       if (isAuthenticated) return <SettingsScreen onNavigate={navigate} user={user} onLogout={async () => { await logout(); navigate('welcome'); }} />;
+      return <WelcomeScreen onNavigate={navigate} />;
+    case 'sentNotes':
+      if (isAuthenticated) return <SentNotesScreen onNavigate={navigate} user={user} onGoBack={goBack} />;
+      return <WelcomeScreen onNavigate={navigate} />;
+    case 'notifications':
+      if (isAuthenticated) return <NotificationsScreen onNavigate={navigate} user={user} onGoBack={goBack} />;
+      return <WelcomeScreen onNavigate={navigate} />;
+    case 'sendNote':
+      if (isAuthenticated) return <SendNoteScreen onNavigate={navigate} user={user} onGoBack={goBack} />;
       return <WelcomeScreen onNavigate={navigate} />;
     default:
       return <WelcomeScreen onNavigate={navigate} />;
