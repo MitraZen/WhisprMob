@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
@@ -276,7 +277,8 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>❌ {error}</Text>
+            <Icon name="alert-circle" size={24} color={theme.colors.error} style={styles.errorIcon} />
+            <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={() => loadBuddies(true)}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
@@ -327,21 +329,23 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                     style={styles.actionButton}
                     onPress={() => handlePinToggle(buddy.id)}
                   >
-                    <Text style={styles.actionButtonText}>
-                      {buddy.isPinned ? '📌' : '📍'}
-                    </Text>
+                    <Icon 
+                      name={buddy.isPinned ? "pin" : "pin-outline"} 
+                      size={20} 
+                      color={buddy.isPinned ? "#7c3aed" : "#6b7280"} 
+                    />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionButton}
                     onPress={() => handleClearChat(buddy.id)}
                   >
-                    <Text style={styles.actionButtonText}>🗑️</Text>
+                    <Icon name="trash-outline" size={20} color="#ef4444" />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionButton}
                     onPress={() => handleBuddyOptions(buddy)}
                   >
-                    <Text style={styles.actionButtonText}>⋯</Text>
+                    <Icon name="ellipsis-horizontal" size={20} color="#6b7280" />
                   </TouchableOpacity>
                 </View>
 
@@ -489,8 +493,14 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
   },
   actionButtons: { flexDirection: 'row', gap: spacing.xs },
-  actionButton: { padding: spacing.xs },
-  actionButtonText: { fontSize: 16 },
+  actionButton: { 
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'transparent',
+  },
+  errorIcon: {
+    marginBottom: spacing.sm,
+  },
   unreadBadge: {
     backgroundColor: theme.colors.primary,
     borderRadius: borderRadius.full,
