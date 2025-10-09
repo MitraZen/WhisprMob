@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, RefreshControl } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { BuddiesService, BuddyMessage } from '@/services/buddiesService';
@@ -194,7 +195,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           style={styles.backButton}
           onPress={() => onGoBack ? onGoBack() : onNavigate('buddies')}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         
         <View style={styles.buddyInfo}>
@@ -226,7 +227,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
                  style={styles.moreButton}
                  onPress={() => Alert.alert('More Options', 'More options coming soon!')}
                >
-                 <Text style={styles.moreButtonText}>⋯</Text>
+                 <Icon name="ellipsis-horizontal" size={24} color="#fff" />
                </TouchableOpacity>
       </View>
 
@@ -252,7 +253,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>❌ {error}</Text>
+            <Icon name="alert-circle" size={24} color={theme.colors.error} style={styles.errorIcon} />
+            <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={() => loadMessages()}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
@@ -312,7 +314,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           style={styles.scrollToBottomButton}
           onPress={scrollToBottom}
         >
-          <Text style={styles.scrollToBottomText}>↓</Text>
+          <Icon name="chevron-down" size={24} color="#fff" />
         </TouchableOpacity>
       )}
 
@@ -335,9 +337,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           onPress={handleSendMessage}
           disabled={!newMessage.trim() || isSending}
         >
-          <Text style={styles.sendButtonText}>
-            {isSending ? '⏳' : '📤'}
-          </Text>
+          <Icon 
+            name={isSending ? "hourglass" : "send"} 
+            size={20} 
+            color="#fff" 
+          />
         </TouchableOpacity>
       </View>
       
@@ -376,10 +380,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   backButton: {
     marginRight: spacing.md,
-  },
-  backButtonText: {
-    ...theme.typography.labelLarge,
-    color: theme.colors.onPrimary,
+    padding: spacing.xs,
   },
   buddyInfo: {
     flex: 1,
@@ -421,10 +422,8 @@ const createStyles = (theme: any) => StyleSheet.create({
   moreButton: {
     padding: spacing.sm,
   },
-  moreButtonText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
+  errorIcon: {
+    marginBottom: spacing.sm,
   },
   messagesContainer: {
     flex: 1,
@@ -551,10 +550,6 @@ const createStyles = (theme: any) => StyleSheet.create({
   sendButtonDisabled: {
     backgroundColor: '#9ca3af',
   },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
@@ -617,11 +612,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-  },
-  scrollToBottomText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
   },
 });
 
