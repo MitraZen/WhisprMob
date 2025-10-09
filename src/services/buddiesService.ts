@@ -28,6 +28,7 @@ export interface BuddyMessage {
   content: string;
   messageType: 'text' | 'image' | 'file' | 'emoji';
   isRead: boolean;
+  timestamp: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -191,6 +192,80 @@ export class BuddiesService {
   }
 
   // Send a message to a buddy
+  // Get user's sent notes
+  static async getSentNotes(userId: string): Promise<any[]> {
+    try {
+      const data = await this.rpcRequest('get_user_sent_notes', {
+        user_id: userId
+      });
+      return data;
+    } catch (error) {
+      console.error('Error getting sent notes:', error);
+      throw error;
+    }
+  }
+
+  // Get note recipients
+  static async getNoteRecipients(noteId: string): Promise<any[]> {
+    try {
+      const data = await this.rpcRequest('get_note_recipients', {
+        note_id: noteId
+      });
+      return data;
+    } catch (error) {
+      console.error('Error getting note recipients:', error);
+      throw error;
+    }
+  }
+
+  // Clear all sent notes for a user
+  static async clearSentNotes(userId: string): Promise<boolean> {
+    try {
+      console.log('Clearing sent notes for user:', userId);
+      
+      const result = await this.rpcRequest('clear_sent_notes', {
+        user_id_param: userId
+      });
+      
+      console.log('clear_sent_notes result:', result);
+      
+      // Check if the result indicates success
+      if (result && typeof result === 'object' && result.success === false) {
+        throw new Error(result.error || 'Failed to clear sent notes');
+      }
+      
+      console.log(`Cleared ${result?.deleted_count || 0} sent notes`);
+      return true;
+    } catch (error) {
+      console.error('Error clearing sent notes:', error);
+      throw error;
+    }
+  }
+
+  // Get user notifications
+  static async getNotifications(userId: string): Promise<any[]> {
+    try {
+      const data = await this.request('GET', `notifications?user_id=eq.${userId}&order=created_at.desc`);
+      return data;
+    } catch (error) {
+      console.error('Error getting notifications:', error);
+      throw error;
+    }
+  }
+
+  // Mark notification as read
+  static async markNotificationAsRead(notificationId: string): Promise<void> {
+    try {
+      await this.request('PATCH', `notifications?id=eq.${notificationId}`, {
+        is_read: true,
+        updated_at: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      throw error;
+    }
+  }
+
   static async sendMessage(
     buddyId: string,
     content: string,
@@ -205,28 +280,35 @@ export class BuddiesService {
         message_type: messageType,
         user_id_param: userId
       });
+      console.log('Parameter types:', {
+        buddyId_type: typeof buddyId,
+        content_type: typeof content,
+        messageType_type: typeof messageType,
+        userId_type: typeof userId
+      });
       
-      const messageId = await this.rpcRequest('send_buddy_message', {
+      if (!userId) {
+        throw new Error('User ID is required to send messages');
+      }
+      
+      const result = await this.rpcRequest('send_buddy_message', {
         buddy_id_param: buddyId,
         content,
-        message_type: messageType,
-        user_id_param: userId || null
+        user_id_param: userId,
+        message_type: messageType
       });
 
-      console.log('RPC function returned:', messageId);
-      console.log('Message sent, ID:', messageId);
+      console.log('RPC function returned:', result);
       
-      // Immediately check if the message was stored
-      const verifyMessage = await this.request('GET', `buddy_messages?id=eq.${messageId}`);
-      console.log('Verification - message stored:', verifyMessage);
+      // Check if the result indicates success
+      if (result && typeof result === 'object' && result.success === false) {
+        throw new Error(result.error || 'Failed to send message');
+      }
       
-      // Also check all messages for this buddy
-      const allMessagesForBuddy = await this.request('GET', `buddy_messages?buddy_id=eq.${buddyId}`);
-      console.log('All messages for buddy after sending:', allMessagesForBuddy);
-      
+      console.log('Message sent successfully!');
       console.log('=== END DEBUGGING MESSAGE SENDING ===');
       
-      return messageId;
+      return result?.message_id || result?.id || 'success';
     } catch (error) {
       console.error('Error sending message:', error);
       throw new Error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -234,41 +316,42 @@ export class BuddiesService {
   }
 
   // Get messages for a specific buddy
-  static async getMessages(buddyId: string): Promise<BuddyMessage[]> {
+  static async getMessages(buddyId: string, userId?: string): Promise<BuddyMessage[]> {
     try {
-      // Debug logging removed for performance
+      console.log('Getting messages for buddy:', buddyId, 'user:', userId);
       
-      // First, let's check if the buddy exists
-      const buddyCheck = await this.request('GET', `buddies?id=eq.${buddyId}`);
-      // Buddy exists check
-      
-      // Then query messages
-      const queryUrl = `buddy_messages?buddy_id=eq.${buddyId}&order=created_at.asc`;
-      // Query messages for buddy
-      
-      const data = await this.request('GET', queryUrl);
-      // Process database response
-      
-      // Additional debugging removed for performance
-
-      if (!data || !Array.isArray(data)) {
-        return [];
+      if (!userId) {
+        throw new Error('User ID is required to get messages');
       }
-
-      const messages = data.map((message: any) => ({
-        id: message.id,
-        buddyId: message.buddy_id,
-        senderId: message.sender_id,
-        content: message.content,
-        messageType: message.message_type || 'text',
-        isRead: message.is_read || false,
-        createdAt: new Date(message.created_at),
-        updatedAt: new Date(message.updated_at),
+      
+      const result = await this.rpcRequest('get_buddy_messages', {
+        buddy_id_param: buddyId,
+        user_id_param: userId
+      });
+      
+      console.log('get_buddy_messages result:', result);
+      
+      // Check if the result indicates success
+      if (result && typeof result === 'object' && result.success === false) {
+        throw new Error(result.error || 'Failed to get messages');
+      }
+      
+      const messages = result?.messages || [];
+      
+      // Convert the messages to BuddyMessage format
+      const buddyMessages: BuddyMessage[] = messages.map((msg: any) => ({
+        id: msg.id,
+        senderId: msg.sender_id,
+        receiverId: '', // Not used in current implementation
+        content: msg.content,
+        timestamp: new Date(msg.created_at),
+        isRead: msg.is_read
       }));
-
-      return messages;
+      
+      console.log('Converted messages:', buddyMessages.length);
+      return buddyMessages;
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      console.error('Error getting messages:', error);
       throw error;
     }
   }
@@ -276,11 +359,24 @@ export class BuddiesService {
   // Mark messages as read for a buddy
   static async markMessagesAsRead(buddyId: string, userId?: string): Promise<boolean> {
     try {
-      await this.rpcRequest('mark_buddy_messages_read', {
+      console.log('Marking messages as read for buddy:', buddyId, 'user:', userId);
+      
+      if (!userId) {
+        throw new Error('User ID is required to mark messages as read');
+      }
+      
+      const result = await this.rpcRequest('mark_buddy_messages_read', {
         buddy_id_param: buddyId,
-        user_id_param: userId || null
+        user_id_param: userId
       });
-
+      
+      console.log('mark_buddy_messages_read result:', result);
+      
+      // Check if the result indicates success
+      if (result && typeof result === 'object' && result.success === false) {
+        throw new Error(result.error || 'Failed to mark messages as read');
+      }
+      
       return true;
     } catch (error) {
       console.error('Error marking messages as read:', error);
@@ -292,8 +388,8 @@ export class BuddiesService {
   static async toggleBuddyPin(buddyId: string, userId?: string): Promise<boolean> {
     try {
       await this.rpcRequest('toggle_buddy_pin', {
-        buddy_id_param: buddyId,
-        user_id_param: userId || null
+        buddy_id: buddyId,
+        user_id: userId || null
       });
 
       return true;
@@ -338,9 +434,9 @@ export class BuddiesService {
       const userProfile = await this.getUserProfile(userId);
       const userMood = userProfile?.mood || 'happy';
       
-      // Get notes from ALL users (including existing buddies)
+      // Get notes from ALL users (excluding current user) with optimized query
       // Users can listen to notes from existing buddies without triggering add buddy
-      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&order=created_at.desc&limit=50`;
+      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=20`;
       
       const data = await this.request('GET', queryString);
 
@@ -348,8 +444,8 @@ export class BuddiesService {
         return [];
       }
 
-      // Filter out notes from the current user (self-notes)
-      let filteredData = data.filter((note: any) => note.sender_id !== userId);
+      // No need to filter in JavaScript - database query already excludes user's notes
+      let filteredData = data;
 
       // Apply smart filtering
       filteredData = this.applySmartNoteFiltering(filteredData, userMood);
@@ -454,14 +550,15 @@ export class BuddiesService {
   // Listen to a Whispr note (accept it)
   static async listenToNote(noteId: string, userId: string): Promise<any> {
     try {
+      console.log('🎧 BuddiesService.listenToNote called with:', { noteId, userId });
       const result = await this.rpcRequest('listen_to_note', {
         note_id_param: noteId,
         listener_id_param: userId
       });
-
+      console.log('🎧 BuddiesService.listenToNote result:', result);
       return result;
     } catch (error) {
-      console.error('Error listening to note:', error);
+      console.error('🎧 BuddiesService.listenToNote error:', error);
       throw error;
     }
   }
@@ -469,15 +566,16 @@ export class BuddiesService {
   // Reject a Whispr note
   static async rejectNote(noteId: string, userId: string): Promise<any> {
     try {
+      console.log('❌ BuddiesService.rejectNote called with:', { noteId, userId });
       const result = await this.rpcRequest('handle_note_propagation', {
         note_id: noteId,
         responder_id: userId,
         response_type: 'reject'
       });
-
+      console.log('❌ BuddiesService.rejectNote result:', result);
       return result;
     } catch (error) {
-      console.error('Error rejecting note:', error);
+      console.error('❌ BuddiesService.rejectNote error:', error);
       throw error;
     }
   }

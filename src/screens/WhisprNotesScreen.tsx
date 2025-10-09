@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
-import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/theme';
-import { MoodType } from '@/types';
+import Icon from 'react-native-vector-icons/Ionicons';
+import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
@@ -16,11 +16,8 @@ interface WhisprNotesScreenProps {
 }
 
 export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate, user }) => {
-  const [message, setMessage] = useState('');
-  const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
@@ -57,39 +54,23 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     }
   };
 
-  const handleSendNote = async () => {
-    if (!message.trim() || !selectedMood || !user?.id) {
-      Alert.alert('Error', 'Please enter a message and select a mood.');
-      return;
-    }
-    setIsSending(true);
-    const content = message.trim();
-    const mood = selectedMood;
-    setMessage('');
-    setSelectedMood(null);
-    try {
-      await BuddiesService.sendWhisprNote(user.id, content, mood);
-      Alert.alert('Success', 'Your Whispr note has been sent! 🌟');
-      await loadNotes();
-    } catch {
-      setMessage(content);
-      setSelectedMood(mood);
-      Alert.alert('Error', 'Failed to send note. Try again.');
-    } finally {
-      setIsSending(false);
-    }
-  };
 
   const handleListen = async (noteId: string) => {
+    console.log('🎧 Starting to listen to note:', noteId, 'for user:', user.id);
     setActionLoading(prev => new Set(prev).add(noteId));
     try {
       const result = await BuddiesService.listenToNote(noteId, user.id);
+      console.log('🎧 Listen result:', result);
       if (result?.success) {
         Alert.alert('Note Listened! 👂', 'You\'ve acknowledged this note.');
         await loadNotes();
+      } else {
+        console.log('🎧 Listen failed - result:', result);
+        Alert.alert('Error', 'Failed to listen to note. Result: ' + JSON.stringify(result));
       }
-    } catch {
-      Alert.alert('Error', 'Failed to listen to note.');
+    } catch (error) {
+      console.error('🎧 Error listening to note:', error);
+      Alert.alert('Error', 'Failed to listen to note: ' + error.message);
     } finally {
       setActionLoading(prev => {
         const newSet = new Set(prev);
@@ -100,15 +81,21 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   };
 
   const handleReject = async (noteId: string) => {
+    console.log('❌ Starting to reject note:', noteId, 'for user:', user.id);
     setActionLoading(prev => new Set(prev).add(noteId));
     try {
       const result = await BuddiesService.rejectNote(noteId, user.id);
+      console.log('❌ Reject result:', result);
       if (result?.success) {
         Alert.alert('Note Rejected', 'The note has been rejected.');
         await loadNotes();
+      } else {
+        console.log('❌ Reject failed - result:', result);
+        Alert.alert('Error', 'Failed to reject note. Result: ' + JSON.stringify(result));
       }
-    } catch {
-      Alert.alert('Error', 'Failed to reject note.');
+    } catch (error) {
+      console.error('❌ Error rejecting note:', error);
+      Alert.alert('Error', 'Failed to reject note: ' + error.message);
     } finally {
       setActionLoading(prev => {
         const newSet = new Set(prev);
@@ -236,43 +223,19 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         <View style={styles.demarcationLine} />
       </View>
 
-      {/* Compose Area */}
-      <View style={styles.composeContainer}>
-        <View style={styles.moodSelector}>
-          <Text style={styles.moodLabel}>Select your mood:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {Object.entries(moodConfig).map(([type, config]) => (
-              <TouchableOpacity
-                key={type}
-                style={[styles.moodButton, selectedMood === type && styles.selectedMoodButton]}
-                onPress={() => setSelectedMood(type as MoodType)}
-              >
-                <Text style={styles.moodButtonEmoji}>{config.emoji}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+
+      {/* Start Whispr-ing Button */}
+      <TouchableOpacity
+        style={styles.startWhisperingButtonContainer}
+        onPress={() => onNavigate('sendNote')}
+        activeOpacity={0.8}
+      >
+        <View style={styles.startWhisperingButtonGradient}>
+          <Icon name="add" size={18} color="#fff" style={styles.startIcon} />
+          <Text style={styles.startWhisperingButtonText}>Start Whispr-ing</Text>
+          <Icon name="chevron-forward" size={18} color="#fff" style={styles.endIcon} />
         </View>
-        <View style={styles.messageInputContainer}>
-          <View style={styles.textInputWrapper}>
-            <TextInput
-              style={styles.messageInput}
-              placeholder="Share your thoughts with the world..."
-              placeholderTextColor="#9ca3af"
-              value={message}
-              onChangeText={setMessage}
-              multiline
-              textAlignVertical="top"
-            />
-          </View>
-          <TouchableOpacity
-            style={[styles.sendButton, (!message.trim() || !selectedMood || isSending) && styles.sendButtonDisabled]}
-            onPress={handleSendNote}
-            disabled={!message.trim() || !selectedMood || isSending}
-          >
-            {isSending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendButtonText}>Send</Text>}
-          </TouchableOpacity>
-        </View>
-      </View>
+      </TouchableOpacity>
 
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
       <DebugOverlay onToggleAdmin={enableAdminMode} />
@@ -368,48 +331,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     paddingHorizontal: spacing.sm,
   },
-  composeContainer: {
-    backgroundColor: theme.colors.surface,
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    ...theme.shadows.lg,
-  },
-  moodSelector: { marginBottom: spacing.md },
-  moodLabel: { fontSize: 14, fontWeight: '600', marginBottom: spacing.sm },
-  moodButton: {
-    width: 48, height: 48, borderRadius: borderRadius.full,
-    backgroundColor: theme.colors.surfaceVariant,
-    justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm,
-  },
-  selectedMoodButton: { borderColor: theme.colors.primary, borderWidth: 2 },
-  moodButtonEmoji: { fontSize: 20 },
-  messageInputContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'flex-end',
-    gap: spacing.md,
-  },
-  textInputWrapper: {
-    flex: 1,
-    backgroundColor: theme.colors.surfaceVariant,
-    borderRadius: borderRadius.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    minHeight: 80,
-  },
-  messageInput: {
-    flex: 1,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    backgroundColor: 'transparent',
-    color: theme.colors.onSurface,
-    fontSize: 16,
-    lineHeight: 22,
-    textAlignVertical: 'top',
-  },
-  sendButton: { marginLeft: spacing.sm, backgroundColor: theme.colors.primary, padding: spacing.md, borderRadius: borderRadius.lg },
-  sendButtonDisabled: { backgroundColor: '#9ca3af' },
-  sendButtonText: { color: '#fff', fontWeight: '600' },
   loadingContainer: { 
     alignItems: 'center', 
     justifyContent: 'center', 
@@ -432,6 +353,45 @@ const styles = StyleSheet.create({
   },
   actionButtonDisabled: { 
     opacity: 0.6 
+  },
+  startWhisperingButtonContainer: {
+    position: 'absolute',
+    bottom: 120, // Moved up from 100 to 120 for better spacing
+    alignSelf: 'center', // Center the button
+    borderRadius: 25,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    minWidth: 200, // Set minimum width
+    maxWidth: 280, // Set maximum width
+  },
+  startWhisperingButtonGradient: {
+    paddingVertical: 4, // Further reduced from 8 to move content higher
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#7B68EE', // Purple background instead of gradient
+  },
+  startWhisperingButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginHorizontal: 8,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  startIcon: {
+    marginRight: 2,
+    marginTop: -3, // Increased negative margin to move icon higher
+  },
+  endIcon: {
+    marginLeft: 2,
+    marginTop: -3, // Increased negative margin to move icon higher
   },
 });
 

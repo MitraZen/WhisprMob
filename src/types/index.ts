@@ -18,6 +18,15 @@ export interface Message {
   mood?: MoodType;
 }
 
+export interface BuddyMessage {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  timestamp: Date;
+  isRead: boolean;
+}
+
 export interface Chat {
   id: string;
   participants: string[];

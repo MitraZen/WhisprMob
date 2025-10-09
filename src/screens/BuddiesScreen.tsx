@@ -94,7 +94,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   };
 
   const filteredBuddies = buddies.filter(buddy => {
-    const matchesSearch = buddy.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = buddy.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false;
     switch (filter) {
       case 'unread': return matchesSearch && buddy.unreadCount > 0;
       case 'pinned': return matchesSearch && buddy.isPinned;

@@ -123,7 +123,6 @@ export class FlexibleDatabaseService {
         lastSeen: new Date(user.last_seen || user.lastSeen || new Date()),
         email: user.email,
         username: user.username, // Include username field
-        username: user.username, // Include username field
       };
     } catch (error) {
       console.error(`Flexible Database error creating user in ${tableName}:`, error);
@@ -570,7 +569,7 @@ export class FlexibleDatabaseService {
 
   static async getBuddies(userId?: string): Promise<any[]> {
     try {
-      let url = 'buddies?select=id,user_id,name,initials,status';
+      let url = 'buddies?select=id,user_id,name,initials,status&limit=20';
       if (userId) {
         url += `&user_id=eq.${userId}`;
       }

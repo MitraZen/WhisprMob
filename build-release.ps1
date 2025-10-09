@@ -1,129 +1,133 @@
-# Whispr Mobile App - Release Build Script
-# This script helps manage versions and create release builds
+# Whispr Mobile App - Play Store Build Script (PowerShell)
+# This script generates both AAB and APK files for Play Store release
 
-param(
-    [string]$VersionName = "",
-    [switch]$IncrementVersion,
-    [switch]$BuildRelease,
-    [switch]$Help
-)
+Write-Host "🚀 Starting Whispr Mobile App Play Store Build..." -ForegroundColor Green
+Write-Host "📱 Version: 1.1.2 (Build 8)" -ForegroundColor Cyan
+Write-Host "📅 Date: $(Get-Date)" -ForegroundColor Cyan
+Write-Host ""
 
-if ($Help) {
-    Write-Host "Whispr Mobile App - Release Build Script" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Usage:" -ForegroundColor Yellow
-    Write-Host "  .\build-release.ps1 -IncrementVersion          # Increment version and build"
-    Write-Host "  .\build-release.ps1 -VersionName '1.1.0'     # Set specific version and build"
-    Write-Host "  .\build-release.ps1 -BuildRelease             # Build release with current version"
-    Write-Host ""
-    Write-Host "Examples:" -ForegroundColor Yellow
-    Write-Host "  .\build-release.ps1 -IncrementVersion"
-    Write-Host "  .\build-release.ps1 -VersionName '1.2.0' -BuildRelease"
-    Write-Host ""
-    exit 0
+# Set build directory
+$BUILD_DIR = "builds"
+$TIMESTAMP = Get-Date -Format "yyyyMMdd_HHmmss"
+
+# Create builds directory if it doesn't exist
+if (!(Test-Path $BUILD_DIR)) {
+    New-Item -ItemType Directory -Path $BUILD_DIR
 }
 
-# Load version properties
-$versionFile = "android\app\version.properties"
-if (-not (Test-Path $versionFile)) {
-    Write-Host "Error: version.properties file not found!" -ForegroundColor Red
-    exit 1
-}
+Write-Host "🧹 Cleaning previous builds..." -ForegroundColor Yellow
+Set-Location android
+& .\gradlew clean
+Set-Location ..
 
-$versionContent = Get-Content $versionFile
-$versionProperties = @{}
+Write-Host ""
+Write-Host "📦 Building AAB (Android App Bundle) for Play Store..." -ForegroundColor Yellow
 
-foreach ($line in $versionContent) {
-    if ($line -match "^([^#][^=]+)=(.*)$") {
-        $versionProperties[$matches[1]] = $matches[2]
-    }
-}
+# Build AAB file
+Set-Location android
+& .\gradlew bundleRelease
+Set-Location ..
 
-# Get current version
-$currentVersionName = $versionProperties["VERSION_NAME"]
-$currentVersionCode = [int]$versionProperties["VERSION_CODE"]
+# Copy AAB to builds directory
+$AAB_FILE = "Whispr_v1.1.2_$TIMESTAMP.aab"
+Copy-Item "android\app\build\outputs\bundle\release\app-release.aab" "$BUILD_DIR\$AAB_FILE"
 
-Write-Host "Current Version: $currentVersionName (Code: $currentVersionCode)" -ForegroundColor Cyan
+Write-Host "✅ AAB file created: $BUILD_DIR\$AAB_FILE" -ForegroundColor Green
+Write-Host ""
 
-# Handle version updates
-if ($IncrementVersion) {
-    # Parse version (assume semantic versioning)
-    $versionParts = $currentVersionName -split '\.'
-    $major = [int]$versionParts[0]
-    $minor = [int]$versionParts[1]
-    $patch = [int]$versionParts[2]
-    
-    # Increment patch version
-    $patch++
-    $newVersionName = "$major.$minor.$patch"
-    $newVersionCode = $currentVersionCode + 1
-    
-    Write-Host "Incrementing version to: $newVersionName (Code: $newVersionCode)" -ForegroundColor Green
-} elseif ($VersionName) {
-    $newVersionName = $VersionName
-    $newVersionCode = $currentVersionCode + 1
-    Write-Host "Setting version to: $newVersionName (Code: $newVersionCode)" -ForegroundColor Green
-} else {
-    $newVersionName = $currentVersionName
-    $newVersionCode = $currentVersionCode
-}
+Write-Host "📦 Building APK file..." -ForegroundColor Yellow
 
-# Update version.properties
-$newVersionContent = @"
-# Version management for Whispr Mobile App
-# Updated on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+# Build APK file
+Set-Location android
+& .\gradlew assembleRelease
+Set-Location ..
 
-# App version (displayed to users)
-VERSION_NAME=$newVersionName
+# Copy APK to builds directory
+$APK_FILE = "Whispr_v1.1.2_$TIMESTAMP.apk"
+Copy-Item "android\app\build\outputs\apk\release\app-release.apk" "$BUILD_DIR\$APK_FILE"
 
-# Version code (incremented for each release)
-VERSION_CODE=$newVersionCode
+Write-Host "✅ APK file created: $BUILD_DIR\$APK_FILE" -ForegroundColor Green
+Write-Host ""
 
-# Build type
-BUILD_TYPE=release
+# Generate release notes
+$RELEASE_NOTES_FILE = "$BUILD_DIR\ReleaseNotes_v1.1.2.md"
+$RELEASE_NOTES = @"
+# Whispr Mobile App - Release v1.1.2
 
-# Build date
-BUILD_DATE=$(Get-Date -Format 'yyyy-MM-dd')
+**Build Date:** $(Get-Date)
+**Version Code:** 8
+**Version Name:** 1.1.2
 
-# Release notes
-RELEASE_NOTES=Production release $newVersionName
+## 🎉 What's New in This Release
+
+### 🔧 Major Fixes
+- **Fixed Authentication Issues**: Resolved messaging and RPC function authentication problems
+- **Fixed Back Button Navigation**: Android back button now properly navigates between screens
+- **Fixed Sent Notes Persistence**: "Clear All" now permanently deletes notes from database
+- **Fixed Notification Display**: Notifications now show actual usernames instead of "someone"
+
+### 🚀 Improvements
+- **Enhanced Messaging System**: Improved message delivery and read status functionality
+- **Better UI Layout**: Improved button positioning and spacing
+- **Robust Error Handling**: Better error messages and debugging information
+- **Database Optimization**: Improved RPC functions for better performance
+
+### 🐛 Bug Fixes
+- Fixed timestamp formatting errors in chat
+- Fixed notification manager authentication issues
+- Fixed icon display issues on Android
+- Fixed navigation history tracking
+
+## 📱 Files Generated
+- **AAB File**: ``$AAB_FILE`` (For Play Store upload)
+- **APK File**: ``$APK_FILE`` (For direct installation)
+
+## 🚀 Deployment Instructions
+
+### For Play Store:
+1. Upload the AAB file (``$AAB_FILE``) to Google Play Console
+2. Fill in release notes and screenshots
+3. Submit for review
+
+### For Direct Installation:
+1. Use the APK file (``$APK_FILE``) for direct installation
+2. Enable "Install from unknown sources" if needed
+3. Install the APK file
+
+## 🔍 Testing Checklist
+- [ ] Authentication works properly
+- [ ] Messaging functions correctly
+- [ ] Back button navigation works
+- [ ] Sent notes clearing is persistent
+- [ ] Notifications show correct usernames
+- [ ] All screens load without errors
+
+---
+**Build completed successfully!** 🎉
 "@
 
-Set-Content -Path $versionFile -Value $newVersionContent
-Write-Host "Updated version.properties" -ForegroundColor Green
+$RELEASE_NOTES | Out-File -FilePath $RELEASE_NOTES_FILE -Encoding UTF8
 
-# Build release if requested
-if ($BuildRelease -or $IncrementVersion -or $VersionName) {
-    Write-Host "Building release APK..." -ForegroundColor Yellow
-    
-    # Clean previous builds
-    Write-Host "Cleaning previous builds..." -ForegroundColor Cyan
-    Set-Location android
-    .\gradlew clean
-    
-    # Build release APK
-    Write-Host "Building release APK..." -ForegroundColor Cyan
-    .\gradlew assembleRelease
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Release build successful!" -ForegroundColor Green
-        
-        # Copy APK to apk-files directory
-        $apkSource = "app\build\outputs\apk\release\app-release.apk"
-        $apkDestination = "..\apk-files\Whispr-Release-$newVersionName.apk"
-        
-        if (Test-Path $apkSource) {
-            Copy-Item $apkSource $apkDestination -Force
-            Write-Host "APK copied to: $apkDestination" -ForegroundColor Green
-        }
-    } else {
-        Write-Host "Release build failed!" -ForegroundColor Red
-        Set-Location ..
-        exit 1
-    }
-    
-    Set-Location ..
-}
+Write-Host "📝 Release notes created: $RELEASE_NOTES_FILE" -ForegroundColor Green
+Write-Host ""
 
-Write-Host "Build process completed!" -ForegroundColor Green
-Write-Host "Version: $newVersionName (Code: $newVersionCode)" -ForegroundColor Cyan
+# Display file sizes
+Write-Host "📊 Build Summary:" -ForegroundColor Cyan
+Write-Host "==================" -ForegroundColor Cyan
+$AAB_SIZE = (Get-Item "$BUILD_DIR\$AAB_FILE").Length / 1MB
+$APK_SIZE = (Get-Item "$BUILD_DIR\$APK_FILE").Length / 1MB
+Write-Host "AAB File: $BUILD_DIR\$AAB_FILE ($([math]::Round($AAB_SIZE, 2)) MB)" -ForegroundColor White
+Write-Host "APK File: $BUILD_DIR\$APK_FILE ($([math]::Round($APK_SIZE, 2)) MB)" -ForegroundColor White
+Write-Host "Release Notes: $RELEASE_NOTES_FILE" -ForegroundColor White
+Write-Host ""
+
+Write-Host "🎉 Build completed successfully!" -ForegroundColor Green
+Write-Host "📱 Ready for Play Store upload!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Yellow
+Write-Host "1. Upload AAB file to Google Play Console" -ForegroundColor White
+Write-Host "2. Fill in release information" -ForegroundColor White
+Write-Host "3. Submit for review" -ForegroundColor White
+Write-Host ""
+Write-Host "Files are located in the '$BUILD_DIR' directory." -ForegroundColor Cyan
+

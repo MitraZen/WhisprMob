@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Modal, Animated, Dimensions, Platform } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { MoodType } from '@/types';
@@ -370,7 +371,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               
               {/* Profile Title */}
               <View style={styles.profileTitleSection}>
-                <Text style={styles.profileTitle}>Profile</Text>
+                <View style={styles.profileTitleContainer}>
+                  <Text style={styles.profileTitle}>Profile</Text>
+                </View>
+                <TouchableOpacity 
+                  style={styles.settingsButton}
+                  onPress={() => onNavigate('settings')}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="settings" size={24} color="#fff" />
+                </TouchableOpacity>
               </View>
               
               <Animated.View 
@@ -888,9 +898,16 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: 'bold',
   },
   profileTitleSection: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.md,
     paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
+    paddingHorizontal: spacing.lg,
+  },
+  profileTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
   },
   profileTitle: {
     fontSize: 28,
@@ -900,6 +917,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 6,
     letterSpacing: 0.5,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadows.sm,
   },
   profileHeader: {
     flexDirection: 'row',
