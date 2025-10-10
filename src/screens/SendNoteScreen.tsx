@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  BackHandler,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../store/AuthContext';
@@ -27,6 +29,35 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, user, onGoB
   const [noteContent, setNoteContent] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Handle Android back button to prevent accidental navigation
+  useEffect(() => {
+    const backAction = () => {
+      // If there's content, show confirmation before going back
+      if (noteContent.trim()) {
+        Alert.alert(
+          'Discard Note?',
+          'You have unsaved content. Are you sure you want to go back?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Discard', 
+              style: 'destructive', 
+              onPress: () => onGoBack ? onGoBack() : onNavigate('notes')
+            }
+          ]
+        );
+        return true; // Prevent default behavior
+      } else {
+        // No content, allow normal back navigation
+        onGoBack ? onGoBack() : onNavigate('notes');
+        return true; // Prevent default behavior
+      }
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [noteContent, onGoBack, onNavigate]);
 
   const handleSendNote = async () => {
     if (!noteContent.trim()) {
@@ -89,15 +120,37 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, user, onGoB
       <ScrollView style={styles.formContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>What's on your mind?</Text>
-          <TextInput
-            style={styles.noteInput}
-            placeholder="Write your anonymous message here..."
-            placeholderTextColor="#999"
-            multiline
-            value={noteContent}
-            onChangeText={setNoteContent}
-            maxLength={500}
-          />
+          <TouchableWithoutFeedback
+            onPress={() => {
+              // Prevent any touch events from bubbling up
+            }}
+          >
+            <View>
+              <TextInput
+                style={styles.noteInput}
+                placeholder="Write your anonymous message here..."
+                placeholderTextColor="#666"
+                multiline
+                value={noteContent}
+                onChangeText={setNoteContent}
+                maxLength={500}
+                contextMenuHidden={true}
+                onSelectionChange={() => {
+                  // Prevent any selection-related navigation issues
+                }}
+                onTouchStart={(event) => {
+                  // Handle touch events to prevent back button behavior
+                  event.stopPropagation();
+                }}
+                onTouchEnd={(event) => {
+                  // Handle touch events to prevent back button behavior
+                  event.stopPropagation();
+                }}
+                editable={true}
+                selectTextOnFocus={false}
+              />
+            </View>
+          </TouchableWithoutFeedback>
           <Text style={styles.characterCount}>
             {noteContent.length}/500 characters
           </Text>
@@ -212,6 +265,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
+    color: '#333',
     minHeight: 120,
     textAlignVertical: 'top',
     borderWidth: 1,

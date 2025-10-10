@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions
+  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions, BackHandler
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
@@ -22,6 +22,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [isNewUser, setIsNewUser] = useState(false);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
+  const [noteAlerts, setNoteAlerts] = useState<number>(0);
+  const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   const { enableAdminMode } = useAdmin();
 
   // Load notes
@@ -34,6 +36,61 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     const interval = setInterval(loadNotes, 15000);
     return () => clearInterval(interval);
   }, [user?.id]);
+
+  // Handle Android back button - prevent going back to login screen
+  useEffect(() => {
+    const backAction = () => {
+      // Show exit confirmation instead of going back to login
+      Alert.alert(
+        'Exit App',
+        'Are you sure you want to exit Whispr?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
+        ]
+      );
+      return true; // Prevent default behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, []);
+
+  // Calculate note alerts (new notes since last check)
+  const calculateNoteAlerts = () => {
+    // For now, we'll count unread notes as alerts
+    // In a real implementation, you might track timestamps of when user last checked
+    const newNotesCount = notes.filter(note => {
+      // Consider notes created in the last 24 hours as "new"
+      const noteDate = new Date(note.createdAt);
+      const now = new Date();
+      const hoursDiff = (now.getTime() - noteDate.getTime()) / (1000 * 60 * 60);
+      return hoursDiff <= 24;
+    }).length;
+    setNoteAlerts(newNotesCount);
+  };
+
+  // Clear all note alerts
+  const clearAllNoteAlerts = async () => {
+    try {
+      setIsLoading(true);
+      // In a real implementation, you might update a "lastChecked" timestamp
+      // For now, we'll just hide the alerts
+      setNoteAlerts(0);
+      setShowAlertsDropdown(false);
+      Alert.alert('Success', 'Note alerts have been cleared!');
+    } catch (error) {
+      console.error('Error clearing note alerts:', error);
+      Alert.alert('Error', 'Failed to clear note alerts. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Calculate note alerts whenever notes change
+  useEffect(() => {
+    calculateNoteAlerts();
+  }, [notes]);
 
   const loadNotes = async () => {
     if (!user?.id) return;
@@ -123,24 +180,124 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     });
   };
 
-  const truncateText = (txt: string, max = 80) =>
-    txt.length > max ? txt.substring(0, max) + '...' : txt;
+  const truncateText = (txt: string) => {
+    // Find the first line break or limit to a reasonable length for single line
+    const firstLineBreak = txt.indexOf('\n');
+    if (firstLineBreak !== -1) {
+      return txt.substring(0, firstLineBreak);
+    }
+    
+    // If no line break, limit to approximately one line (around 50-60 characters)
+    const maxLength = 60;
+    if (txt.length > maxLength) {
+      return txt.substring(0, maxLength) + '...';
+    }
+    
+    return txt;
+  };
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.title}>Whispr Notes</Text>
-          <Text style={styles.subtitle}>Send anonymous messages to the world</Text>
-          {isNewUser && (
-            <View style={styles.newUserBanner}>
-              <Text style={styles.newUserBannerText}>
-                🎉 Welcome! You're seeing a limited set of notes. Listen to discover more!
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => onNavigate('buddies')}
+          activeOpacity={0.7}
+        >
+          <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Whispr Notes</Text>
+        <TouchableOpacity 
+          style={styles.alertsButton}
+          onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
+        >
+          <Icon name="notifications" size={24} color={theme.colors.onSurface} />
+          {noteAlerts > 0 && (
+            <View style={styles.alertBadge}>
+              <Text style={styles.alertBadgeText}>
+                {noteAlerts > 99 ? '99+' : noteAlerts}
               </Text>
             </View>
           )}
+        </TouchableOpacity>
+      </View>
+      
+      {/* Note Alerts Dropdown */}
+      {showAlertsDropdown && (
+        <View style={styles.alertsDropdown}>
+          <View style={styles.alertsDropdownContent}>
+            <View style={styles.alertsHeader}>
+              <Icon name="document-text" size={20} color="#7c3aed" />
+              <Text style={styles.alertsTitle}>Note Activity</Text>
+            </View>
+            
+            {/* Alert Summary */}
+            <View style={styles.alertSummary}>
+              <Text style={styles.alertsCount}>
+                {noteAlerts} new note{noteAlerts !== 1 ? 's' : ''} in the last 24 hours
+              </Text>
+            </View>
+            
+            {/* Activity Breakdown */}
+            <View style={styles.activityBreakdown}>
+              <View style={styles.activityItem}>
+                <Icon name="eye" size={16} color="#10b981" />
+                <Text style={styles.activityText}>Received by others</Text>
+              </View>
+              <View style={styles.activityItem}>
+                <Icon name="play" size={16} color="#3b82f6" />
+                <Text style={styles.activityText}>Listened to</Text>
+              </View>
+              <View style={styles.activityItem}>
+                <Icon name="close" size={16} color="#ef4444" />
+                <Text style={styles.activityText}>Rejected</Text>
+              </View>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.clearAlertsButton}
+              onPress={clearAllNoteAlerts}
+              disabled={isLoading || noteAlerts === 0}
+            >
+              <Text style={[
+                styles.clearAlertsButtonText,
+                (isLoading || noteAlerts === 0) && styles.clearAlertsButtonTextDisabled
+              ]}>
+                {isLoading ? 'Clearing...' : 'Clear All Alerts'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
+      )}
+
+      {/* Welcome Banner for New Users */}
+      {isNewUser && (
+        <View style={styles.welcomeBanner}>
+          <Text style={styles.welcomeBannerText}>
+            🎉 Welcome! You're seeing a limited set of notes. Listen to discover more!
+          </Text>
+        </View>
+      )}
+
+      {/* Sent Notes Section */}
+      <View style={styles.sentNotesSection}>
+        <TouchableOpacity 
+          style={styles.sentNotesCard}
+          onPress={() => onNavigate('sentNotes')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.sentNotesContent}>
+            <View style={styles.sentNotesIcon}>
+              <Icon name="send" size={24} color="#7c3aed" />
+            </View>
+            <View style={styles.sentNotesText}>
+              <Text style={styles.sentNotesTitle}>Sent Notes</Text>
+              <Text style={styles.sentNotesSubtitle}>View your shared notes and their impact</Text>
+            </View>
+            <Icon name="chevron-forward" size={20} color={theme.colors.onSurfaceVariant} />
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* Notes List */}
@@ -180,10 +337,10 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                   </View>
                   <Text style={styles.timestamp}>{formatTimestamp(note.createdAt)}</Text>
                 </View>
-                <Text style={styles.noteContent}>
+                <Text style={styles.noteContent} numberOfLines={expanded ? undefined : 1}>
                   {expanded ? note.content : truncateText(note.content)}
                 </Text>
-                {!expanded && note.content.length > 80 && (
+                {!expanded && (note.content.includes('\n') || note.content.length > 60) && (
                   <Text style={styles.expandHint}>Tap to expand...</Text>
                 )}
                 <View style={styles.noteActions}>
@@ -248,65 +405,202 @@ const { width } = Dimensions.get('window');
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    backgroundColor: '#7c3aed',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
-    paddingBottom: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 12,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
-  headerContent: {
+  backButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  headerTitle: {
+    ...theme.typography.headlineMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+  },
+  alertsButton: {
+    position: 'relative',
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  alertBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#ef4444',
+    borderRadius: borderRadius.full,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
+  alertBadgeText: {
     color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.4)',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 6,
-    letterSpacing: 0.5,
+    fontSize: 10,
+    fontWeight: 'bold',
   },
-  subtitle: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.9)',
-    marginTop: spacing.sm,
-    textAlign: 'center',
-    fontWeight: '500',
-    textShadowColor: 'rgba(0,0,0,0.2)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+  alertsDropdown: {
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  newUserBanner: {
-    marginTop: spacing.sm,
-    padding: spacing.sm,
+  alertsDropdownContent: {
+    backgroundColor: theme.colors.surfaceVariant,
     borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    padding: spacing.md,
   },
-  newUserBannerText: { color: '#fff', textAlign: 'center' },
+  alertsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  alertsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  alertSummary: {
+    marginBottom: spacing.sm,
+  },
+  alertsCount: {
+    fontSize: 14,
+    color: theme.colors.onSurfaceVariant,
+  },
+  activityBreakdown: {
+    marginBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  activityText: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+  },
+  clearAlertsButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  clearAlertsButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  clearAlertsButtonTextDisabled: {
+    color: '#9ca3af',
+  },
+  welcomeBanner: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#7c3aed15',
+    borderLeftWidth: 4,
+    borderLeftColor: '#7c3aed',
+  },
+  welcomeBannerText: {
+    color: theme.colors.onSurface,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  sentNotesSection: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  sentNotesCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  sentNotesContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+  },
+  sentNotesIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#7c3aed15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  sentNotesText: {
+    flex: 1,
+  },
+  sentNotesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    marginBottom: 2,
+  },
+  sentNotesSubtitle: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+  },
   notesContainer: { flex: 1, padding: spacing.md },
   noteCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...theme.shadows.md,
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
-  noteHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
+  noteHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
   moodIndicator: { flexDirection: 'row', alignItems: 'center' },
   moodEmoji: { fontSize: 16, marginRight: spacing.xs },
   moodText: { fontSize: 12, fontWeight: '600', color: theme.colors.onSurface },
   timestamp: { fontSize: 10, color: '#9ca3af' },
-  noteContent: { fontSize: 14, color: theme.colors.onSurface, marginBottom: spacing.sm },
+  noteContent: { 
+    fontSize: 14, 
+    color: theme.colors.onSurface, 
+    marginBottom: spacing.sm,
+    lineHeight: 20,
+  },
   expandHint: { fontSize: 10, fontStyle: 'italic', color: '#9ca3af' },
   noteActions: { flexDirection: 'row', justifyContent: 'space-around' },
-  actionButton: { flex: 1, alignItems: 'center', padding: spacing.sm, borderRadius: borderRadius.full },
-  listenButton: { backgroundColor: '#10b981' },
-  rejectButton: { backgroundColor: '#ef4444' },
-  actionButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  actionButton: { 
+    flex: 1, 
+    alignItems: 'center', 
+    padding: spacing.sm, 
+    borderRadius: borderRadius.md,
+    marginHorizontal: spacing.xs,
+  },
+  listenButton: { 
+    backgroundColor: '#10b98115',
+    borderWidth: 1,
+    borderColor: '#10b981',
+  },
+  rejectButton: { 
+    backgroundColor: '#ef444415',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  actionButtonText: { 
+    color: theme.colors.onSurface, 
+    fontSize: 12, 
+    fontWeight: '600' 
+  },
   emptyContainer: { alignItems: 'center', marginTop: spacing.xl },
   emptyIcon: { fontSize: 60 },
   emptyText: { fontSize: 18, fontWeight: '600', marginTop: spacing.md },

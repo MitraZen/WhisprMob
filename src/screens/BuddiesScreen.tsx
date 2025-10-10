@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform, AppState } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
-import { BuddiesService, Buddy } from '@/services/buddiesService';
+import { CachedBuddiesService, Buddy } from '@/services/cachedBuddiesService';
 
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -19,22 +19,71 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [messageAlerts, setMessageAlerts] = useState<number>(0);
+  const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   
   const styles = createStyles(theme);
+
+  // Simple alert system - in a real app, this would come from a context or service
+  const getMessageAlerts = () => {
+    // For now, calculate from unread messages
+    // In a real implementation, this would come from a centralized alert service
+    return buddies.reduce((sum, buddy) => sum + (buddy.unreadCount || 0), 0);
+  };
 
   // Load buddies from database (initial load)
   useEffect(() => {
     loadBuddies(true);
   }, [user?.id]);
 
-  // Auto-refresh buddies every 10 seconds (silent, no loader)
+  // Auto-refresh buddies every 5 seconds (silent, no loader) - faster refresh for unread counts
   useEffect(() => {
     if (!user?.id) return;
     const interval = setInterval(() => {
       loadBuddies(false);
-    }, 10000);
+    }, 5000); // Reduced from 10 seconds to 5 seconds
     return () => clearInterval(interval);
   }, [user?.id]);
+
+  // Refresh buddies when app comes back to foreground (to update unread counts)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active' && user?.id) {
+        console.log('App became active, refreshing buddies to update unread counts');
+        loadBuddies(false);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [user?.id]);
+
+  // Calculate message alerts whenever buddies change
+  useEffect(() => {
+    setMessageAlerts(getMessageAlerts());
+  }, [buddies]);
+
+  // Clear all message alerts
+  const clearAllMessageAlerts = async () => {
+    try {
+      setIsLoading(true);
+      // Mark all messages as read for all buddies
+      for (const buddy of buddies) {
+        if (buddy.unreadCount && buddy.unreadCount > 0) {
+          await CachedBuddiesService.markMessagesAsRead(buddy.id, user.id);
+        }
+      }
+      // Reload buddies to update unread counts
+      await loadBuddies(false);
+      setShowAlertsDropdown(false);
+      Alert.alert('Success', 'All message alerts have been cleared!');
+    } catch (error) {
+      console.error('Error clearing message alerts:', error);
+      Alert.alert('Error', 'Failed to clear message alerts. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadBuddies = async (showLoader = false) => {
     if (!user?.id) return;
@@ -43,7 +92,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     setError(null);
   
     try {
-      const buddiesData = await BuddiesService.getBuddies(user.id);
+      const buddiesData = await CachedBuddiesService.getBuddies(user.id);
   
       setBuddies((prevBuddies) => {
         // If lengths differ, definitely update
@@ -108,10 +157,18 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     onNavigate('chat', { buddy });
   };
 
+  // Handle when messages are marked as read in chat
+  const handleMessagesRead = (buddyId: string) => {
+    console.log('Messages marked as read for buddy:', buddyId);
+    setBuddies(prev => prev.map(b =>
+      b.id === buddyId ? { ...b, unreadCount: 0 } : b
+    ));
+  };
+
   // ✅ Instant local state updates (no reload needed)
   const handlePinToggle = async (buddyId: string) => {
     try {
-      await BuddiesService.toggleBuddyPin(buddyId, user.id);
+      await CachedBuddiesService.toggleBuddyPin(buddyId, user.id);
       setBuddies(prev => prev.map(b =>
         b.id === buddyId ? { ...b, isPinned: !b.isPinned } : b
       ));
@@ -132,7 +189,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           style: 'destructive',
           onPress: async () => {
             try {
-              await BuddiesService.clearChatHistory(buddyId);
+              await CachedBuddiesService.clearChatHistory(buddyId);
               setBuddies(prev => prev.map(b =>
                 b.id === buddyId ? { ...b, lastMessage: '', unreadCount: 0 } : b
               ));
@@ -159,7 +216,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           style: 'destructive',
           onPress: async () => {
             try {
-              await BuddiesService.deleteBuddy(buddy.id, user.id);
+              await CachedBuddiesService.deleteBuddy(buddy.id, user.id);
               setBuddies(prev => prev.filter(b => b.id !== buddy.id));
               Alert.alert('Success', `${buddy.name} has been removed`);
             } catch (error) {
@@ -184,7 +241,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           style: 'destructive',
           onPress: async () => {
             try {
-              await BuddiesService.blockUser(buddy.buddyUserId || buddy.id, user.id);
+              await CachedBuddiesService.blockUser(buddy.buddyUserId || buddy.id, user.id);
               setBuddies(prev => prev.filter(b => b.id !== buddy.id));
               Alert.alert('Success', `${buddy.name} has been blocked`);
             } catch (error) {
@@ -234,10 +291,57 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Buddies</Text>
-        <Text style={styles.subtitle}>Your connections and conversations</Text>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => onNavigate('notes')}
+          activeOpacity={0.7}
+        >
+          <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Buddies</Text>
+        <TouchableOpacity 
+          style={styles.alertsButton}
+          onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
+        >
+          <Icon name="notifications" size={24} color={theme.colors.onSurface} />
+          {messageAlerts > 0 && (
+            <View style={styles.alertBadge}>
+              <Text style={styles.alertBadgeText}>
+                {messageAlerts > 99 ? '99+' : messageAlerts}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
+      
+      {/* Message Alerts Dropdown */}
+      {showAlertsDropdown && (
+        <View style={styles.alertsDropdown}>
+          <View style={styles.alertsDropdownContent}>
+            <View style={styles.alertsHeader}>
+              <Icon name="chatbubbles" size={20} color="#7c3aed" />
+              <Text style={styles.alertsTitle}>Message Alerts</Text>
+            </View>
+            <Text style={styles.alertsCount}>
+              {messageAlerts} unread message{messageAlerts !== 1 ? 's' : ''}
+            </Text>
+            <TouchableOpacity 
+              style={styles.clearAlertsButton}
+              onPress={clearAllMessageAlerts}
+              disabled={isLoading || messageAlerts === 0}
+            >
+              <Text style={[
+                styles.clearAlertsButtonText,
+                (isLoading || messageAlerts === 0) && styles.clearAlertsButtonTextDisabled
+              ]}>
+                {isLoading ? 'Clearing...' : 'Clear All Alerts'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <View style={styles.searchContainer}>
         <TextInput
@@ -300,60 +404,91 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
               onPress={() => handleChatPress(buddy)}
               onLongPress={() => handleBuddyOptions(buddy)}
               delayLongPress={500}
+              activeOpacity={0.7}
             >
-              <View style={styles.buddyHeader}>
-                <View style={styles.buddyInfo}>
-                  <View style={styles.nameContainer}>
-                    <Text style={styles.buddyName}>{buddy.name}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.buddyStatus}>
+              <View style={styles.buddyContent}>
+                <View style={styles.buddyIconContainer}>
                   <View style={[
                     styles.statusIndicator,
                     buddy.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
                   ]} />
-                  <Text style={styles.lastSeen}>
+                  <Text style={styles.buddyInitials}>
+                    {buddy.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                
+                <View style={styles.buddyText}>
+                  <View style={styles.buddyNameRow}>
+                    <Text style={styles.buddyName}>{buddy.name}</Text>
+                    {buddy.isPinned && (
+                      <Icon name="pin" size={16} color="#7c3aed" />
+                    )}
+                  </View>
+                  <Text style={styles.buddySubtitle}>
+                    {buddy.lastMessage || 'No messages yet'}
+                  </Text>
+                  <Text style={styles.buddyStatus}>
                     {buddy.isOnline ? 'Online' : formatLastSeen(buddy.lastMessageTime)}
                   </Text>
                 </View>
-              </View>
-
-              <Text style={styles.lastMessage} numberOfLines={2}>
-                {buddy.lastMessage || 'No messages yet'}
-              </Text>
-
-              <View style={styles.buddyActions}>
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handlePinToggle(buddy.id)}
-                  >
-                    <Icon 
-                      name={buddy.isPinned ? "pin" : "pin-outline"} 
-                      size={20} 
-                      color={buddy.isPinned ? "#7c3aed" : "#6b7280"} 
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleClearChat(buddy.id)}
-                  >
-                    <Icon name="trash-outline" size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleBuddyOptions(buddy)}
-                  >
-                    <Icon name="ellipsis-horizontal" size={20} color="#6b7280" />
-                  </TouchableOpacity>
+                
+                <View style={styles.buddyActions}>
+                  {buddy.unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>
+                        {buddy.unreadCount > 99 ? '99+' : buddy.unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                  <Icon 
+                    name="chevron-forward" 
+                    size={20} 
+                    color={theme.colors.onSurfaceVariant} 
+                  />
                 </View>
-
-                {buddy.unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadCount}>{buddy.unreadCount}</Text>
-                  </View>
-                )}
+              </View>
+              
+              {/* Action Buttons Row */}
+              <View style={styles.buddyActionButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    buddy.isPinned && styles.actionButtonActive
+                  ]}
+                  onPress={() => handlePinToggle(buddy.id)}
+                >
+                  <Icon 
+                    name={buddy.isPinned ? "pin" : "pin-outline"} 
+                    size={18} 
+                    color={buddy.isPinned ? "#7c3aed" : "#6b7280"} 
+                  />
+                  <Text style={[
+                    styles.actionButtonText,
+                    buddy.isPinned && styles.actionButtonTextActive
+                  ]}>
+                    {buddy.isPinned ? 'Pinned' : 'Pin'}
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleClearChat(buddy.id)}
+                >
+                  <Icon name="trash-outline" size={18} color="#ef4444" />
+                  <Text style={[styles.actionButtonText, { color: '#ef4444' }]}>
+                    Clear
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleBuddyOptions(buddy)}
+                >
+                  <Icon name="ellipsis-horizontal" size={18} color="#6b7280" />
+                  <Text style={styles.actionButtonText}>
+                    More
+                  </Text>
+                </TouchableOpacity>
               </View>
             </TouchableOpacity>
           ))
@@ -378,15 +513,92 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
 const createStyles = (theme: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    backgroundColor: '#7c3aed',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  backButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  headerTitle: {
+    ...theme.typography.headlineMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+  },
+  alertsButton: {
+    position: 'relative',
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  alertBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  alertBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  alertsDropdown: {
+    marginTop: spacing.md,
+    backgroundColor: '#ffffff',
+    borderRadius: borderRadius.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  alertsDropdownContent: {
+    padding: spacing.lg,
+  },
+  alertsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  alertsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#7c3aed',
+  },
+  alertsCount: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: spacing.lg,
+  },
+  clearAlertsButton: {
+    backgroundColor: '#7c3aed',
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 12,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  clearAlertsButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  clearAlertsButtonTextDisabled: {
+    color: '#9ca3af',
   },
   title: {
     fontSize: 28,
@@ -445,17 +657,92 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: '500',
   },
   activeFilterButtonText: { color: '#fff', fontWeight: '600' },
-  buddiesList: { flex: 1, padding: spacing.sm },
+  buddiesList: { flex: 1, padding: spacing.xs },
   buddyCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: borderRadius.sm,
+    marginBottom: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  buddyContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+  },
+  buddyIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    backgroundColor: '#7c3aed15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.xs,
+    position: 'relative',
+  },
+  buddyInitials: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7c3aed',
+  },
+  buddyText: {
+    flex: 1,
+  },
+  buddyNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 1,
+    gap: spacing.xs,
+  },
+  buddyName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  buddySubtitle: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: 1,
+  },
+  buddyStatus: {
+    fontSize: 10,
+    color: theme.colors.onSurfaceVariant,
+  },
+  buddyActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  buddyActionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    marginTop: 2,
+  },
+  actionButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'transparent',
+  },
+  actionButtonActive: {
+    backgroundColor: '#7c3aed15',
+  },
+  actionButtonText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginTop: 1,
+  },
+  actionButtonTextActive: {
+    color: '#7c3aed',
+    fontWeight: '600',
   },
   buddyHeader: {
     flexDirection: 'row',
@@ -502,15 +789,19 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginBottom: spacing.sm,
   },
   unreadBadge: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: borderRadius.full,
-    minWidth: 20,
-    height: 20,
+    backgroundColor: '#ef4444',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 4,
   },
-  unreadCount: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  unreadBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
   emptyState: { alignItems: 'center', paddingVertical: spacing.xxl },
   emptyStateText: {
     fontSize: 16,
