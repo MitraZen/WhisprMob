@@ -7,6 +7,7 @@ const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 export interface Buddy {
   id: string;
   name: string;
+  username?: string;  // ADDED: Username field
   initials: string;
   avatar?: string;
   lastMessage?: string;
@@ -25,6 +26,7 @@ export interface BuddyMessage {
   id: string;
   buddyId: string;
   senderId: string;
+  receiverId: string;
   content: string;
   messageType: 'text' | 'image' | 'file' | 'emoji';
   isRead: boolean;
@@ -148,7 +150,8 @@ export class BuddiesService {
     
     try {
       const data = await this.rpcRequest('get_user_buddies', {
-        user_id: userId
+        target_user_id: userId,
+        limit_count: 20  // Add LIMIT parameter to prevent unlimited retrieval
       });
 
       if (!data) {
@@ -160,6 +163,7 @@ export class BuddiesService {
         const transformedBuddy = {
           id: buddy.id,
           name: buddy.name,
+          username: buddy.username || undefined,  // ADDED: Username field
           initials: buddy.initials,
           avatar: buddy.avatar_url || undefined,
           lastMessage: buddy.last_message || undefined,
@@ -253,6 +257,7 @@ export class BuddiesService {
     }
   }
 
+
   // Mark notification as read
   static async markNotificationAsRead(notificationId: string): Promise<void> {
     try {
@@ -273,20 +278,6 @@ export class BuddiesService {
     userId?: string
   ): Promise<string> {
     try {
-      console.log('=== DEBUGGING MESSAGE SENDING ===');
-      console.log('Sending message with params:', {
-        buddy_id_param: buddyId,
-        content,
-        message_type: messageType,
-        user_id_param: userId
-      });
-      console.log('Parameter types:', {
-        buddyId_type: typeof buddyId,
-        content_type: typeof content,
-        messageType_type: typeof messageType,
-        userId_type: typeof userId
-      });
-      
       if (!userId) {
         throw new Error('User ID is required to send messages');
       }
@@ -298,15 +289,10 @@ export class BuddiesService {
         message_type: messageType
       });
 
-      console.log('RPC function returned:', result);
-      
       // Check if the result indicates success
       if (result && typeof result === 'object' && result.success === false) {
         throw new Error(result.error || 'Failed to send message');
       }
-      
-      console.log('Message sent successfully!');
-      console.log('=== END DEBUGGING MESSAGE SENDING ===');
       
       return result?.message_id || result?.id || 'success';
     } catch (error) {
@@ -318,8 +304,6 @@ export class BuddiesService {
   // Get messages for a specific buddy
   static async getMessages(buddyId: string, userId?: string): Promise<BuddyMessage[]> {
     try {
-      console.log('Getting messages for buddy:', buddyId, 'user:', userId);
-      
       if (!userId) {
         throw new Error('User ID is required to get messages');
       }
@@ -328,8 +312,6 @@ export class BuddiesService {
         buddy_id_param: buddyId,
         user_id_param: userId
       });
-      
-      console.log('get_buddy_messages result:', result);
       
       // Check if the result indicates success
       if (result && typeof result === 'object' && result.success === false) {
@@ -341,14 +323,17 @@ export class BuddiesService {
       // Convert the messages to BuddyMessage format
       const buddyMessages: BuddyMessage[] = messages.map((msg: any) => ({
         id: msg.id,
+        buddyId: buddyId,
         senderId: msg.sender_id,
-        receiverId: '', // Not used in current implementation
+        receiverId: msg.receiver_id || '', // Use receiver_id from database or empty string
         content: msg.content,
+        messageType: msg.message_type || 'text',
         timestamp: new Date(msg.created_at),
-        isRead: msg.is_read
+        isRead: msg.is_read || false,
+        createdAt: new Date(msg.created_at),
+        updatedAt: new Date(msg.updated_at || msg.created_at)
       }));
       
-      console.log('Converted messages:', buddyMessages.length);
       return buddyMessages;
     } catch (error) {
       console.error('Error getting messages:', error);
@@ -366,8 +351,8 @@ export class BuddiesService {
       }
       
       const result = await this.rpcRequest('mark_buddy_messages_read', {
-        buddy_id_param: buddyId,
-        user_id_param: userId
+        buddy_id: buddyId,
+        user_id: userId
       });
       
       console.log('mark_buddy_messages_read result:', result);
@@ -1458,6 +1443,32 @@ export class BuddiesService {
       return result && result.length > 0;
     } catch (error) {
       console.error('Error checking if user is blocked:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Sync user online status to buddies table
+   * This ensures that when a user's online status changes, it's reflected in all buddy relationships
+   */
+  static async syncUserOnlineStatus(userId: string, isOnline: boolean): Promise<boolean> {
+    try {
+      console.log('Syncing online status for user:', userId, 'isOnline:', isOnline);
+      
+      const result = await this.rpcRequest('sync_user_online_status', {
+        p_user_id: userId,
+        p_is_online: isOnline
+      });
+      
+      console.log('Online status sync result:', result);
+      
+      if (result && typeof result === 'object' && result.success === false) {
+        throw new Error(result.error || 'Failed to sync online status');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error syncing online status:', error);
       return false;
     }
   }

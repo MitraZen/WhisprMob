@@ -9,10 +9,12 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
+  Clipboard,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../store/AuthContext';
 import { BuddiesService } from '../services/buddiesService';
+import { theme, spacing, borderRadius } from '@/utils/theme';
 
 interface SentNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -159,15 +161,19 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
 
   const renderNoteItem = ({ item }: { item: SentNote }) => (
     <TouchableOpacity
-      style={styles.noteItem}
+      style={styles.noteCard}
       onPress={() => handleNotePress(item)}
+      activeOpacity={0.7}
     >
       <View style={styles.noteHeader}>
         <View style={styles.noteInfo}>
           <Text style={styles.noteContent} numberOfLines={2}>
             {item.content}
           </Text>
-          <Text style={styles.noteMood}>Mood: {item.mood}</Text>
+          <View style={styles.noteMeta}>
+            <Text style={styles.noteMood}>Mood: {item.mood}</Text>
+            <Text style={styles.noteDate}>{formatDate(item.created_at)}</Text>
+          </View>
         </View>
         <View style={styles.statusContainer}>
           <Icon
@@ -183,48 +189,63 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
       
       <View style={styles.noteStats}>
         <View style={styles.statItem}>
-          <Icon name="people" size={16} color="#666" />
-          <Text style={styles.statText}>{item.recipient_count} recipients</Text>
+          <Icon name="send" size={16} color="#6b7280" />
+          <Text style={styles.statText}>{item.recipient_count} delivered</Text>
         </View>
         <View style={styles.statItem}>
-          <Icon name="checkmark-circle" size={16} color="#4CAF50" />
+          <Icon name="play" size={16} color="#10b981" />
           <Text style={styles.statText}>{item.listened_count} listened</Text>
         </View>
         <View style={styles.statItem}>
-          <Icon name="close-circle" size={16} color="#F44336" />
+          <Icon name="close" size={16} color="#ef4444" />
           <Text style={styles.statText}>{item.rejected_count} rejected</Text>
         </View>
       </View>
       
-      <Text style={styles.noteDate}>
-        Sent: {formatDate(item.created_at)}
-      </Text>
+      <View style={styles.noteFooter}>
+        <Text style={styles.tapHint}>Tap to view recipients</Text>
+        <Icon name="chevron-forward" size={16} color={theme.colors.onSurfaceVariant} />
+      </View>
     </TouchableOpacity>
   );
 
   const renderRecipientItem = ({ item }: { item: NoteRecipient }) => (
-    <View style={styles.recipientItem}>
-      <View style={styles.recipientInfo}>
-        <Text style={styles.recipientName}>{item.username}</Text>
-        <Text style={styles.recipientDate}>
-          Received: {formatDate(item.received_at)}
-        </Text>
-        {item.responded_at && (
+    <View style={styles.recipientCard}>
+      <View style={styles.recipientHeader}>
+        <View style={styles.recipientInfo}>
+          <Text style={styles.recipientName}>{item.username}</Text>
           <Text style={styles.recipientDate}>
-            Responded: {formatDate(item.responded_at)}
+            Received: {formatDate(item.received_at)}
           </Text>
-        )}
+          {item.responded_at && (
+            <Text style={styles.recipientDate}>
+              Responded: {formatDate(item.responded_at)}
+            </Text>
+          )}
+        </View>
+        <View style={styles.recipientStatus}>
+          <Icon
+            name={getStatusIcon(item.status)}
+            size={20}
+            color={getStatusColor(item.status)}
+          />
+          <Text style={[styles.recipientStatusText, { color: getStatusColor(item.status) }]}>
+            {item.status.toUpperCase()}
+          </Text>
+        </View>
       </View>
-      <View style={styles.recipientStatus}>
-        <Icon
-          name={getStatusIcon(item.status)}
-          size={20}
-          color={getStatusColor(item.status)}
-        />
-        <Text style={[styles.recipientStatusText, { color: getStatusColor(item.status) }]}>
-          {item.status.toUpperCase()}
-        </Text>
-      </View>
+      
+      <TouchableOpacity
+        onPress={() => {
+          Clipboard.setString(item.user_id);
+          Alert.alert('Copied', 'User ID copied to clipboard');
+        }}
+        style={styles.userIdContainer}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.recipientUserId}>ID: {item.user_id}</Text>
+        <Icon name="copy-outline" size={14} color="#7c3aed" />
+      </TouchableOpacity>
     </View>
   );
 
@@ -239,25 +260,23 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => onGoBack ? onGoBack() : onNavigate('notes')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
         </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Sent Notes</Text>
-          <Text style={styles.headerSubtitle}>
-            {sentNotes.length} note{sentNotes.length !== 1 ? 's' : ''} sent
-          </Text>
-        </View>
+        <Text style={styles.headerTitle}>Sent Notes</Text>
         {sentNotes.length > 0 && (
           <TouchableOpacity
             style={styles.clearButton}
             onPress={handleClearAll}
+            activeOpacity={0.7}
           >
-            <Text style={styles.clearButtonText}>Clear All</Text>
+            <Icon name="trash-outline" size={24} color={theme.colors.onSurface} />
           </TouchableOpacity>
         )}
       </View>
@@ -268,11 +287,12 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => setSelectedNote(null)}
+              activeOpacity={0.7}
             >
-              <Icon name="arrow-back" size={24} color="#007AFF" />
-              <Text style={styles.backButtonText}>Back</Text>
+              <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
             </TouchableOpacity>
             <Text style={styles.detailTitle}>Recipients</Text>
+            <View style={styles.headerSpacer} />
           </View>
 
           <View style={styles.noteDetail}>
@@ -326,56 +346,223 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#7c3aed',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    paddingBottom: spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
   backButton: {
-    marginRight: 16,
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#fff',
-  },
-  headerContent: {
-    flex: 1,
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
   },
   headerTitle: {
-    fontSize: 20,
+    ...theme.typography.headlineMedium,
+    color: theme.colors.onSurface,
     fontWeight: 'bold',
-    color: '#fff',
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#e0e7ff',
-    marginTop: 2,
+  headerSpacer: {
+    width: 40,
   },
   clearButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
   },
   clearButtonText: {
     fontSize: 14,
     fontWeight: '500',
     color: '#fff',
+  },
+  noteCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: spacing.md,
+  },
+  noteInfo: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  noteContent: {
+    fontSize: 14,
+    color: theme.colors.onSurface,
+    marginBottom: spacing.xs,
+    lineHeight: 20,
+  },
+  noteMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  noteMood: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  noteDate: {
+    fontSize: 11,
+    color: theme.colors.onSurfaceVariant,
+  },
+  statusContainer: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  noteStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statText: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  noteFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    marginTop: spacing.xs,
+  },
+  tapHint: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    fontStyle: 'italic',
+  },
+  detailContainer: {
+    flex: 1,
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  detailTitle: {
+    ...theme.typography.headlineSmall,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+  },
+  noteDetail: {
+    backgroundColor: theme.colors.surface,
+    margin: spacing.lg,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  noteDetailContent: {
+    fontSize: 16,
+    color: theme.colors.onSurface,
+    marginBottom: spacing.sm,
+    lineHeight: 24,
+  },
+  noteDetailMood: {
+    fontSize: 14,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: spacing.xs,
+  },
+  noteDetailDate: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+  },
+  recipientCard: {
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  recipientHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  recipientInfo: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  recipientName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    marginBottom: spacing.xs,
+  },
+  recipientDate: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: 2,
+  },
+  recipientStatus: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  recipientStatusText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  userIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#7c3aed15',
+  },
+  recipientUserId: {
+    fontSize: 12,
+    color: '#7c3aed',
+    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
@@ -532,6 +719,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,
+  },
+  recipientUserId: {
+    fontSize: 12,
+    color: '#7c3aed',
+    fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  userIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    paddingVertical: 2,
+  },
+  copyIcon: {
+    marginLeft: 6,
   },
   recipientDate: {
     fontSize: 12,

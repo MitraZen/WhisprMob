@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -82,8 +83,8 @@ android {
         applicationId "com.whisprmobiletemp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.1.2"
+        versionCode 13
+        versionName "1.1.5"
     }
     signingConfigs {
         debug {
@@ -117,6 +118,11 @@ dependencies {
 
     // React Native Vector Icons
     implementation project(':react-native-vector-icons')
+
+    // Firebase dependencies for push notifications
+    implementation platform('com.google.firebase:firebase-bom:32.7.0')
+    implementation 'com.google.firebase:firebase-messaging'
+    implementation 'com.google.firebase:firebase-analytics'
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

@@ -8,6 +8,7 @@ import BuddiesScreen from '@/screens/BuddiesScreen';
 import ChatScreen from '@/screens/ChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
+import SettingsHubScreen from '@/screens/SettingsHubScreen';
 import AdminPanel from '@/screens/AdminPanel';
 import SentNotesScreen from '@/screens/SentNotesScreen';
 import NotificationsScreen from '@/screens/NotificationsScreen';
@@ -374,8 +375,11 @@ const AppNavigator = () => {
     case 'profile':
       if (isAuthenticated) return <ProfileScreen onNavigate={navigate} user={user} />;
       return <WelcomeScreen onNavigate={navigate} />;
+    case 'settingsHub':
+      if (isAuthenticated) return <SettingsHubScreen onNavigate={navigate} user={user} />;
+      return <WelcomeScreen onNavigate={navigate} />;
     case 'settings':
-      if (isAuthenticated) return <SettingsScreen onNavigate={navigate} user={user} onLogout={async () => { await logout(); navigate('welcome'); }} />;
+      if (isAuthenticated) return <SettingsScreen onNavigate={navigate} user={user} />;
       return <WelcomeScreen onNavigate={navigate} />;
     case 'sentNotes':
       if (isAuthenticated) return <SentNotesScreen onNavigate={navigate} user={user} onGoBack={goBack} />;

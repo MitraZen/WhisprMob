@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Keyboa
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
-import { BuddiesService, BuddyMessage } from '@/services/buddiesService';
+import { CachedBuddiesService, BuddyMessage } from '@/services/cachedBuddiesService';
 import { UserProfileView } from '@/components/UserProfileView';
 
 interface ChatScreenProps {
@@ -11,9 +11,10 @@ interface ChatScreenProps {
   buddy: any;
   user: any;
   onGoBack?: () => void;
+  onMessagesRead?: (buddyId: string) => void; // Add callback for when messages are marked as read
 }
 
-export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, buddy, user, onGoBack }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, buddy, user, onGoBack, onMessagesRead }) => {
   const { theme } = useTheme();
   const [messages, setMessages] = useState<BuddyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -50,6 +51,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     }
   }, [buddy?.id]);
 
+  // Mark messages as read when chat screen is opened
+  useEffect(() => {
+    if (buddy?.id && user?.id) {
+      const markAsRead = async () => {
+        try {
+          console.log('Marking messages as read for buddy:', buddy.id);
+          await CachedBuddiesService.markMessagesAsRead(buddy.id, user.id);
+          
+          // Notify parent component that messages were marked as read
+          if (onMessagesRead) {
+            onMessagesRead(buddy.id);
+          }
+        } catch (error) {
+          console.error('Error marking messages as read:', error);
+        }
+      };
+      
+      // Mark as read after a short delay to ensure messages are loaded
+      const timer = setTimeout(markAsRead, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [buddy?.id, user?.id]);
+
   // Auto-refresh messages every 10 seconds (silent, no loader)
   useEffect(() => {
     if (!buddy?.id) return;
@@ -73,7 +97,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     
     try {
       console.log('Loading messages for buddy:', buddy.id);
-      const messagesData = await BuddiesService.getMessages(buddy.id, user.id);
+      const messagesData = await CachedBuddiesService.getMessages(buddy.id, user.id);
       console.log(`Loaded ${messagesData.length} messages successfully`);
       
       // Smart state update - only update if messages actually changed
@@ -104,9 +128,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       });
       
       setLastUpdated(new Date());
-      
-      // Mark messages as read
-      await BuddiesService.markMessagesAsRead(buddy.id, user.id);
     } catch (err) {
       console.error('Error loading messages:', err);
       setError(err instanceof Error ? err.message : 'Failed to load messages');
@@ -137,12 +158,31 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     setNewMessage(''); // Clear input immediately for better UX
 
     try {
-      console.log('Sending message to buddy:', buddy.id, 'Content:', messageContent);
-      const messageId = await BuddiesService.sendMessage(buddy.id, messageContent, 'text', user.id);
-      console.log('Message sent successfully:', messageId);
+      const result = await CachedBuddiesService.sendMessage(buddy.id, messageContent, 'text', user.id);
       
-      // Reload messages to get the latest (silent refresh)
-      await loadMessages(false, true);
+      // Add the message to local state immediately for better UX
+      if (result) {
+        const newMessageObj: BuddyMessage = {
+          id: result,
+          buddyId: buddy.id,
+          senderId: user.id,
+          receiverId: buddy.buddyUserId || '',
+          content: messageContent,
+          messageType: 'text',
+          timestamp: new Date(),
+          isRead: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        setMessages(prev => [...prev, newMessageObj]);
+        setLastUpdated(new Date());
+      }
+      
+      // Reload messages after a short delay to ensure consistency
+      setTimeout(async () => {
+        await loadMessages(false, true);
+      }, 1000);
       
     } catch (error) {
       console.error('Error sending message:', error);
@@ -313,7 +353,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
             </TouchableOpacity>
           </View>
           <View style={styles.buddyMeta}>
-            <Text style={styles.buddyUsername}>{buddy.initials}</Text>
+            <Text style={styles.buddyUsername}>{buddy.username || buddy.name}</Text>
             {lastUpdated && (
               <Text style={styles.lastUpdatedText}>
                 Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

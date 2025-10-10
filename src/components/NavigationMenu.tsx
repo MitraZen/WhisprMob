@@ -13,10 +13,8 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
   const { theme } = useTheme();
   const menuItems = [
     { id: 'notes', label: 'Notes', icon: 'document-text-outline' },
-    { id: 'sentNotes', label: 'Sent', icon: 'send-outline' },
     { id: 'buddies', label: 'Buddies', icon: 'people-outline' },
-    { id: 'notifications', label: 'Alerts', icon: 'notifications-outline' },
-    { id: 'profile', label: 'Profile', icon: 'person-outline' },
+    { id: 'settingsHub', label: 'Settings', icon: 'settings-outline' },
   ];
   
   // Create animated values for each menu item

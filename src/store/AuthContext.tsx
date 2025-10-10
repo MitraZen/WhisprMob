@@ -3,6 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
+import { BuddiesService } from '@/services/buddiesService';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -75,9 +76,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (nextAppState === 'active' && state.isAuthenticated && state.user) {
         console.log('App became active - initializing notification services for user:', state.user.id);
+        // Update online status when app becomes active
+        await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, true);
+        await BuddiesService.syncUserOnlineStatus(state.user.id, true);
         await initializeNotificationServicesSafely(state.user.id);
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
         console.log('App went to background - stopping notification services');
+        // Update online status when app goes to background
+        if (state.isAuthenticated && state.user) {
+          await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
+          await BuddiesService.syncUserOnlineStatus(state.user.id, false);
+        }
         await stopNotificationServicesSafely();
       }
     };
@@ -144,6 +153,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (dbUser) {
           // Update user's online status
           await FlexibleDatabaseService.updateUserOnlineStatus(storedUser.id, true);
+          // Sync online status to buddies table
+          await BuddiesService.syncUserOnlineStatus(storedUser.id, true);
           dispatch({ type: 'LOGIN_SUCCESS', payload: dbUser });
           // Check profile completeness
           const complete = await FlexibleDatabaseService.isProfileComplete(dbUser.id);
@@ -220,6 +231,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (state.user) {
         // Update user's online status to false
         await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
+        // Sync online status to buddies table
+        await BuddiesService.syncUserOnlineStatus(state.user.id, false);
       }
       
       // Clear local storage
