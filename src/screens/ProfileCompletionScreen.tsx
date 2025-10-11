@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -59,8 +59,7 @@ const countries = [
 
 export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = ({ 
   onComplete, 
-  user, 
-  onNavigate 
+  user
 }) => {
   const [gender, setGender] = useState<ProfileData['gender'] | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);

@@ -79,3 +79,12 @@ yarn-debug.log*
 yarn-error.log*
 *.hprof
 java_pid*.hprof
+*.docx
+*.doc
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.pdf
+*.txt
+*.csv

@@ -7,7 +7,6 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 
 import { useAuth } from '@/store/AuthContext';
 import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';

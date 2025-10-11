@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, RefreshControl, Animated } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, RefreshControl, Animated, Modal } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
@@ -18,7 +18,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const { theme } = useTheme();
   const [messages, setMessages] = useState<BuddyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [isTyping] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -28,12 +28,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const styles = createStyles(theme);
   const [showProfileView, setShowProfileView] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Animation values for enhanced interactions
-  const sendButtonScale = useRef(new Animated.Value(1)).current;
-  const backButtonScale = useRef(new Animated.Value(1)).current;
-  const moreButtonScale = useRef(new Animated.Value(1)).current;
   const scrollButtonScale = useRef(new Animated.Value(1)).current;
   
   // Animation values for typing indicator
@@ -258,6 +256,92 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     });
   };
 
+  // Action handlers for bottom sheet
+  const handleClearChat = () => {
+    setShowMoreOptions(false);
+    Alert.alert(
+      'Clear Chat',
+      'Are you sure you want to clear all messages in this chat?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Clear', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await CachedBuddiesService.clearChatHistory(buddy.id);
+              setMessages([]); // Clear local messages
+              Alert.alert('Success', 'Chat history cleared successfully');
+            } catch (error) {
+              console.error('Error clearing chat:', error);
+              Alert.alert('Error', 'Failed to clear chat history');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleBlockBuddy = () => {
+    setShowMoreOptions(false);
+    Alert.alert(
+      'Block Buddy',
+      'Are you sure you want to block this buddy? You won\'t be able to receive messages from them.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Block', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await CachedBuddiesService.blockUser(buddy.buddyUserId || buddy.id, user.id);
+              Alert.alert('Success', 'Buddy blocked successfully');
+              // Navigate back to buddies screen
+              if (onGoBack) {
+                onGoBack();
+              } else {
+                onNavigate('buddies');
+              }
+            } catch (error) {
+              console.error('Error blocking buddy:', error);
+              Alert.alert('Error', 'Failed to block buddy');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeleteBuddy = () => {
+    setShowMoreOptions(false);
+    Alert.alert(
+      'Delete Buddy',
+      'Are you sure you want to delete this buddy? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await CachedBuddiesService.deleteBuddy(buddy.id, user.id);
+              Alert.alert('Success', 'Buddy deleted successfully');
+              // Navigate back to buddies screen
+              if (onGoBack) {
+                onGoBack();
+              } else {
+                onNavigate('buddies');
+              }
+            } catch (error) {
+              console.error('Error deleting buddy:', error);
+              Alert.alert('Error', 'Failed to delete buddy');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Typing indicator animation
   const startTypingAnimation = () => {
     const createTypingAnimation = (dot: Animated.Value, delay: number) => {
@@ -327,50 +411,48 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.header}>
-        <Animated.View style={{ transform: [{ scale: backButtonScale }] }}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => animateButtonPress(backButtonScale, () => onGoBack ? onGoBack() : onNavigate('buddies'))}
-            activeOpacity={0.8}
-          >
-            <Icon name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-        </Animated.View>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => onGoBack ? onGoBack() : onNavigate('buddies')}
+          activeOpacity={0.7}
+        >
+          <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
         
-        <View style={styles.buddyInfo}>
-          <View style={styles.buddyStatus}>
-            <View style={[
-              styles.statusIndicator,
-              buddy.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
-            ]} />
-            <TouchableOpacity onPress={() => {
-              console.log('ChatScreen - Opening profile for buddy:', buddy);
-              console.log('ChatScreen - Buddy ID:', buddy.buddyUserId || buddy.id);
-              console.log('ChatScreen - Available buddy fields:', Object.keys(buddy));
-              setShowProfileView(true);
-            }}>
-              <Text style={styles.buddyName}>{buddy.name}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.buddyMeta}>
-            <Text style={styles.buddyUsername}>{buddy.username || buddy.name}</Text>
-            {lastUpdated && (
-              <Text style={styles.lastUpdatedText}>
-                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            )}
+        <View style={styles.headerContent}>
+          <View style={styles.buddyInfo}>
+            <View style={styles.buddyStatus}>
+              <View style={[
+                styles.statusIndicator,
+                buddy.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
+              ]} />
+              <TouchableOpacity onPress={() => {
+                console.log('ChatScreen - Opening profile for buddy:', buddy);
+                console.log('ChatScreen - Buddy ID:', buddy.buddyUserId || buddy.id);
+                console.log('ChatScreen - Available buddy fields:', Object.keys(buddy));
+                setShowProfileView(true);
+              }}>
+                <Text style={styles.buddyName}>{buddy.name}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.buddyMeta}>
+              <Text style={styles.buddyUsername}>{buddy.username || buddy.name}</Text>
+              {lastUpdated && (
+                <Text style={styles.lastUpdatedText}>
+                  Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              )}
+            </View>
           </View>
         </View>
 
-        <Animated.View style={{ transform: [{ scale: moreButtonScale }] }}>
-          <TouchableOpacity 
-            style={styles.moreButton}
-            onPress={() => animateButtonPress(moreButtonScale, () => Alert.alert('More Options', 'More options coming soon!'))}
-            activeOpacity={0.8}
-          >
-            <Icon name="ellipsis-horizontal" size={24} color="#fff" />
-          </TouchableOpacity>
-        </Animated.View>
+        <TouchableOpacity 
+          style={styles.moreButton}
+          onPress={() => setShowMoreOptions(true)}
+          activeOpacity={0.7}
+        >
+          <Icon name="ellipsis-horizontal" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
       </View>
 
       <Animated.ScrollView 
@@ -464,33 +546,33 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       )}
 
       <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.messageInput}
-          placeholder="Type a message..."
-          placeholderTextColor="#9ca3af"
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-          maxLength={1000}
-          editable={!isSending}
-        />
-        <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
+        <View style={styles.inputWrapper}>
+          <TextInput
+            style={styles.messageInput}
+            placeholder="Type a message..."
+            placeholderTextColor={theme.colors.onSurfaceVariant}
+            value={newMessage}
+            onChangeText={setNewMessage}
+            multiline
+            maxLength={1000}
+            editable={!isSending}
+          />
           <TouchableOpacity
             style={[
               styles.sendButton,
               (!newMessage.trim() || isSending) && styles.sendButtonDisabled,
             ]}
-            onPress={() => animateButtonPress(sendButtonScale, handleSendMessage)}
+            onPress={handleSendMessage}
             disabled={!newMessage.trim() || isSending}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <Icon 
               name={isSending ? "hourglass" : "send"} 
               size={20} 
-              color="#fff" 
+              color={(!newMessage.trim() || isSending) ? theme.colors.onSurfaceVariant : theme.colors.onPrimary} 
             />
           </TouchableOpacity>
-        </Animated.View>
+        </View>
       </View>
       
       {/* User Profile View Modal */}
@@ -502,6 +584,51 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           buddyName={buddy.name}
         />
       )}
+
+      {/* More Options Bottom Sheet */}
+      <Modal
+        visible={showMoreOptions}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowMoreOptions(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowMoreOptions(false)}
+          />
+          <View style={styles.bottomSheet}>
+            <View style={styles.bottomSheetHandle} />
+            
+            <View style={styles.bottomSheetContent}>
+              <Text style={styles.bottomSheetTitle}>Chat Options</Text>
+              
+              <TouchableOpacity style={styles.bottomSheetItem} onPress={handleClearChat}>
+                <Icon name="trash-outline" size={24} color={theme.colors.onSurface} />
+                <Text style={styles.bottomSheetItemText}>🗑️ Clear Chat</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.bottomSheetItem} onPress={handleBlockBuddy}>
+                <Icon name="ban" size={24} color={theme.colors.error} />
+                <Text style={[styles.bottomSheetItemText, { color: theme.colors.error }]}>Block</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.bottomSheetItem} onPress={handleDeleteBuddy}>
+                <Icon name="trash" size={24} color={theme.colors.error} />
+                <Text style={[styles.bottomSheetItemText, { color: theme.colors.error }]}>Delete</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.bottomSheetCancelButton} 
+                onPress={() => setShowMoreOptions(false)}
+              >
+                <Text style={styles.bottomSheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 });
@@ -514,25 +641,23 @@ const createStyles = (theme: any) => StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#7c3aed',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Extra padding for camera hole
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
-    // Enhanced shadow with gradient effect
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 16,
-    // Subtle gradient effect using multiple shadows
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(124, 58, 237, 0.3)',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   backButton: {
-    marginRight: spacing.md,
-    padding: spacing.xs,
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
   },
   buddyInfo: {
     flex: 1,
@@ -554,12 +679,13 @@ const createStyles = (theme: any) => StyleSheet.create({
     backgroundColor: '#9ca3af',
   },
   buddyName: {
-    ...theme.typography.headlineSmall,
-    color: theme.colors.onPrimary,
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
   },
   buddyUsername: {
     ...theme.typography.bodySmall,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: theme.colors.onSurfaceVariant,
   },
   buddyMeta: {
     alignItems: 'center',
@@ -567,12 +693,14 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   lastUpdatedText: {
     ...theme.typography.bodySmall,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: theme.colors.onSurfaceVariant,
     fontSize: 10,
     marginTop: spacing.xs,
   },
   moreButton: {
     padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
   },
   errorIcon: {
     marginBottom: spacing.sm,
@@ -703,41 +831,31 @@ const createStyles = (theme: any) => StyleSheet.create({
     backgroundColor: '#7c3aed',
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    // Enhanced shadow for floating effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
+    borderTopColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 48,
   },
   messageInput: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
+    ...theme.typography.bodyMedium,
     color: theme.colors.onSurface,
     maxHeight: 120,
     minHeight: 44,
     textAlignVertical: 'top',
     marginRight: spacing.md,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    // Subtle shadow for depth
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   sendButton: {
     backgroundColor: theme.colors.primary,
@@ -746,18 +864,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderRadius: borderRadius.full,
     justifyContent: 'center',
     alignItems: 'center',
-    // Enhanced shadow for floating effect
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    // Subtle border for definition
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    ...theme.shadows.sm,
   },
   sendButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: theme.colors.surfaceVariant,
+    ...theme.shadows.sm,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -827,6 +938,68 @@ const createStyles = (theme: any) => StyleSheet.create({
     // Subtle border for definition
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  // Bottom Sheet Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    flex: 1,
+  },
+  bottomSheet: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingBottom: Platform.OS === 'ios' ? 34 : spacing.lg, // Account for home indicator on iOS
+    ...theme.shadows.lg,
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: theme.colors.onSurfaceVariant,
+    borderRadius: borderRadius.full,
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    opacity: 0.3,
+  },
+  bottomSheetContent: {
+    paddingHorizontal: spacing.lg,
+  },
+  bottomSheetTitle: {
+    ...theme.typography.titleLarge,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  bottomSheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+  },
+  bottomSheetItemText: {
+    ...theme.typography.bodyLarge,
+    color: theme.colors.onSurface,
+    marginLeft: spacing.md,
+    fontWeight: '500',
+  },
+  bottomSheetCancelButton: {
+    backgroundColor: theme.colors.surfaceVariant,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  bottomSheetCancelText: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '600',
   },
 });
 

@@ -1,4 +1,3 @@
-import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { SUPABASE_CONFIG } from '@/config/env';
 
 export class DatabaseDiscoveryService {

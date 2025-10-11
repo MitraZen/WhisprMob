@@ -12,7 +12,6 @@ interface NoteCardProps {
 }
 
 export const NoteCard: React.FC<NoteCardProps> = ({
-  id,
   text,
   tag = '🌸 Positive Vibe',
   timeAgo = '1m ago',

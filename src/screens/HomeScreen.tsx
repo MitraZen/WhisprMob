@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,13 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/store/ThemeContext';
 import { moodConfig, spacing, borderRadius } from '@/utils/themes';
-import { MoodType } from '@/types';
 
 const HomeScreen: React.FC = () => {
-  const { user, updateMood } = useAuth();
+  const { user } = useAuth();
   const { theme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   

@@ -12,7 +12,6 @@ import {
   Clipboard,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { useAuth } from '../store/AuthContext';
 import { BuddiesService } from '../services/buddiesService';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 
@@ -21,7 +20,7 @@ interface SentNotesScreenProps {
   user: any;
   onGoBack?: () => void;
 }
-
+ 
 interface SentNote {
   id: string;
   content: string;
@@ -589,163 +588,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  noteHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  noteInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  noteContent: {
-    fontSize: 16,
-    color: '#333',
-    lineHeight: 22,
-    marginBottom: 8,
-  },
-  noteMood: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  statusContainer: {
-    alignItems: 'center',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  noteStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statText: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
-  noteDate: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'right',
-  },
-  detailContainer: {
-    flex: 1,
-  },
-  detailHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    marginLeft: 4,
-  },
-  detailTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  noteDetail: {
-    backgroundColor: '#fff',
-    padding: 16,
-    margin: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  noteDetailContent: {
-    fontSize: 16,
-    color: '#333',
-    lineHeight: 22,
-    marginBottom: 8,
-  },
-  noteDetailMood: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-    marginBottom: 8,
-  },
-  noteDetailDate: {
-    fontSize: 12,
-    color: '#999',
-  },
   recipientsList: {
     flex: 1,
     padding: 16,
-  },
-  recipientItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  recipientInfo: {
-    flex: 1,
-  },
-  recipientName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  recipientUserId: {
-    fontSize: 12,
-    color: '#7c3aed',
-    fontWeight: '500',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  userIdContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    paddingVertical: 2,
-  },
-  copyIcon: {
-    marginLeft: 6,
-  },
-  recipientDate: {
-    fontSize: 12,
-    color: '#666',
-  },
-  recipientStatus: {
-    alignItems: 'center',
-  },
-  recipientStatusText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginTop: 4,
   },
   emptyContainer: {
     flex: 1,

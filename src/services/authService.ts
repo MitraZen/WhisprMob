@@ -337,13 +337,13 @@ export class AuthService {
   private static async cleanupConflictingProfiles(email: string, username: string): Promise<void> {
     try {
       // Clean up profiles with the same email but no auth user (case-insensitive)
-      const emailCleanupResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?email=ilike.${email}`, {
+      await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?email=ilike.${email}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
       
       // Clean up profiles with the same username but no auth user (case-insensitive)
-      const usernameCleanupResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${username}`, {
+      await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${username}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
@@ -355,7 +355,7 @@ export class AuthService {
   }
 
   // Handle existing user - try to sign them in
-  private static async handleExistingUser(email: string, password: string, existingProfile: any): Promise<{ user: User | null; error: string | null }> {
+  private static async handleExistingUser(email: string, password: string, _existingProfile: any): Promise<{ user: User | null; error: string | null }> {
     try {
       // Try to sign in the existing user
       const signInResult = await this.signIn(email, password);
@@ -450,7 +450,6 @@ export class AuthService {
     try {
       // Update online status to false
       // Note: We'd need the user ID for this, but for now we'll just return success
-      
       return { success: true, error: null };
     } catch (error) {
       console.error('Sign out error:', error);
@@ -522,7 +521,7 @@ export class AuthService {
         };
       }
 
-      const result = await response.json();
+      await response.json();
       console.log('Password reset email sent successfully');
       
       return { 

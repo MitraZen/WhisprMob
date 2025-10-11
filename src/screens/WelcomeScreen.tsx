@@ -10,7 +10,7 @@ import {
 
 import { theme, spacing } from '@/utils/theme';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 interface WelcomeScreenProps {
   onNavigate: (screen: string) => void;

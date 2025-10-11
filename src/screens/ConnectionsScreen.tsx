@@ -10,24 +10,24 @@ import {
 } from 'react-native';
 import { useAuth } from '@/store/AuthContext';
 import { theme, moodConfig, spacing, borderRadius } from '@/utils/theme';
-import { User, MoodType } from '@/types';
+import { User } from '@/types';
 
 const ConnectionsScreen: React.FC = () => {
   const { user } = useAuth();
   const [availableConnections] = useState<User[]>([]); // In real app, this would come from API
 
-  const handleConnect = (connection: User) => {
+  const handleConnect = (_connection: User) => {
     Alert.alert(
       'Connect Anonymously',
-      `Start an anonymous conversation with someone who is feeling ${connection.mood}?`,
+      `Start an anonymous conversation with someone who is feeling ${_connection.mood}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Connect', onPress: () => startConversation(connection) },
+        { text: 'Connect', onPress: () => startConversation(_connection) },
       ]
     );
   };
 
-  const startConversation = (connection: User) => {
+  const startConversation = (_connection: User) => {
     // In real app, this would create a new chat and navigate to it
     Alert.alert('Success', 'Connection started! Check your messages.');
   };

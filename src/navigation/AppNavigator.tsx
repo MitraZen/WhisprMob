@@ -188,53 +188,11 @@ const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => v
   );
 };
 
-const HomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
-  return (
-    <View style={styles.container}>
-      <View style={styles.whiteContainer}>
-        <View style={styles.content}>
-          <Text style={styles.screenTitle}>Welcome to Whispr! 🎉</Text>
-          <Text style={styles.screenSubtitle}>
-            You're now connected to the anonymous messaging network
-          </Text>
-          
-          <View style={styles.homeFeatureCard}>
-            <Text style={styles.cardTitle}>🏠 Home</Text>
-            <Text style={styles.cardText}>Your dashboard for anonymous connections</Text>
-          </View>
-          
-          <View style={styles.homeFeatureCard}>
-            <Text style={styles.cardTitle}>💬 Messages</Text>
-            <Text style={styles.cardText}>Chat with anonymous users sharing your mood</Text>
-          </View>
-          
-          <View style={styles.homeFeatureCard}>
-            <Text style={styles.cardTitle}>👥 Connections</Text>
-            <Text style={styles.cardText}>Find and connect with like-minded people</Text>
-          </View>
-          
-          <View style={styles.homeFeatureCard}>
-            <Text style={styles.cardTitle}>👤 Profile</Text>
-            <Text style={styles.cardText}>Manage your anonymous profile and settings</Text>
-          </View>
-          
-          <TouchableOpacity 
-            style={styles.logoutButton} 
-            onPress={() => onNavigate('welcome')}
-          >
-            <Text style={styles.logoutButtonText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-};
-
 const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
   const [navigationHistory, setNavigationHistory] = useState<string[]>(['welcome']);
-  const { isAuthenticated, isLoading, isProfileComplete, user, logout } = useAuth();
+  const { isAuthenticated, isLoading, isProfileComplete, user } = useAuth();
   const { isAdminMode } = useAdmin();
 
   const navigate = (screen: string, params?: any) => {

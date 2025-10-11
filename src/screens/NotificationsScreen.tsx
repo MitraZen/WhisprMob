@@ -11,7 +11,6 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { useAuth } from '../store/AuthContext';
 import { BuddiesService } from '../services/buddiesService';
 
 interface NotificationsScreenProps {

@@ -15,7 +15,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const { theme } = useTheme();
   const [buddies, setBuddies] = useState<Buddy[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unread' | 'pinned' | 'online'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'online'>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -110,7 +110,6 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
           const isSame =
             oldBuddy.name === newBuddy.name &&
             oldBuddy.unreadCount === newBuddy.unreadCount &&
-            oldBuddy.isPinned === newBuddy.isPinned &&
             oldBuddy.isOnline === newBuddy.isOnline &&
             oldBuddy.lastMessage === newBuddy.lastMessage &&
             oldBuddy.lastMessageTime?.toString() === newBuddy.lastMessageTime?.toString();
@@ -147,7 +146,6 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     const matchesSearch = buddy.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false;
     switch (filter) {
       case 'unread': return matchesSearch && buddy.unreadCount > 0;
-      case 'pinned': return matchesSearch && buddy.isPinned;
       case 'online': return matchesSearch && buddy.isOnline;
       default: return matchesSearch;
     }
@@ -157,116 +155,11 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     onNavigate('chat', { buddy });
   };
 
-  // Handle when messages are marked as read in chat
-  const handleMessagesRead = (buddyId: string) => {
-    console.log('Messages marked as read for buddy:', buddyId);
-    setBuddies(prev => prev.map(b =>
-      b.id === buddyId ? { ...b, unreadCount: 0 } : b
-    ));
-  };
-
   // ✅ Instant local state updates (no reload needed)
-  const handlePinToggle = async (buddyId: string) => {
-    try {
-      await CachedBuddiesService.toggleBuddyPin(buddyId, user.id);
-      setBuddies(prev => prev.map(b =>
-        b.id === buddyId ? { ...b, isPinned: !b.isPinned } : b
-      ));
-    } catch (error) {
-      console.error('Error toggling pin:', error);
-      Alert.alert('Error', 'Failed to update buddy pin status');
-    }
-  };
 
-  const handleClearChat = (buddyId: string) => {
-    Alert.alert(
-      'Clear Chat',
-      'Are you sure you want to clear all messages with this buddy? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await CachedBuddiesService.clearChatHistory(buddyId);
-              setBuddies(prev => prev.map(b =>
-                b.id === buddyId ? { ...b, lastMessage: '', unreadCount: 0 } : b
-              ));
-              Alert.alert('Success', 'Chat history cleared successfully');
-            } catch (error) {
-              console.error('Error clearing chat:', error);
-              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-              Alert.alert('Error', `Failed to clear chat history: ${errorMessage}`);
-            }
-          }
-        },
-      ]
-    );
-  };
 
-  const handleDeleteBuddy = (buddy: Buddy) => {
-    Alert.alert(
-      'Delete Buddy',
-      `Are you sure you want to remove ${buddy.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await CachedBuddiesService.deleteBuddy(buddy.id, user.id);
-              setBuddies(prev => prev.filter(b => b.id !== buddy.id));
-              Alert.alert('Success', `${buddy.name} has been removed`);
-            } catch (error) {
-              console.error('Error deleting buddy:', error);
-              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-              Alert.alert('Error', `Failed to delete buddy: ${errorMessage}`);
-            }
-          }
-        },
-      ]
-    );
-  };
 
-  const handleBlockUser = (buddy: Buddy) => {
-    Alert.alert(
-      'Block User',
-      `Are you sure you want to block ${buddy.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await CachedBuddiesService.blockUser(buddy.buddyUserId || buddy.id, user.id);
-              setBuddies(prev => prev.filter(b => b.id !== buddy.id));
-              Alert.alert('Success', `${buddy.name} has been blocked`);
-            } catch (error) {
-              console.error('Error blocking user:', error);
-              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-              Alert.alert('Error', `Failed to block user: ${errorMessage}`);
-            }
-          }
-        },
-      ]
-    );
-  };
 
-  const handleBuddyOptions = (buddy: Buddy) => {
-    Alert.alert(
-      'Buddy Options',
-      `What would you like to do with ${buddy.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete Buddy', style: 'destructive', onPress: () => handleDeleteBuddy(buddy) },
-        { text: 'Block User', style: 'destructive', onPress: () => handleBlockUser(buddy) },
-        { text: 'Clear Chat', onPress: () => handleClearChat(buddy.id) },
-      ]
-    );
-  };
 
   const formatLastSeen = (lastMessageTime?: Date): string => {
     if (!lastMessageTime) return 'No messages';
@@ -283,7 +176,6 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
   const getFilterCount = (filterType: typeof filter): number => {
     switch (filterType) {
       case 'unread': return buddies.filter(b => b.unreadCount > 0).length;
-      case 'pinned': return buddies.filter(b => b.isPinned).length;
       case 'online': return buddies.filter(b => b.isOnline).length;
       default: return buddies.length;
     }
@@ -344,17 +236,20 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
       )}
 
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search buddies..."
-          placeholderTextColor="#9ca3af"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <View style={styles.searchInputContainer}>
+          <Icon name="search" size={20} color="#9ca3af" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="🔍 Search your buddies"
+            placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
       </View>
 
       <View style={styles.filterContainer}>
-        {(['all', 'unread', 'pinned', 'online'] as const).map((filterType) => (
+        {(['all', 'unread', 'online'] as const).map((filterType) => (
           <TouchableOpacity
             key={filterType}
             style={[
@@ -367,7 +262,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
               styles.filterButtonText,
               filter === filterType && styles.activeFilterButtonText,
             ]}>
-              {filterType.charAt(0).toUpperCase() + filterType.slice(1)} ({getFilterCount(filterType)})
+              {filterType.charAt(0).toUpperCase() + filterType.slice(1)} • {getFilterCount(filterType)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -408,10 +303,6 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
             >
               <View style={styles.buddyContent}>
                 <View style={styles.buddyIconContainer}>
-                  <View style={[
-                    styles.statusIndicator,
-                    buddy.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
-                  ]} />
                   <Text style={styles.buddyInitials}>
                     {buddy.name.charAt(0).toUpperCase()}
                   </Text>
@@ -420,15 +311,18 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                 <View style={styles.buddyText}>
                   <View style={styles.buddyNameRow}>
                     <Text style={styles.buddyName}>{buddy.name}</Text>
-                    {buddy.isPinned && (
-                      <Icon name="pin" size={16} color="#7c3aed" />
+                    {buddy.isOnline && (
+                      <View style={styles.onlineStatusContainer}>
+                        <View style={styles.onlineDot} />
+                        <Text style={styles.onlineText}>Online</Text>
+                      </View>
                     )}
                   </View>
                   <Text style={styles.buddySubtitle}>
                     {buddy.lastMessage || 'No messages yet'}
                   </Text>
                   <Text style={styles.buddyStatus}>
-                    {buddy.isOnline ? 'Online' : formatLastSeen(buddy.lastMessageTime)}
+                    {buddy.isOnline ? '' : formatLastSeen(buddy.lastMessageTime)}
                   </Text>
                 </View>
                 
@@ -448,48 +342,6 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
                 </View>
               </View>
               
-              {/* Action Buttons Row */}
-              <View style={styles.buddyActionButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.actionButton,
-                    buddy.isPinned && styles.actionButtonActive
-                  ]}
-                  onPress={() => handlePinToggle(buddy.id)}
-                >
-                  <Icon 
-                    name={buddy.isPinned ? "pin" : "pin-outline"} 
-                    size={18} 
-                    color={buddy.isPinned ? "#7c3aed" : "#6b7280"} 
-                  />
-                  <Text style={[
-                    styles.actionButtonText,
-                    buddy.isPinned && styles.actionButtonTextActive
-                  ]}>
-                    {buddy.isPinned ? 'Pinned' : 'Pin'}
-                  </Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleClearChat(buddy.id)}
-                >
-                  <Icon name="trash-outline" size={18} color="#ef4444" />
-                  <Text style={[styles.actionButtonText, { color: '#ef4444' }]}>
-                    Clear
-                  </Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleBuddyOptions(buddy)}
-                >
-                  <Icon name="ellipsis-horizontal" size={18} color="#6b7280" />
-                  <Text style={styles.actionButtonText}>
-                    More
-                  </Text>
-                </TouchableOpacity>
-              </View>
             </TouchableOpacity>
           ))
         )}
@@ -622,18 +474,31 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginBottom: spacing.lg,
   },
   searchContainer: {
-    padding: spacing.md,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  searchInput: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    ...theme.shadows.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  searchIcon: {
+    marginRight: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
     fontSize: 16,
     color: theme.colors.onSurface,
+    paddingVertical: 0, // Remove default padding since container handles it
   },
   filterContainer: {
     flexDirection: 'row',
@@ -641,22 +506,32 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: theme.colors.border,
+    justifyContent: 'center',
+    gap: spacing.xs,
   },
   filterButton: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    marginRight: spacing.sm,
-    borderRadius: borderRadius.sm,
-    backgroundColor: '#f3f4f6',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.xl,
+    backgroundColor: theme.colors.surfaceVariant,
+    minWidth: 80,
+    alignItems: 'center',
+    ...theme.shadows.sm,
   },
-  activeFilterButton: { backgroundColor: theme.colors.primary },
+  activeFilterButton: { 
+    backgroundColor: '#7c3aed',
+    ...theme.shadows.md,
+  },
   filterButtonText: {
-    fontSize: 12,
-    color: theme.colors.onSurface,
+    fontSize: 13,
+    color: theme.colors.onSurfaceVariant,
     fontWeight: '500',
   },
-  activeFilterButtonText: { color: '#fff', fontWeight: '600' },
+  activeFilterButtonText: { 
+    color: '#fff', 
+    fontWeight: '600' 
+  },
   buddiesList: { flex: 1, padding: spacing.xs },
   buddyCard: {
     backgroundColor: theme.colors.surface,
@@ -696,9 +571,25 @@ const createStyles = (theme: any) => StyleSheet.create({
     gap: spacing.xs,
   },
   buddyName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: theme.colors.onSurface,
+  },
+  onlineStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10b981',
+  },
+  onlineText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#10b981',
   },
   buddySubtitle: {
     fontSize: 12,
@@ -714,36 +605,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  buddyActionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    marginTop: 2,
-  },
-  actionButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: spacing.xs,
-    borderRadius: borderRadius.sm,
-    backgroundColor: 'transparent',
-  },
-  actionButtonActive: {
-    backgroundColor: '#7c3aed15',
-  },
-  actionButtonText: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#6b7280',
-    marginTop: 1,
-  },
-  actionButtonTextActive: {
-    color: '#7c3aed',
-    fontWeight: '600',
-  },
   buddyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -752,38 +613,12 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   buddyInfo: { flex: 1 },
   nameContainer: { flexDirection: 'row', alignItems: 'center' },
-  buddyName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.onSurface,
-    marginRight: spacing.xs,
-  },
-  buddyStatus: { alignItems: 'flex-end' },
-  statusIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: borderRadius.full,
-    marginBottom: spacing.xs,
-  },
-  onlineIndicator: { backgroundColor: '#10b981' },
-  offlineIndicator: { backgroundColor: '#9ca3af' },
   lastSeen: { fontSize: 12, color: '#9ca3af' },
   lastMessage: {
     fontSize: 14,
     color: theme.colors.onSurface,
     marginBottom: spacing.sm,
     lineHeight: 20,
-  },
-  buddyActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  actionButtons: { flexDirection: 'row', gap: spacing.xs },
-  actionButton: { 
-    padding: spacing.xs,
-    borderRadius: borderRadius.sm,
-    backgroundColor: 'transparent',
   },
   errorIcon: {
     marginBottom: spacing.sm,
