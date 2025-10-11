@@ -1,21 +1,6 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import { Alert } from 'react-native';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
-
-interface NotificationDebugInfo {
-  platform: string;
-  notificationModuleAvailable: boolean;
-  realtimeConnectionStatus: string;
-  pollingStatus: boolean;
-  lastNotificationTime: string | null;
-}
-
-interface NotificationTestResult {
-  success: boolean;
-  message: string;
-  timestamp: number;
-  details?: any;
-}
 
 interface AdminState {
   isAdminMode: boolean;

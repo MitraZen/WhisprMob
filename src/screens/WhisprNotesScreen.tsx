@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions, BackHandler
+  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, BackHandler
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
@@ -127,7 +127,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       }
     } catch (error) {
       console.error('🎧 Error listening to note:', error);
-      Alert.alert('Error', 'Failed to listen to note: ' + error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', 'Failed to listen to note: ' + errorMessage);
     } finally {
       setActionLoading(prev => {
         const newSet = new Set(prev);
@@ -152,7 +153,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       }
     } catch (error) {
       console.error('❌ Error rejecting note:', error);
-      Alert.alert('Error', 'Failed to reject note: ' + error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', 'Failed to reject note: ' + errorMessage);
     } finally {
       setActionLoading(prev => {
         const newSet = new Set(prev);
@@ -399,8 +401,6 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     </KeyboardAvoidingView>
   );
 };
-
-const { width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },

@@ -1,8 +1,7 @@
-import { NativeModules, Platform, Alert } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import { notificationService } from './notificationService';
 import { realtimeService } from './realtimeService';
 import { notificationManager } from './notificationManager';
-import { FlexibleDatabaseService } from './flexibleDatabase';
 
 const { NotificationModule } = NativeModules;
 

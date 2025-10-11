@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Modal, Animated, Dimensions, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, TextInput, Modal, Animated, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
-import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
 import { useAuth } from '@/store/AuthContext';
@@ -26,11 +25,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const styles = createStyles(theme);
   
   
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [profileData, setProfileData] = useState({
     displayName: 'Anonymous User',
-    username: '@anonymous',
+    username: 'anonymous',
     bio: 'No bio yet',
     age: 'Not specified',
     location: 'Not specified',
@@ -48,7 +46,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGenderDropdown, setShowGenderDropdown] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date(2000, 0, 1)); // Default to year 2000
   const [showDeleteDropdown, setShowDeleteDropdown] = useState(false);
 
   useEffect(() => {
@@ -72,7 +70,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   }, [user?.id]);
 
   const loadProfileData = async () => {
-    setIsLoadingProfile(true);
+    setIsLoading(true);
     try {
       const profile = await BuddiesService.getUserProfile(user.id);
       const stats = await BuddiesService.getUserStats(user.id);
@@ -82,14 +80,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         const genderDisplay = profile.gender ? formatGender(profile.gender) : 'Not specified';
         
         setProfileData({
-          displayName: profile.username || profile.anonymous_id || 'Anonymous User',
-          username: profile.username || `@${profile.anonymous_id || 'anonymous'}`,
+          displayName: profile.username || profile.display_name || user.username || 'Anonymous User',
+          username: profile.username || user.username || 'anonymous',
           bio: profile.bio || 'No bio yet',
           age: ageDisplay,
           location: profile.country || profile.location || 'Not specified',
           gender: genderDisplay,
-          mood: profile.mood || 'happy',
-          joinDate: new Date(profile.created_at),
+          mood: profile.mood || user.mood || 'happy',
+          joinDate: new Date(profile.created_at || user.createdAt),
+          dateOfBirth: profile.age ? new Date(profile.age) : null,
         });
         
         setUserStats({
@@ -97,11 +96,30 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
           buddiesCount: stats.buddiesCount || 0,
           notesShared: stats.notesShared || 0,
         });
+      } else {
+        // Fallback to user data if no profile exists
+        setProfileData({
+          displayName: user.username || 'Anonymous User',
+          username: user.username || 'anonymous',
+          bio: 'No bio yet',
+          age: 'Not specified',
+          location: 'Not specified',
+          gender: 'Not specified',
+          mood: user.mood || 'happy',
+          joinDate: new Date(user.createdAt),
+          dateOfBirth: null,
+        });
+        
+        setUserStats({
+          messagesSent: 0,
+          buddiesCount: 0,
+          notesShared: 0,
+        });
       }
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
-      setIsLoadingProfile(false);
+      setIsLoading(false);
     }
   };
 
@@ -169,13 +187,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
 
 
 
-  const getMoodGradient = (mood: string) => {
-    const moodConfig = getMoodConfig(mood);
-    return (moodConfig as any).gradient || ['#667eea', '#764ba2'];
-  };
-
   const handleEditProfile = () => {
     setOriginalProfileData(profileData);
+    // Initialize date picker with existing date or default
+    if (profileData.dateOfBirth && profileData.dateOfBirth instanceof Date && !isNaN(profileData.dateOfBirth.getTime())) {
+      setSelectedDate(profileData.dateOfBirth);
+    } else {
+      setSelectedDate(new Date(2000, 0, 1));
+    }
     setShowEditModal(true);
   };
 
@@ -188,19 +207,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         updated_at: new Date().toISOString(),
       };
       
+      // Always include bio (even if empty, to clear it)
+      updateData.bio = profileData.bio || '';
+      
       // Only add fields if they have values (to avoid null errors)
       if (profileData.displayName && profileData.displayName !== 'Anonymous User') {
         updateData.username = profileData.displayName;
       }
-      if (profileData.username && profileData.username !== '@anonymous') {
+      if (profileData.username && profileData.username !== 'anonymous') {
         updateData.username = profileData.username;
       }
-      if (profileData.bio && profileData.bio !== 'No bio yet') {
-        updateData.bio = profileData.bio;
+      
+      // Handle date of birth properly
+      if (profileData.dateOfBirth && profileData.dateOfBirth instanceof Date && !isNaN(profileData.dateOfBirth.getTime())) {
+        updateData.age = profileData.dateOfBirth.toISOString();
       }
-      if (profileData.age && profileData.age !== 'Not specified') {
-        updateData.age = profileData.age;
-      }
+      
       if (profileData.location && profileData.location !== 'Not specified') {
         updateData.location = profileData.location;
       }
@@ -214,6 +236,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         updateData.gender = genderMap[profileData.gender] || profileData.gender.toLowerCase();
       }
 
+      console.log('Updating profile with data:', updateData);
       await BuddiesService.updateUserProfile(user.id, updateData);
       
       setShowEditModal(false);
@@ -246,8 +269,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   };
 
   const handleDateSelect = () => {
-    const age = calculateAge(selectedDate);
-    setProfileData(prev => ({ ...prev, age, dateOfBirth: selectedDate }));
+    if (selectedDate && selectedDate instanceof Date && !isNaN(selectedDate.getTime())) {
+      const age = calculateAge(selectedDate);
+      setProfileData(prev => ({ 
+        ...prev, 
+        age: `${age} years old`, 
+        dateOfBirth: selectedDate 
+      }));
+    }
     setShowDatePicker(false);
   };
 
@@ -354,6 +383,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               {getMoodConfig(profileData.mood).description}
             </Text>
           </TouchableOpacity>
+        </Animated.View>
+
+        {/* Bio Section */}
+        <Animated.View 
+          style={[
+            styles.bioSection,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
+          <Text style={styles.bioTitle}>About</Text>
+          <Text style={styles.bioText}>
+            {profileData.bio}
+          </Text>
         </Animated.View>
 
         {/* Stats Cards */}
@@ -799,6 +841,27 @@ const createStyles = (theme: any) => StyleSheet.create({
     ...theme.typography.bodyMedium,
     color: theme.colors.onSurface,
     fontWeight: '500',
+  },
+  bioSection: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  bioTitle: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+    marginBottom: spacing.sm,
+  },
+  bioText: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onSurfaceVariant,
+    lineHeight: 22,
   },
   statsContainer: {
     flexDirection: 'row',

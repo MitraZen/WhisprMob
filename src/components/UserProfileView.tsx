@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { BuddiesService } from '@/services/buddiesService';
 
@@ -36,7 +36,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       if (profile) {
         setProfileData({
           displayName: profile.username || profile.name || 'Anonymous User',
-          username: profile.username || profile.anonymous_id || '@anonymous',
+          username: profile.username || profile.anonymous_id || 'anonymous',
           bio: profile.bio || 'No bio available',
           age: profile.age || profile.date_of_birth ? 
             (new Date().getFullYear() - new Date(profile.date_of_birth).getFullYear()).toString() : 
@@ -52,7 +52,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         // Show a fallback profile instead of error
         setProfileData({
           displayName: buddyName || 'Anonymous User',
-          username: '@anonymous',
+          username: 'anonymous',
           bio: 'Profile not available',
           age: 'Not specified',
           location: 'Not specified',

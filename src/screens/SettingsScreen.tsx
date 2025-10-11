@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { notificationService } from '@/services/notificationService';
-import PermissionService, { PermissionStatus } from '../services/permissionService';
+import PermissionService from '../services/permissionService';
 import PermissionInitializer from '../services/permissionInitializer';
 
 interface SettingsScreenProps {
@@ -18,14 +18,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [permissions, setPermissions] = useState<PermissionStatus>({
-    notifications: false,
-    storage: false,
-    camera: false,
-    location: false,
-    contacts: false,
-    phone: false,
-  });
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
   
@@ -53,7 +45,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const loadPermissionStatus = async () => {
     try {
       const currentPermissions = await PermissionService.getAllPermissionStatus();
-      setPermissions(currentPermissions);
       // Update notification toggle based on actual permission status
       setNotificationsEnabled(currentPermissions.notifications);
       // Update location toggle based on actual permission status
@@ -106,7 +97,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
 
   const handleRequestPermissions = async () => {
     try {
-      await PermissionInitializer.initializePermissions();
+      // Get current user ID from auth context
+      const currentUserId = user?.id || 'anonymous';
+      await PermissionInitializer.initializePermissions(currentUserId);
       await loadPermissionStatus();
       Alert.alert('Success', 'Permissions updated successfully');
     } catch (error) {

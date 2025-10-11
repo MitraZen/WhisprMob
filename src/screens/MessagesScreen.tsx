@@ -6,19 +6,10 @@ import {
   FlatList,
   TouchableOpacity,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 
 import { theme, spacing, borderRadius } from '@/utils/theme';
-import { Chat, Message } from '@/types';
+import { Chat } from '@/types';
 import { formatTimestamp } from '@/utils/helpers';
-
-type RootStackParamList = {
-  Chat: { chatId: string };
-};
-
-type MessagesScreenNavigationProp = {
-  navigate: (screen: keyof RootStackParamList, params?: any) => void;
-};
 
 const MessagesScreen: React.FC = () => {
   const [chats] = useState<Chat[]>([]); // In real app, this would come from state/store

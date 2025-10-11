@@ -6,7 +6,6 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
-import { notificationService } from '@/services/notificationService';
 
 interface WhisprComposeScreenProps {
   onNavigate: (screen: string) => void;
@@ -70,22 +69,6 @@ export const WhisprComposeScreen: React.FC<WhisprComposeScreenProps> = ({ onNavi
     } finally {
       setIsSending(false);
     }
-  };
-
-  const getMoodGradient = (mood: string) => {
-    const gradients = {
-      happy: ['#FFE066', '#FFB84D'],
-      sad: ['#B3D9FF', '#87CEEB'],
-      excited: ['#FF6B6B', '#FF8E8E'],
-      calm: ['#A8E6CF', '#88D8A3'],
-      angry: ['#FFB3BA', '#FF9999'],
-      hopeful: ['#DDA0DD', '#E6E6FA'],
-      anxious: ['#F0E68C', '#F5DEB3'],
-      grateful: ['#98FB98', '#90EE90'],
-      lonely: ['#D3D3D3', '#C0C0C0'],
-      peaceful: ['#E0F6FF', '#B0E0E6'],
-    };
-    return gradients[mood as keyof typeof gradients] || ['#F0F0F0', '#E0E0E0'];
   };
 
   return (

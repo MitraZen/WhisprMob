@@ -156,7 +156,7 @@ class RealtimeService {
   async testConnection(): Promise<boolean> {
     try {
       const { supabase } = await import('@/config/supabase');
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('user_profiles')
         .select('id')
         .limit(1);

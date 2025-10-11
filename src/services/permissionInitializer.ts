@@ -1,4 +1,4 @@
-import { Platform, Alert } from 'react-native';
+import { Alert } from 'react-native';
 import PermissionService from './permissionService';
 import { StorageService } from '@/utils/helpers';
 

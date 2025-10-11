@@ -1,5 +1,4 @@
 import { SUPABASE_CONFIG } from '@/config/env';
-import { User, MoodType } from '@/types';
 
 const SUPABASE_URL = SUPABASE_CONFIG.url;
 const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
@@ -14,7 +13,6 @@ export interface Buddy {
   lastMessageTime?: Date;
   unreadCount: number;
   isOnline: boolean;
-  isPinned: boolean;
   status: 'active' | 'away' | 'busy' | 'invisible';
   mood?: MoodType;
   createdAt: Date;
@@ -170,7 +168,6 @@ export class BuddiesService {
           lastMessageTime: buddy.last_message_time ? new Date(buddy.last_message_time) : undefined,
           unreadCount: buddy.unread_count || 0,
           isOnline: buddy.is_online || false,
-          isPinned: buddy.is_pinned || false,
           status: buddy.status || 'active',
           mood: buddy.mood || undefined,
           createdAt: new Date(buddy.created_at),
@@ -369,20 +366,6 @@ export class BuddiesService {
     }
   }
 
-  // Toggle buddy pin status
-  static async toggleBuddyPin(buddyId: string, userId?: string): Promise<boolean> {
-    try {
-      await this.rpcRequest('toggle_buddy_pin', {
-        buddy_id: buddyId,
-        user_id: userId || null
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error toggling buddy pin:', error);
-      throw error;
-    }
-  }
 
 
   // Get blocked users
@@ -727,7 +710,11 @@ export class BuddiesService {
   // Get user profile data
   static async getUserProfile(userId: string): Promise<any> {
     try {
-      const data = await this.request('GET', `user_profiles?id=eq.${userId}`);
+      // Try both id and user_id fields
+      let data = await this.request('GET', `user_profiles?id=eq.${userId}`);
+      if (!data || data.length === 0) {
+        data = await this.request('GET', `user_profiles?user_id=eq.${userId}`);
+      }
       if (data && data.length > 0) {
         return data[0];
       }
@@ -741,7 +728,11 @@ export class BuddiesService {
   // Update user profile data
   static async updateUserProfile(userId: string, profileData: any): Promise<boolean> {
     try {
-      await this.request('PATCH', `user_profiles?id=eq.${userId}`, profileData);
+      // Try both id and user_id fields
+      let result = await this.request('PATCH', `user_profiles?id=eq.${userId}`, profileData);
+      if (!result) {
+        result = await this.request('PATCH', `user_profiles?user_id=eq.${userId}`, profileData);
+      }
       return true;
     } catch (error) {
       console.error('Error updating user profile:', error);

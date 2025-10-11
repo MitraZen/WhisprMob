@@ -46,7 +46,7 @@ export class FlexibleDatabaseService {
   // Test connection to any table
   static async testTableConnection(tableName: string): Promise<boolean> {
     try {
-      const response = await this.request('GET', `${tableName}?limit=1`);
+      await this.request('GET', `${tableName}?limit=1`);
       return true;
     } catch (error) {
       console.error(`Table ${tableName} connection test failed:`, error);
@@ -229,7 +229,6 @@ export class FlexibleDatabaseService {
       const gender = row.gender;
       const dob = row.date_of_birth || row.dob || row.dateOfBirth;
       const country = row.country;
-      const bio = row.bio;
       const profileCompleted = row.profile_completed || row.profileCompleted;
 
       if (typeof profileCompleted === 'boolean') {
@@ -381,9 +380,6 @@ export class FlexibleDatabaseService {
       // Use buddy_messages table instead of messages - buddy_messages uses buddy_id, not receiver_id
       const messages = await this.request('GET', 'buddy_messages?select=id,sender_id,buddy_id');
       
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
       // Get unique chat pairs based on buddy_id
       const chatPairs = new Set();
       messages.forEach((msg: any) => {
