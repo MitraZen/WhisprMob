@@ -83,8 +83,13 @@ android {
         applicationId "com.whisprmobiletemp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 14
-        versionName "1.1.7"
+        versionCode 18
+        versionName "1.2.1"
+        
+        // Network configuration
+        manifestPlaceholders = [
+            usesCleartextTraffic: "true"
+        ]
     }
     signingConfigs {
         debug {
@@ -103,12 +108,20 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            debuggable true
+            minifyEnabled false
         }
         release {
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+    }
+    
+    // Network configuration
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
     }
 }
 

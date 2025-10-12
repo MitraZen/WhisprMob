@@ -24,6 +24,7 @@ export class HttpDatabaseService {
         body: JSON.stringify({
           anonymous_id: userData.anonymousId,
           mood: userData.mood,
+          display_name: userData.anonymousId, // Use anonymous_id as display_name instead of defaulting to "Anonymous User"
           is_online: true,
         }),
       });

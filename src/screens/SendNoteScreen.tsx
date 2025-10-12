@@ -10,47 +10,78 @@ import {
   Platform,
   ActivityIndicator,
   TouchableWithoutFeedback,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
 import { moodConfig, spacing, borderRadius } from '@/utils/themes';
-
-type MoodType = 'happy' | 'sad' | 'excited' | 'anxious' | 'calm' | 'angry' | 'grateful' | 'lonely';
+import { BuddiesService } from '@/services/buddiesService';
+import { MoodType } from '@/types';
 
 interface SendNoteScreenProps {
   onNavigate: (screen: string) => void;
   onGoBack?: () => void;
+  user?: any; // ADDED: User prop for authentication context
 }
 
-const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack }) => {
-  const theme = useTheme();
+const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, user }) => {
+  const { theme } = useTheme();
   const [noteContent, setNoteContent] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSendNote = async () => {
-    if (!noteContent.trim() || !selectedMood || loading) return;
+    if (!noteContent.trim()) {
+      Alert.alert('Empty Message', 'Please enter a message to send.');
+      return;
+    }
+
+    if (!selectedMood) {
+      Alert.alert('No Mood Selected', 'Please select a mood for your message.');
+      return;
+    }
+
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
 
     setLoading(true);
+    
     try {
-      // TODO: Implement note sending logic
-      console.log('Sending note:', { content: noteContent, mood: selectedMood });
+      console.log('Sending Whispr note:', { content: noteContent, mood: selectedMood, userId: user.id });
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const noteId = await BuddiesService.sendWhisprNote(user.id, noteContent.trim(), selectedMood);
       
-      // Reset form
-      setNoteContent('');
-      setSelectedMood(null);
+      console.log('Note sent successfully:', noteId);
       
-      // Navigate back
-      if (onGoBack) {
-        onGoBack();
-      } else {
-        onNavigate('notes');
-      }
+      Alert.alert(
+        'Note Sent! ✨',
+        'Your Whispr note has been sent to the world. Someone might listen to it soon!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Clear form
+              setNoteContent('');
+              setSelectedMood(null);
+              // Navigate back
+              if (onGoBack) {
+                onGoBack();
+              } else {
+                onNavigate('notes');
+              }
+            }
+          }
+        ]
+      );
     } catch (error) {
       console.error('Error sending note:', error);
+      Alert.alert(
+        'Error',
+        'Failed to send your note. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setLoading(false);
     }
