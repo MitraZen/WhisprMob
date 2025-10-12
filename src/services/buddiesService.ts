@@ -1,4 +1,5 @@
 import { SUPABASE_CONFIG } from '@/config/env';
+import { MoodType } from '@/types';
 
 const SUPABASE_URL = SUPABASE_CONFIG.url;
 const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
@@ -15,6 +16,7 @@ export interface Buddy {
   isOnline: boolean;
   status: 'active' | 'away' | 'busy' | 'invisible';
   mood?: MoodType;
+  isPinned?: boolean; // ADDED: Pin status for buddy cards
   createdAt: Date;
   updatedAt: Date;
   buddyUserId?: string; // User ID for profile viewing
@@ -384,11 +386,19 @@ export class BuddiesService {
     try {
       console.log('Clearing chat history for buddy:', buddyId);
       
-      // Delete all messages for this buddy
-      const result = await this.request('DELETE', `buddy_messages?buddy_id=eq.${buddyId}`);
+      // Use the database function to safely clear messages
+      const result = await this.rpcRequest('clear_buddy_chat', {
+        p_buddy_id: buddyId
+      });
       
-      console.log('Chat history cleared successfully:', result);
-      return true;
+      console.log('Chat clear result:', result);
+      
+      if (result && result.success) {
+        console.log(`Successfully cleared ${result.deleted_messages} messages`);
+        return true;
+      } else {
+        throw new Error(result?.message || 'Failed to clear chat history');
+      }
     } catch (error) {
       console.error('Error clearing chat history:', error);
       throw error;
@@ -519,9 +529,10 @@ export class BuddiesService {
   static async listenToNote(noteId: string, userId: string): Promise<any> {
     try {
       console.log('🎧 BuddiesService.listenToNote called with:', { noteId, userId });
-      const result = await this.rpcRequest('listen_to_note', {
-        note_id_param: noteId,
-        listener_id_param: userId
+      const result = await this.rpcRequest('handle_note_propagation', {
+        note_id: noteId,
+        responder_id: userId,
+        response_type: 'listen'
       });
       console.log('🎧 BuddiesService.listenToNote result:', result);
       return result;
@@ -1364,16 +1375,26 @@ export class BuddiesService {
 
   /**
    * Delete a buddy relationship (remove from buddies list)
+   * Uses database function to handle foreign key constraints properly
    */
   static async deleteBuddy(buddyId: string, userId: string): Promise<boolean> {
     try {
       console.log('Deleting buddy relationship:', buddyId);
       
-      // Delete the buddy relationship
-      const result = await this.request('DELETE', `buddies?id=eq.${buddyId}&user_id=eq.${userId}`);
-      console.log('Buddy relationship deleted successfully:', result);
+      // Use the database function to safely delete buddy and messages
+      const result = await this.rpcRequest('delete_buddy_safely', {
+        p_buddy_id: buddyId,
+        p_user_id: userId
+      });
       
-      return true;
+      console.log('Buddy deletion result:', result);
+      
+      if (result && result.success) {
+        console.log(`Successfully deleted buddy and ${result.deleted_messages} messages`);
+        return true;
+      } else {
+        throw new Error(result?.message || 'Failed to delete buddy');
+      }
     } catch (error) {
       console.error('Error deleting buddy:', error);
       throw error;
@@ -1435,6 +1456,35 @@ export class BuddiesService {
     } catch (error) {
       console.error('Error checking if user is blocked:', error);
       return false;
+    }
+  }
+
+  /**
+   * Toggle buddy pin status
+   */
+  static async toggleBuddyPin(buddyId: string, userId: string): Promise<boolean> {
+    try {
+      console.log('Toggling buddy pin status:', buddyId);
+      
+      // First get current pin status
+      const buddy = await this.request('GET', `buddies?id=eq.${buddyId}&user_id=eq.${userId}`);
+      if (!buddy || buddy.length === 0) {
+        throw new Error('Buddy not found');
+      }
+      
+      const currentPinStatus = buddy[0].is_pinned || false;
+      const newPinStatus = !currentPinStatus;
+      
+      // Update pin status
+      const result = await this.request('PATCH', `buddies?id=eq.${buddyId}&user_id=eq.${userId}`, {
+        is_pinned: newPinStatus
+      });
+      
+      console.log('Buddy pin status toggled successfully:', result);
+      return true;
+    } catch (error) {
+      console.error('Error toggling buddy pin:', error);
+      throw error;
     }
   }
 

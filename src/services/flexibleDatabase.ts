@@ -89,6 +89,15 @@ export class FlexibleDatabaseService {
       if (columns.includes('mood') && userData.mood) {
         payload.mood = userData.mood;
       }
+      if (columns.includes('username') && userData.username) {
+        payload.username = userData.username;
+      }
+      if (columns.includes('display_name') && userData.display_name) {
+        payload.display_name = userData.display_name;
+      } else if (columns.includes('display_name') && userData.username) {
+        // Fallback: use username as display_name if display_name not provided
+        payload.display_name = userData.username;
+      }
       if (columns.includes('is_online')) {
         payload.is_online = true;
       }

@@ -330,6 +330,26 @@ export class CachedBuddiesService {
   }
 
   /**
+   * Clear buddy chat (alias for clearChatHistory)
+   */
+  static async clearBuddyChat(buddyId: string, userId?: string): Promise<boolean> {
+    return this.clearChatHistory(buddyId);
+  }
+
+  /**
+   * Delete buddy and all associated messages
+   */
+  static async deleteBuddy(buddyId: string, userId: string): Promise<boolean> {
+    const result = await BuddiesService.deleteBuddy(buddyId, userId);
+    
+    // Invalidate all caches related to this buddy
+    QueryCache.invalidateMessages(buddyId);
+    QueryCache.invalidateBuddies(userId);
+    
+    return result;
+  }
+
+  /**
    * Sync user online status and invalidate cache
    */
   static async syncUserOnlineStatus(userId: string, isOnline: boolean): Promise<boolean> {

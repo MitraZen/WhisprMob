@@ -135,6 +135,7 @@ export class AuthService {
         id: userId,
         email: userEmail,
         username: username, // Store username without @ prefix
+        display_name: username, // ADDED: Set display_name to username instead of defaulting to "Anonymous User"
         anonymous_id: anonymousId,
         mood: mood,
         is_online: true,

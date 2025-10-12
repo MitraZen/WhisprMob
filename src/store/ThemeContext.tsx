@@ -8,6 +8,7 @@ interface ThemeContextType {
   theme: typeof lightTheme;
   themeMode: ThemeMode;
   isDark: boolean;
+  colors: typeof lightTheme.colors; // ADDED: Direct access to colors
   toggleTheme: () => void;
   setThemeMode: (mode: ThemeMode) => void;
 }
@@ -72,6 +73,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     theme,
     themeMode,
     isDark,
+    colors: theme.colors, // ADDED: Direct access to colors
     toggleTheme,
     setThemeMode,
   };

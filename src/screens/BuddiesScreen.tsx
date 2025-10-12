@@ -36,12 +36,12 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     loadBuddies(true);
   }, [user?.id]);
 
-  // Auto-refresh buddies every 5 seconds (silent, no loader) - faster refresh for unread counts
+  // Auto-refresh buddies every 30 seconds (reduced frequency for better performance)
   useEffect(() => {
     if (!user?.id) return;
     const interval = setInterval(() => {
       loadBuddies(false);
-    }, 5000); // Reduced from 10 seconds to 5 seconds
+    }, 30000); // Increased from 5 seconds to 30 seconds for better performance
     return () => clearInterval(interval);
   }, [user?.id]);
 
@@ -95,30 +95,36 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
       const buddiesData = await CachedBuddiesService.getBuddies(user.id);
   
       setBuddies((prevBuddies) => {
-        // If lengths differ, definitely update
-        if (prevBuddies.length !== buddiesData.length) return buddiesData;
-  
-        // Compare old vs new
-        let changed = false;
-        const merged = buddiesData.map((newBuddy) => {
-          const oldBuddy = prevBuddies.find((b) => b.id === newBuddy.id);
+        // Quick length check first
+        if (prevBuddies.length !== buddiesData.length) {
+          return buddiesData;
+        }
+
+        // Create a map for faster lookup
+        const prevBuddiesMap = new Map(prevBuddies.map(buddy => [buddy.id, buddy]));
+        
+        // Check if any buddy has changed
+        let hasChanges = false;
+        const updatedBuddies = buddiesData.map((newBuddy) => {
+          const oldBuddy = prevBuddiesMap.get(newBuddy.id);
           if (!oldBuddy) {
-            changed = true;
+            hasChanges = true;
             return newBuddy;
           }
-  
-          const isSame =
-            oldBuddy.name === newBuddy.name &&
-            oldBuddy.unreadCount === newBuddy.unreadCount &&
-            oldBuddy.isOnline === newBuddy.isOnline &&
-            oldBuddy.lastMessage === newBuddy.lastMessage &&
-            oldBuddy.lastMessageTime?.toString() === newBuddy.lastMessageTime?.toString();
-  
-          if (!isSame) changed = true;
-          return isSame ? oldBuddy : newBuddy;
+
+          // Quick comparison of key fields
+          if (oldBuddy.name !== newBuddy.name ||
+              oldBuddy.unreadCount !== newBuddy.unreadCount ||
+              oldBuddy.isOnline !== newBuddy.isOnline ||
+              oldBuddy.lastMessage !== newBuddy.lastMessage) {
+            hasChanges = true;
+            return newBuddy;
+          }
+
+          return oldBuddy; // No changes, keep the old object
         });
-  
-        return changed ? merged : prevBuddies;
+
+        return hasChanges ? updatedBuddies : prevBuddies;
       });
   
       setLastUpdated(new Date());
@@ -151,8 +157,34 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     }
   });
 
+  // Handle chat press - navigate to chat screen
   const handleChatPress = (buddy: Buddy) => {
     onNavigate('chat', { buddy });
+  };
+
+  // Handle buddy options (long press) - show context menu
+  const handleBuddyOptions = (buddy: Buddy) => {
+    Alert.alert(
+      'Buddy Options',
+      `What would you like to do with ${buddy.name}?`,
+      [
+        { text: 'View Profile', onPress: () => onNavigate('profile', { userId: buddy.buddyUserId }) },
+        { text: 'Clear Chat', onPress: () => clearBuddyChat(buddy) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // Clear chat for a specific buddy
+  const clearBuddyChat = async (buddy: Buddy) => {
+    try {
+      await CachedBuddiesService.clearBuddyChat(buddy.id, user.id);
+      await loadBuddies(false);
+      Alert.alert('Success', `Chat with ${buddy.name} has been cleared.`);
+    } catch (error) {
+      console.error('Error clearing buddy chat:', error);
+      Alert.alert('Error', 'Failed to clear chat. Please try again.');
+    }
   };
 
   // ✅ Instant local state updates (no reload needed)
