@@ -220,18 +220,21 @@ export class CachedBuddiesService {
   /**
    * Listen to Whispr note and invalidate cache
    */
-  static async listenToWhisprNote(noteId: string, userId?: string): Promise<boolean> {
+  static async listenToWhisprNote(noteId: string, userId?: string): Promise<any> {
     if (!userId) {
       console.warn('listenToWhisprNote: userId is required');
-      return false;
+      return { success: false };
     }
     
     const result = await BuddiesService.listenToNote(noteId, userId);
     
-    // Invalidate Whispr notes cache to refresh propagation count
+    // Invalidate both Whispr notes cache and buddies cache
     QueryCache.invalidateWhisprNotes(userId);
+    QueryCache.invalidateBuddies(userId);
     
-    return result.success || false;
+    console.log('🎧 Cache invalidated for notes and buddies after listening to note');
+    
+    return result;
   }
 
   /**

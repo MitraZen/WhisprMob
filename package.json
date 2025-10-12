@@ -1,6 +1,6 @@
 {
   "name": "whispr-mobile",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Whispr - Anonymous messaging and mood-based connections",
   "main": "index.js",
   "scripts": {
@@ -12,7 +12,18 @@
     "test:coverage": "jest --coverage",
     "test:integration": "jest --testPathPattern=integration",
     "test:performance": "jest --testPathPattern=performance",
+    "test:notifications": "jest --testPathPattern=notification",
+    "test:chat": "jest --testPathPattern=ChatScreen",
+    "test:notes": "jest --testPathPattern=WhisprComposeScreen",
+    "test:services": "jest --testPathPattern=services",
     "test:all": "npm run test && npm run test:integration && npm run test:performance",
+    "test:debug": "set DEBUG_TESTS=true && npm test",
+    "test:integration:debug": "set DEBUG_TESTS=true && npm run test:integration",
+    "test:notifications:debug": "set DEBUG_TESTS=true && npm run test:notifications",
+    "test:chat:debug": "set DEBUG_TESTS=true && npm run test:chat",
+    "test:notes:debug": "set DEBUG_TESTS=true && npm run test:notes",
+    "test:notification-suite": "npm run test:notifications && npm run test:chat && npm run test:notes && npm run test:services",
+    "test:notification-suite:debug": "set DEBUG_TESTS=true && npm run test:notification-suite",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "type-check": "tsc --noEmit"
   },

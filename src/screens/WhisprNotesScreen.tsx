@@ -7,6 +7,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
+import { CachedBuddiesService } from '@/services/cachedBuddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
 
@@ -116,11 +117,27 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     console.log('🎧 Starting to listen to note:', noteId, 'for user:', user.id);
     setActionLoading(prev => new Set(prev).add(noteId));
     try {
-      const result = await BuddiesService.listenToNote(noteId, user.id);
+      const result = await CachedBuddiesService.listenToWhisprNote(noteId, user.id);
       console.log('🎧 Listen result:', result);
       if (result?.success) {
-        Alert.alert('Note Listened! 👂', 'You\'ve acknowledged this note.');
+        // Show success message with buddy creation info
+        const buddyCreated = result.buddy_created;
+        const message = buddyCreated 
+          ? 'Note listened! Check your Buddies tab to start chatting with your new buddy! 👥'
+          : 'Note listened! You\'ve acknowledged this note. 👂';
+        
+        Alert.alert('Note Listened! 👂', message);
+        
+        // Refresh notes to update the list
         await loadNotes();
+        
+        // If a buddy was created, trigger a global event to refresh buddies screen
+        if (buddyCreated) {
+          console.log('🎧 Buddy created, triggering buddies refresh');
+          // Use a callback approach instead of CustomEvent for React Native compatibility
+          // The navigation callback will handle refreshing the buddies screen
+          onNavigate('buddies', { refreshTrigger: Date.now() });
+        }
       } else {
         console.log('🎧 Listen failed - result:', result);
         Alert.alert('Error', 'Failed to listen to note. Result: ' + JSON.stringify(result));

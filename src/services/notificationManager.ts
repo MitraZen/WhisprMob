@@ -14,8 +14,8 @@ class NotificationManagerClass implements NotificationManager {
   private lastNoteIds: string[] = [];
   private userId: string | null = null;
   private lastNetworkCheck = 0;
-  private networkCheckInterval = 300000; // Check network every 5 minutes (increased from 60 seconds)
-  private pollingIntervalMs = 300000; // Poll every 5 minutes (increased from 30 seconds)
+  private networkCheckInterval = 60000; // Check network every 1 minute (reduced from 5 minutes)
+  private pollingIntervalMs = 30000; // Poll every 30 seconds (reduced from 5 minutes)
   private maxRetries = 3;
   private retryCount = 0;
 
@@ -85,8 +85,8 @@ class NotificationManagerClass implements NotificationManager {
       // Use BuddiesService for message checking (it has the correct methods)
       const buddies = await BuddiesService.getBuddies(this.userId);
       
-      // Limit to first 5 buddies to reduce database load
-      const limitedBuddies = buddies.slice(0, 5);
+      // Limit to first 20 buddies to reduce database load (increased from 5)
+      const limitedBuddies = buddies.slice(0, 20);
       
       for (const buddy of limitedBuddies) {
         try {
