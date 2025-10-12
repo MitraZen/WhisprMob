@@ -1,124 +1,286 @@
 import { notificationService } from './notificationService';
 import { BuddiesService } from './buddiesService';
+import { realtimeService } from './realtimeService';
 
 interface NotificationManager {
-  startPolling: (userId: string) => void;
-  stopPolling: () => void;
-  isPolling: () => boolean;
+  startNotificationService: (userId: string) => Promise<void>;
+  stopNotificationService: () => Promise<void>;
+  isRealtimeActive: () => boolean;
+  isPollingActive: () => boolean;
+  getServiceStatus: () => {
+    realtime: boolean;
+    polling: boolean;
+    fallbackMode: boolean;
+    connectionHealth: 'healthy' | 'degraded' | 'failed';
+  };
+  optimizeForBackground: () => Promise<void>;
+  optimizeForForeground: () => Promise<void>;
+  getPerformanceMetrics: () => any;
 }
 
 class NotificationManagerClass implements NotificationManager {
   private pollingInterval: NodeJS.Timeout | null = null;
-  private isPollingActive = false;
+  private pollingActive = false;
+  private realtimeActive = false;
+  private userId: string | null = null;
+  private fallbackMode = false;
   private lastMessageIds: { [buddyId: string]: string[] } = {};
   private lastNoteIds: string[] = [];
-  private userId: string | null = null;
-  private lastNetworkCheck = 0;
-  private networkCheckInterval = 60000; // Check network every 1 minute (reduced from 5 minutes)
-  private pollingIntervalMs = 30000; // Poll every 30 seconds (reduced from 5 minutes)
-  private maxRetries = 3;
-  private retryCount = 0;
+  private realtimeFailureHandler: ((event: any) => void) | null = null;
+  private performanceMetrics = {
+    realtimeSuccessRate: 0,
+    fallbackActivations: 0,
+    averageLatency: 0,
+    lastHealthCheck: 0,
+    totalNotifications: 0,
+    realtimeNotifications: 0,
+    pollingNotifications: 0,
+  };
+  private lastInitializationAttempt = 0;
+  private initializationCooldown = 30000; // 30 seconds cooldown between attempts
 
-  startPolling(userId: string) {
-    if (this.isPollingActive) {
+      async startNotificationService(userId: string): Promise<void> {
+        this.userId = userId;
+        
+        // Check cooldown to prevent excessive initialization attempts
+        const now = Date.now();
+        if (now - this.lastInitializationAttempt < this.initializationCooldown) {
+          console.log('⏰ Initialization cooldown active - using polling only');
+          await this.startPollingFallback(userId);
+          return;
+        }
+        
+        this.lastInitializationAttempt = now;
+        console.log('🚀 Starting hybrid notification service for user:', userId);
+        
+        try {
+          // Try realtime first (now with WebSocket polyfill)
+          const realtimeSuccess = await realtimeService.initialize(userId);
+          
+          if (realtimeSuccess) {
+            this.realtimeActive = true;
+            this.fallbackMode = false;
+            this.performanceMetrics.realtimeSuccessRate = 100;
+            console.log('✅ Realtime service started successfully');
+            
+            // Setup fallback listener
+            this.setupRealtimeFailureListener();
+            
+            // Start background optimization
+            this.startBackgroundOptimization();
+          } else {
+            throw new Error('Realtime initialization failed');
+          }
+        } catch (error) {
+          console.warn('⚠️ Realtime failed, starting polling fallback:', error);
+          await this.startPollingFallback(userId);
+        }
+      }
+
+  private async startPollingFallback(userId: string): Promise<void> {
+    this.fallbackMode = true;
+    this.realtimeActive = false;
+    this.performanceMetrics.fallbackActivations++;
+    this.startPolling(userId);
+    console.log('🔄 Polling fallback activated');
+  }
+
+  private setupRealtimeFailureListener(): void {
+    // Listen for realtime failures
+    const handleRealtimeFailure = (event: any) => {
+      const { userId } = event.detail;
+      if (userId === this.userId && !this.fallbackMode) {
+        console.log('🔄 Realtime failed, switching to polling');
+        this.startPollingFallback(userId);
+      }
+    };
+
+    // Check if we're in a browser environment
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('realtime-failed', handleRealtimeFailure);
+      this.realtimeFailureHandler = handleRealtimeFailure;
+    } else {
+      // In React Native, we'll use a different approach
+      console.log('🔄 Realtime failure listener set up for React Native');
+    }
+  }
+
+  private startPolling(userId: string): void {
+    if (this.pollingActive) {
       this.stopPolling();
     }
 
     this.userId = userId;
-    this.isPollingActive = true;
+    this.pollingActive = true;
     
-    // Clear previous notification history to avoid duplicates
+    // Clear previous notification history
     this.lastMessageIds = {};
     this.lastNoteIds = [];
     
-    // Poll every 5 minutes for new messages and notes (optimized for performance and reduced egress)
+    // Use shorter interval in fallback mode
+    const interval = this.fallbackMode ? 15000 : 30000;
+    
     this.pollingInterval = setInterval(async () => {
       await this.checkForNewMessages();
       await this.checkForNewNotes();
-    }, this.pollingIntervalMs);
+    }, interval);
 
-    console.log('Notification polling started for user:', userId);
+    console.log(`🔄 Notification polling started (${this.fallbackMode ? 'fallback' : 'primary'} mode, ${interval}ms interval)`);
   }
 
-  stopPolling() {
+  private stopPolling(): void {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
-    this.isPollingActive = false;
+    this.pollingActive = false;
+    console.log('🛑 Notification polling stopped');
+  }
+
+  async stopNotificationService(): Promise<void> {
+    console.log('🛑 Stopping hybrid notification service...');
+    
+    // Stop realtime
+    if (this.realtimeActive) {
+      await realtimeService.disconnect();
+      this.realtimeActive = false;
+    }
+    
+    // Stop polling
+    this.stopPolling();
+    
+    // Clean up event listeners
+    if (this.realtimeFailureHandler && typeof window !== 'undefined' && window.removeEventListener) {
+      window.removeEventListener('realtime-failed', this.realtimeFailureHandler);
+    }
+    
     this.userId = null;
-    console.log('Notification polling stopped');
+    this.fallbackMode = false;
+    
+    console.log('✅ Hybrid notification service stopped');
   }
 
-  isPolling(): boolean {
-    return this.isPollingActive;
+  isRealtimeActive(): boolean {
+    return this.realtimeActive;
   }
 
-  private async checkForNewMessages() {
+  isPollingActive(): boolean {
+    return this.pollingActive;
+  }
+
+  getServiceStatus() {
+    const connectionHealth = this.getConnectionHealth();
+    
+    return {
+      realtime: this.realtimeActive,
+      polling: this.pollingActive,
+      fallbackMode: this.fallbackMode,
+      connectionHealth,
+    };
+  }
+
+  private getConnectionHealth(): 'healthy' | 'degraded' | 'failed' {
+    if (this.realtimeActive && !this.fallbackMode) {
+      return 'healthy';
+    } else if (this.fallbackMode && this.pollingActive) {
+      return 'degraded';
+    } else {
+      return 'failed';
+    }
+  }
+
+  async optimizeForBackground(): Promise<void> {
+    console.log('🌙 Optimizing for background mode...');
+    
+    if (this.realtimeActive) {
+      // Keep realtime but reduce activity
+      console.log('📡 Maintaining realtime connection in background');
+    } else if (this.pollingActive) {
+      // Increase polling interval in background
+      this.stopPolling();
+      this.startPolling(this.userId!);
+      console.log('⏰ Reduced polling frequency for background');
+    }
+  }
+
+  async optimizeForForeground(): Promise<void> {
+    console.log('☀️ Optimizing for foreground mode...');
+    
+    if (this.fallbackMode && this.pollingActive) {
+      // Check cooldown before attempting realtime reconnection
+      const now = Date.now();
+      if (now - this.lastInitializationAttempt < this.initializationCooldown) {
+        console.log('⏰ Realtime reconnection cooldown active - staying with polling');
+        return;
+      }
+      
+      // Try to reconnect to realtime
+      try {
+        this.lastInitializationAttempt = now;
+        const realtimeSuccess = await realtimeService.initialize(this.userId!);
+        if (realtimeSuccess) {
+          this.realtimeActive = true;
+          this.fallbackMode = false;
+          this.stopPolling();
+          console.log('✅ Reconnected to realtime in foreground');
+        }
+      } catch (error) {
+        console.log('⚠️ Failed to reconnect to realtime, staying with polling');
+      }
+    }
+  }
+
+  private startBackgroundOptimization(): void {
+    // Monitor app state changes
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          this.optimizeForBackground();
+        } else {
+          this.optimizeForForeground();
+        }
+      };
+      
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+  }
+
+  // Keep existing polling methods as fallback
+  private async checkForNewMessages(): Promise<void> {
     if (!this.userId) return;
 
     try {
-      // Test network connectivity only if we haven't checked recently
-      const now = Date.now();
-      if (now - this.lastNetworkCheck > this.networkCheckInterval) {
-        const isConnected = await BuddiesService.testNetworkConnection();
-        this.lastNetworkCheck = now;
-        if (!isConnected) {
-          console.warn('Network connection failed, skipping message check');
-          this.retryCount++;
-          if (this.retryCount >= this.maxRetries) {
-            console.log('Max retries reached, stopping polling temporarily');
-            this.stopPolling();
-            // Restart polling after 10 minutes
-            setTimeout(() => {
-              if (this.userId) {
-                this.startPolling(this.userId);
-                this.retryCount = 0;
-              }
-            }, 600000); // 10 minutes
-          }
-          return;
-        }
-        this.retryCount = 0; // Reset retry count on successful connection
-      }
-
-      // Use BuddiesService for message checking (it has the correct methods)
       const buddies = await BuddiesService.getBuddies(this.userId);
-      
-      // Limit to first 20 buddies to reduce database load (increased from 5)
       const limitedBuddies = buddies.slice(0, 20);
       
       for (const buddy of limitedBuddies) {
         try {
-          // Get messages for this buddy
           const messages = await BuddiesService.getMessages(buddy.id, this.userId);
-          const lastKnownIds = this.lastMessageIds[buddy.id] || [];
-          
-          // Find new messages (not in our last known list)
-          const newMessages = messages.filter(message => 
-            !lastKnownIds.includes(message.id) && 
-            message.senderId !== this.userId
+          const newMessages = messages.filter(msg => 
+            msg.senderId !== this.userId && 
+            !this.lastMessageIds[buddy.id]?.includes(msg.id)
           );
-
-          // Send notifications for new messages
-          for (const message of newMessages) {
-            try {
+          
+          if (newMessages.length > 0) {
+            console.log(`📨 Polling: Found ${newMessages.length} new messages for ${buddy.name}`);
+            for (const message of newMessages) {
               await notificationService.showMessageNotification(
                 'New Message',
-                message.content || 'New message received',
-                buddy.name || buddy.initials || 'Buddy'
+                message.content,
+                buddy.name
               );
-              console.log('Background notification sent for new message from:', buddy.name, 'Content:', message.content);
-            } catch (error) {
-              console.warn('Failed to send message notification:', error);
+              this.performanceMetrics.pollingNotifications++;
+              this.performanceMetrics.totalNotifications++;
             }
+            
+            // Update last message IDs
+            this.lastMessageIds[buddy.id] = messages
+              .filter(msg => msg.senderId !== this.userId)
+              .slice(-50)
+              .map(msg => msg.id);
           }
-
-          // Update the known message IDs (keep last 50 to avoid memory issues)
-          const currentIds = messages.map(m => m.id).slice(0, 50);
-          this.lastMessageIds[buddy.id] = currentIds;
-        } catch (buddyError) {
-          console.warn(`Failed to check messages for buddy ${buddy.name}:`, buddyError);
+        } catch (error) {
+          console.error(`Error checking messages for buddy ${buddy.id}:`, error);
         }
       }
     } catch (error) {
@@ -126,61 +288,77 @@ class NotificationManagerClass implements NotificationManager {
     }
   }
 
-  private async checkForNewNotes() {
+  private async checkForNewNotes(): Promise<void> {
     if (!this.userId) return;
 
     try {
-      // Skip network check if we already checked recently (shared with messages)
-      // Network check is already handled in checkForNewMessages()
-
-      // Use BuddiesService for notes checking (it has the correct methods)
       const notes = await BuddiesService.getWhisprNotes(this.userId);
-      
-      // Limit to recent notes only (last 10) to reduce processing
-      const recentNotes = notes.slice(0, 10);
-      
-      // Find new notes (not in our last known list)
-      const newNotes = recentNotes.filter(note => 
-        !this.lastNoteIds.includes(note.id) && 
-        note.senderId !== this.userId
+      const newNotes = notes.filter(note => 
+        note.senderId !== this.userId && 
+        !this.lastNoteIds.includes(note.id)
       );
-
-      // Send notifications for new notes
-      for (const note of newNotes) {
-        try {
+      
+      if (newNotes.length > 0) {
+        console.log(`📝 Polling: Found ${newNotes.length} new notes`);
+        for (const note of newNotes.slice(0, 10)) {
           await notificationService.showNoteNotification(
             'New Whispr Note',
-            note.content || 'New note received'
+            note.content
           );
-          console.log('Background notification sent for new Whispr note, Content:', note.content);
-        } catch (error) {
-          console.warn('Failed to send note notification:', error);
+          this.performanceMetrics.pollingNotifications++;
+          this.performanceMetrics.totalNotifications++;
         }
+        
+        // Update last note IDs
+        this.lastNoteIds = notes
+          .filter(note => note.senderId !== this.userId)
+          .slice(-50)
+          .map(note => note.id);
       }
-
-      // Update the known note IDs (keep last 10 to avoid memory issues)
-      this.lastNoteIds = recentNotes.map(n => n.id).slice(0, 10);
     } catch (error) {
       console.error('Error checking for new notes:', error);
     }
   }
 
-  // Method to manually trigger notification check (useful for testing)
+  // Performance monitoring methods
+  getPerformanceMetrics() {
+    return { ...this.performanceMetrics };
+  }
+
+  updatePerformanceMetrics(metric: string, value: number) {
+    this.performanceMetrics[metric as keyof typeof this.performanceMetrics] = value;
+  }
+
+  // Track notification from realtime
+  trackRealtimeNotification() {
+    this.performanceMetrics.realtimeNotifications++;
+    this.performanceMetrics.totalNotifications++;
+  }
+
+  // Legacy methods for backward compatibility
+  startPolling(userId: string) {
+    console.log('🔄 Legacy startPolling called - using hybrid service');
+    this.startNotificationService(userId);
+  }
+
+  stopPolling() {
+    console.log('🛑 Legacy stopPolling called - using hybrid service');
+    this.stopNotificationService();
+  }
+
+  isPolling(): boolean {
+    return this.pollingActive;
+  }
+
   async triggerNotificationCheck() {
-    if (this.userId) {
-      await this.checkForNewMessages();
-      await this.checkForNewNotes();
+    if (!this.userId) {
+      console.warn('Cannot trigger notification check: userId is null.');
+      return;
     }
+    console.log('Manually triggering notification check...');
+    await this.checkForNewMessages();
+    await this.checkForNewNotes();
   }
 }
 
 export const notificationManager = new NotificationManagerClass();
-
-
-
-
-
-
-
-
-

@@ -16,7 +16,6 @@ import SendNoteScreen from '@/screens/SendNoteScreen';
 import { NearbyScreen } from '@/modules/nearby';
 import { useAuth } from '@/store/AuthContext';
 import { useAdmin } from '@/store/AdminContext';
-import NetworkDebugger from '@/components/NetworkDebugger';
 
 // Simple screens without Paper components
 const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
@@ -61,12 +60,6 @@ const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void })
               <Text style={styles.signInButtonText}>Sign In</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={styles.debugButton} 
-              onPress={() => onNavigate('networkDebug')}
-            >
-              <Text style={styles.debugButtonText}>🔧 Network Debug</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.featuresContainer}>
@@ -360,8 +353,6 @@ const AppNavigator = () => {
     case 'nearby':
       if (isAuthenticated) return <NearbyScreen userId={user?.id || ''} onNavigate={navigate} />;
       return <WelcomeScreen onNavigate={navigate} />;
-    case 'networkDebug':
-      return <NetworkDebugger />;
     default:
       return <WelcomeScreen onNavigate={navigate} />;
   }
@@ -472,20 +463,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#2563eb',
-  },
-  debugButton: {
-    backgroundColor: '#FF9500',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: 12,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  debugButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
   },
   featuresContainer: {
     flexDirection: 'row',
