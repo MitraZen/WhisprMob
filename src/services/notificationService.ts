@@ -13,6 +13,54 @@ class NotificationServiceClass implements NotificationService {
   
   constructor() {
     this.configurePushNotifications();
+    this.initializePermissions();
+  }
+
+  private async initializePermissions() {
+    try {
+      console.log('Initializing notification permissions...');
+      
+      // For Android, try multiple permission request approaches
+      if (Platform.OS === 'android') {
+        // First, try the standard request
+        try {
+          await PushNotification.requestPermissions();
+          console.log('Standard notification permissions requested');
+        } catch (error) {
+          console.warn('Standard permission request failed:', error);
+        }
+        
+        // Try alternative Android permission approach
+        try {
+          // Some Android versions need this approach
+          const { PermissionsAndroid } = require('react-native');
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+            {
+              title: 'Whispr Notifications',
+              message: 'Whispr needs notification permission to alert you about new messages and notes.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            }
+          );
+          console.log('Android notification permission result:', granted);
+        } catch (androidError) {
+          console.warn('Android permission request failed:', androidError);
+        }
+      } else {
+        // iOS approach
+        await PushNotification.requestPermissions();
+        console.log('iOS notification permissions requested');
+      }
+      
+      // Check current permission status
+      const hasPermission = await this.checkNotificationPermission();
+      console.log('Current notification permission status:', hasPermission);
+      
+    } catch (error) {
+      console.error('Error initializing notification permissions:', error);
+    }
   }
   
   private configurePushNotifications() {
@@ -30,8 +78,8 @@ class NotificationServiceClass implements NotificationService {
       // Should the initial notification be popped automatically
       popInitialNotification: true,
       
-      // Request permissions on init
-      requestPermissions: Platform.OS === 'ios',
+      // Request permissions on init for both platforms
+      requestPermissions: true,
     });
     
     // Create notification channels for Android
@@ -63,9 +111,101 @@ class NotificationServiceClass implements NotificationService {
       );
     }
   }
+
+  private async checkNotificationPermission(): Promise<boolean> {
+    try {
+      const permissions = await PushNotification.checkPermissions();
+      console.log('Notification permissions check result:', permissions);
+      
+      // Handle different permission response formats
+      if (permissions && typeof permissions === 'object') {
+        // Standard format: { alert: true/false, badge: true/false, sound: true/false }
+        if ('alert' in permissions) {
+          return permissions.alert === true;
+        }
+        // Alternative format: { notification: true/false }
+        if ('notification' in permissions) {
+          return permissions.notification === true;
+        }
+        // If permissions object exists but no known properties, assume granted
+        return true;
+      }
+      
+      // If permissions is undefined or null, try alternative approach
+      console.warn('Notification permissions check returned undefined/null - trying alternative approach');
+      
+      // For Android, try to send a test notification to check if permissions work
+      try {
+        PushNotification.localNotification({
+          channelId: 'whispr-messages',
+          title: 'Permission Test',
+          message: 'Testing notification permissions',
+          playSound: false, // Silent test
+          vibrate: false,
+          priority: 'low',
+          importance: 'low',
+        });
+        console.log('Test notification sent successfully - permissions likely granted');
+        return true;
+      } catch (testError) {
+        console.warn('Test notification failed - permissions likely not granted:', testError);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error checking notification permissions:', error);
+      // On error, assume not granted to be safe
+      return false;
+    }
+  }
   
   async showMessageNotification(title: string, message: string, buddyName: string): Promise<string> {
     try {
+      // Check if notifications are enabled
+      const hasPermission = await this.checkNotificationPermission();
+      if (!hasPermission) {
+        console.warn('Notification permission not granted - attempting to request permissions');
+        
+        // Try to request permissions
+        try {
+          await PushNotification.requestPermissions();
+          console.log('Notification permissions requested');
+        } catch (requestError) {
+          console.warn('Failed to request notification permissions:', requestError);
+        }
+        
+        // Check again after requesting
+        const newPermission = await this.checkNotificationPermission();
+        if (!newPermission) {
+          console.warn('Notification permission still not granted - attempting direct send for Android');
+          
+          // For Android, try sending notification directly (some versions work without explicit permission check)
+          if (Platform.OS === 'android') {
+            try {
+              PushNotification.localNotification({
+                channelId: 'whispr-messages',
+                title: title,
+                message: `${buddyName}: ${message}`,
+                playSound: true,
+                soundName: 'default',
+                vibrate: true,
+                vibration: 300,
+                priority: 'high',
+                importance: 'high',
+                smallIcon: 'ic_notification',
+                largeIcon: 'ic_launcher',
+              });
+              console.log('Android direct notification sent successfully');
+              return 'Message notification sent successfully (Android direct)';
+            } catch (directError) {
+              console.warn('Android direct notification failed:', directError);
+            }
+          }
+          
+          console.warn('Notification permission still not granted - skipping message notification');
+          return 'Notification permission not granted';
+        }
+      }
+
       PushNotification.localNotification({
         channelId: 'whispr-messages',
         title: title,
@@ -79,7 +219,7 @@ class NotificationServiceClass implements NotificationService {
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
       });
-      
+
       console.log('Message notification sent');
       return 'Message notification sent successfully';
     } catch (error) {
@@ -90,6 +230,52 @@ class NotificationServiceClass implements NotificationService {
   
   async showNoteNotification(title: string, content: string): Promise<string> {
     try {
+      // Check if notifications are enabled
+      const hasPermission = await this.checkNotificationPermission();
+      if (!hasPermission) {
+        console.warn('Notification permission not granted - attempting to request permissions');
+        
+        // Try to request permissions
+        try {
+          await PushNotification.requestPermissions();
+          console.log('Notification permissions requested');
+        } catch (requestError) {
+          console.warn('Failed to request notification permissions:', requestError);
+        }
+        
+        // Check again after requesting
+        const newPermission = await this.checkNotificationPermission();
+        if (!newPermission) {
+          console.warn('Notification permission still not granted - attempting direct send for Android');
+          
+          // For Android, try sending notification directly (some versions work without explicit permission check)
+          if (Platform.OS === 'android') {
+            try {
+              PushNotification.localNotification({
+                channelId: 'whispr-notes',
+                title: title,
+                message: content,
+                playSound: true,
+                soundName: 'default',
+                vibrate: true,
+                vibration: 300,
+                priority: 'high',
+                importance: 'high',
+                smallIcon: 'ic_notification',
+                largeIcon: 'ic_launcher',
+              });
+              console.log('Android direct note notification sent successfully');
+              return 'Note notification sent successfully (Android direct)';
+            } catch (directError) {
+              console.warn('Android direct note notification failed:', directError);
+            }
+          }
+          
+          console.warn('Notification permission still not granted - skipping note notification');
+          return 'Notification permission not granted';
+        }
+      }
+
       PushNotification.localNotification({
         channelId: 'whispr-notes',
         title: title,
@@ -103,7 +289,7 @@ class NotificationServiceClass implements NotificationService {
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
       });
-      
+
       console.log('Note notification sent');
       return 'Note notification sent successfully';
     } catch (error) {

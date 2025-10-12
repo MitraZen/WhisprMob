@@ -327,7 +327,7 @@ const AppNavigator = () => {
     case 'notes':
       return <WhisprNotesScreen onNavigate={navigate} user={user} />;
     case 'buddies':
-      if (isAuthenticated) return <BuddiesScreen onNavigate={navigate} user={user} />;
+      if (isAuthenticated) return <BuddiesScreen onNavigate={navigate} user={user} refreshTrigger={currentParams?.refreshTrigger} />;
       return <WelcomeScreen onNavigate={navigate} />;
     case 'chat':
       if (isAuthenticated) return (

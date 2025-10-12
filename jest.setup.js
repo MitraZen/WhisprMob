@@ -7,8 +7,8 @@ const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
-// Suppress console output during tests unless explicitly enabled
-if (!process.env.DEBUG_TESTS) {
+// Suppress console output during tests unless explicitly enabled or in development
+if (!process.env.DEBUG_TESTS && process.env.NODE_ENV !== 'development') {
   console.log = jest.fn();
   console.error = jest.fn();
   console.warn = jest.fn();

@@ -23,8 +23,9 @@ class RealtimeService {
       console.log('Realtime service initialized (polling mode)');
     } catch (error) {
       console.error('Failed to initialize realtime service:', error);
-      // Don't throw the error, just log it
-      // The app should continue working without realtime updates
+      // Fallback to polling only
+      this.isConnected = false;
+      console.log('Realtime service failed - using polling only');
     }
   }
 

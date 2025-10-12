@@ -15,6 +15,10 @@ export const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKe
       'X-Client-Info': 'whispr-mobile-app',
     },
   },
+  realtime: {
+    // Disable realtime to avoid protocol issues
+    enabled: false,
+  },
 });
 
 // Database table names (should match your website)

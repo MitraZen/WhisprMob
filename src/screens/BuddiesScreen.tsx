@@ -9,9 +9,10 @@ import { CachedBuddiesService, Buddy } from '@/services/cachedBuddiesService';
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
   user: any;
+  refreshTrigger?: number; // Add refresh trigger parameter
 }
 
-export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }) => {
+export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, refreshTrigger }) => {
   const { theme } = useTheme();
   const [buddies, setBuddies] = useState<Buddy[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,6 +58,14 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user }
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
   }, [user?.id]);
+
+  // Listen for refresh trigger from notes screen
+  useEffect(() => {
+    if (refreshTrigger && user?.id) {
+      console.log('🎧 Refresh trigger received, refreshing buddies immediately');
+      loadBuddies(false); // Silent refresh
+    }
+  }, [refreshTrigger, user?.id]);
 
   // Calculate message alerts whenever buddies change
   useEffect(() => {
