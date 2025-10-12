@@ -69,25 +69,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     checkAuthStatus();
   }, []);
 
-  // AppState listener for notification services
+  // AppState listener for hybrid notification services - Phase 2
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
-      console.log('AppState changed to:', nextAppState);
+      console.log('📱 AppState changed to:', nextAppState);
       
       if (nextAppState === 'active' && state.isAuthenticated && state.user) {
-        console.log('App became active - initializing notification services for user:', state.user.id);
+        console.log('☀️ App became active - optimizing hybrid notification services');
+        
         // Update online status when app becomes active
         await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, true);
         await BuddiesService.syncUserOnlineStatus(state.user.id, true);
-        await initializeNotificationServicesSafely(state.user.id);
+        
+        // Initialize or optimize notification services
+        try {
+          const { notificationManager } = await import('@/services/notificationManager');
+          const status = notificationManager.getServiceStatus();
+          
+          if (status.realtime || status.polling) {
+            // Service already running, optimize for foreground
+            await notificationManager.optimizeForForeground();
+          } else {
+            // Service not running, initialize
+            await initializeNotificationServicesSafely(state.user.id);
+          }
+        } catch (error) {
+          console.error('❌ Error optimizing notification services for foreground:', error);
+        }
+        
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
-        console.log('App went to background - stopping notification services');
+        console.log('🌙 App went to background - optimizing for background mode');
+        
         // Update online status when app goes to background
         if (state.isAuthenticated && state.user) {
           await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
           await BuddiesService.syncUserOnlineStatus(state.user.id, false);
         }
-        await stopNotificationServicesSafely();
+        
+        // Optimize notification services for background
+        try {
+          const { notificationManager } = await import('@/services/notificationManager');
+          const status = notificationManager.getServiceStatus();
+          
+          if (status.realtime || status.polling) {
+            // Service running, optimize for background
+            await notificationManager.optimizeForBackground();
+          }
+        } catch (error) {
+          console.error('❌ Error optimizing notification services for background:', error);
+        }
       }
     };
 
@@ -98,44 +128,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [state.isAuthenticated, state.user]);
 
-  // Safe notification service initialization
+  // Safe notification service initialization - Phase 2 Hybrid System
   const initializeNotificationServicesSafely = async (userId: string) => {
     try {
-      console.log('Safely initializing notification services for user:', userId);
+      console.log('🚀 AuthContext - Initializing hybrid notification services for user:', userId);
       
       // Import services dynamically to avoid circular dependencies
-      const { realtimeService } = await import('@/services/realtimeService');
       const { notificationManager } = await import('@/services/notificationManager');
       
-      // Initialize realtime service for live notifications
-      await realtimeService.initialize(userId);
+      // Start hybrid notification service (realtime + polling fallback)
+      await notificationManager.startNotificationService(userId);
       
-      // Start notification polling as backup
-      notificationManager.startPolling(userId);
-      
-      console.log('Notification services initialized successfully');
+      console.log('✅ AuthContext - Hybrid notification services initialized successfully');
     } catch (error) {
-      console.error('Error initializing notification services:', error);
+      console.error('❌ AuthContext - Error initializing hybrid notification services:', error);
       // Don't throw - let the app continue without notifications
     }
   };
 
-  // Safe notification service cleanup
+  // Safe notification service cleanup - Phase 2 Hybrid System
   const stopNotificationServicesSafely = async () => {
     try {
-      console.log('Safely stopping notification services');
+      console.log('🛑 AuthContext - Stopping hybrid notification services');
       
       // Import services dynamically
       const { notificationManager } = await import('@/services/notificationManager');
-      const { realtimeService } = await import('@/services/realtimeService');
       
-      // Stop services
-      notificationManager.stopPolling();
-      realtimeService.disconnect();
+      // Stop hybrid notification service
+      await notificationManager.stopNotificationService();
       
-      console.log('Notification services stopped successfully');
+      console.log('✅ AuthContext - Hybrid notification services stopped successfully');
     } catch (error) {
-      console.error('Error stopping notification services:', error);
+      console.error('❌ AuthContext - Error stopping hybrid notification services:', error);
     }
   };
 
