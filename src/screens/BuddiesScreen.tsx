@@ -37,19 +37,12 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
     loadBuddies(true);
   }, [user?.id]);
 
-  // Auto-refresh buddies every 30 seconds (reduced frequency for better performance)
+  // Smart refresh strategy - only refresh when app becomes active or user manually refreshes
   useEffect(() => {
     if (!user?.id) return;
-    const interval = setInterval(() => {
-      loadBuddies(false);
-    }, 30000); // Increased from 5 seconds to 30 seconds for better performance
-    return () => clearInterval(interval);
-  }, [user?.id]);
-
-  // Refresh buddies when app comes back to foreground (to update unread counts)
-  useEffect(() => {
+    
     const handleAppStateChange = (nextAppState: string) => {
-      if (nextAppState === 'active' && user?.id) {
+      if (nextAppState === 'active') {
         console.log('App became active, refreshing buddies to update unread counts');
         loadBuddies(false);
       }
