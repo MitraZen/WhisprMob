@@ -11,12 +11,14 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Alert,
+  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
 import { moodConfig, spacing, borderRadius } from '@/utils/themes';
 import { BuddiesService } from '@/services/buddiesService';
 import { MoodType } from '@/types';
+import AIService, { AIEnhancementResult } from '@/services/aiService';
 
 interface SendNoteScreenProps {
   onNavigate: (screen: string) => void;
@@ -29,6 +31,51 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, u
   const [noteContent, setNoteContent] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  // AI Enhancement states
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<AIEnhancementResult | null>(null);
+  const [enhancementType, setEnhancementType] = useState<'improve' | 'shorten' | 'expand' | 'make_mysterious'>('improve');
+
+  // AI Enhancement functions
+  const handleAIEnhancement = async () => {
+    if (!noteContent.trim()) {
+      Alert.alert('Empty Message', 'Please enter a message to enhance.');
+      return;
+    }
+
+    if (!selectedMood) {
+      Alert.alert('No Mood Selected', 'Please select a mood for AI enhancement.');
+      return;
+    }
+
+    setAiLoading(true);
+    setShowAIModal(true);
+    setAiResult(null);
+
+    try {
+      const result = await AIService.enhanceText({
+        mood: selectedMood,
+        originalText: noteContent,
+        enhancementType: enhancementType
+      });
+
+      setAiResult(result);
+    } catch (error) {
+      console.error('AI Enhancement Error:', error);
+      Alert.alert('AI Error', 'Failed to enhance your message. Please try again.');
+      setShowAIModal(false);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAIEnhancement = (enhancedText: string) => {
+    setNoteContent(enhancedText);
+    setShowAIModal(false);
+    setAiResult(null);
+  };
 
   const handleSendNote = async () => {
     if (!noteContent.trim()) {
@@ -150,6 +197,22 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, u
             <Text style={styles.characterCount}>
               {noteContent.length}/500 characters
             </Text>
+            
+            {/* AI Enhancement Button */}
+            <TouchableOpacity
+              style={[
+                styles.aiEnhanceButton,
+                !noteContent.trim() && styles.aiEnhanceButtonDisabled
+              ]}
+              onPress={handleAIEnhancement}
+              disabled={aiLoading || !noteContent.trim()}
+            >
+              <Icon name="sparkles" size={16} color={theme.colors.primary} />
+              <Text style={styles.aiEnhanceButtonText}>
+                {aiLoading ? 'Enhancing...' : !noteContent.trim() ? '✨ Type a message to enhance' : '✨ Enhance with AI'}
+              </Text>
+              {aiLoading && <ActivityIndicator size="small" color={theme.colors.primary} />}
+            </TouchableOpacity>
           </View>
 
           {/* Mood Selection Section */}
@@ -213,6 +276,130 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, u
 
         </View>
       </ScrollView>
+
+      {/* AI Enhancement Modal */}
+      <Modal
+        visible={showAIModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowAIModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Icon name="sparkles" size={24} color={theme.colors.primary} />
+              <Text style={styles.modalTitle}>AI Enhancement</Text>
+              <TouchableOpacity 
+                style={styles.modalCloseButton}
+                onPress={() => setShowAIModal(false)}
+              >
+                <Icon name="close" size={24} color={theme.colors.onSurface} />
+              </TouchableOpacity>
+            </View>
+
+            {aiLoading ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text style={styles.modalLoadingText}>AI is enhancing your message...</Text>
+              </View>
+            ) : aiResult ? (
+              <ScrollView style={styles.modalContent}>
+                {/* Enhancement Type Selector */}
+                <View style={styles.enhancementTypeSection}>
+                  <Text style={styles.modalSectionTitle}>Enhancement Type</Text>
+                  <View style={styles.enhancementTypeButtons}>
+                    {[
+                      { key: 'improve', label: 'Improve', icon: 'trending-up' },
+                      { key: 'shorten', label: 'Shorten', icon: 'contract' },
+                      { key: 'expand', label: 'Expand', icon: 'expand' },
+                      { key: 'make_mysterious', label: 'Mysterious', icon: 'eye-off' }
+                    ].map((type) => (
+                      <TouchableOpacity
+                        key={type.key}
+                        style={[
+                          styles.enhancementTypeButton,
+                          enhancementType === type.key && styles.enhancementTypeButtonSelected
+                        ]}
+                        onPress={() => setEnhancementType(type.key as any)}
+                      >
+                        <Icon 
+                          name={type.icon} 
+                          size={16} 
+                          color={enhancementType === type.key ? theme.colors.onPrimary : theme.colors.onSurface} 
+                        />
+                        <Text style={[
+                          styles.enhancementTypeButtonText,
+                          enhancementType === type.key && styles.enhancementTypeButtonTextSelected
+                        ]}>
+                          {type.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Enhanced Text */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Enhanced Message</Text>
+                  <View style={styles.enhancedTextContainer}>
+                    <Text style={styles.enhancedText}>{aiResult.enhancedText}</Text>
+                    <TouchableOpacity
+                      style={styles.applyButton}
+                      onPress={() => applyAIEnhancement(aiResult.enhancedText)}
+                    >
+                      <Icon name="checkmark" size={16} color={theme.colors.onPrimary} />
+                      <Text style={styles.applyButtonText}>Use This</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Alternative Suggestions */}
+                {aiResult.suggestions.length > 0 && (
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Alternative Suggestions</Text>
+                    {aiResult.suggestions.map((suggestion, index) => (
+                      <View key={index} style={styles.suggestionContainer}>
+                        <Text style={styles.suggestionText}>{suggestion}</Text>
+                        <TouchableOpacity
+                          style={styles.suggestionButton}
+                          onPress={() => applyAIEnhancement(suggestion)}
+                        >
+                          <Icon name="checkmark" size={14} color={theme.colors.primary} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Confidence Score */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>AI Confidence</Text>
+                  <View style={styles.confidenceContainer}>
+                    <View style={styles.confidenceBar}>
+                      <View 
+                        style={[
+                          styles.confidenceFill, 
+                          { width: `${(aiResult.confidence / 10) * 100}%` }
+                        ]} 
+                      />
+                    </View>
+                    <Text style={styles.confidenceText}>{aiResult.confidence}/10</Text>
+                  </View>
+                </View>
+              </ScrollView>
+            ) : null}
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowAIModal(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -353,6 +540,203 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   sendButtonTextDisabled: {
     color: theme.colors.onSurfaceVariant,
+  },
+  // AI Enhancement Styles
+  aiEnhanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderStyle: 'dashed',
+  },
+  aiEnhanceButtonText: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.primary,
+    fontWeight: '600',
+    marginLeft: spacing.xs,
+  },
+  aiEnhanceButtonDisabled: {
+    opacity: 0.5,
+    borderColor: theme.colors.onSurfaceVariant,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '80%',
+    ...theme.shadows.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  modalTitle: {
+    ...theme.typography.headlineSmall,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: spacing.md,
+  },
+  modalCloseButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  modalContent: {
+    padding: spacing.lg,
+    maxHeight: 400,
+  },
+  modalLoading: {
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  modalLoadingText: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onSurfaceVariant,
+    marginTop: spacing.md,
+  },
+  modalSection: {
+    marginBottom: spacing.lg,
+  },
+  modalSectionTitle: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+    marginBottom: spacing.md,
+  },
+  enhancementTypeSection: {
+    marginBottom: spacing.lg,
+  },
+  enhancementTypeButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  enhancementTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  enhancementTypeButtonSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  enhancementTypeButtonText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurface,
+    marginLeft: spacing.xs,
+  },
+  enhancementTypeButtonTextSelected: {
+    color: theme.colors.onPrimary,
+  },
+  enhancedTextContainer: {
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  enhancedText: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onSurface,
+    marginBottom: spacing.md,
+    lineHeight: 22,
+  },
+  applyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primary,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+  },
+  applyButtonText: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onPrimary,
+    fontWeight: '600',
+    marginLeft: spacing.xs,
+  },
+  suggestionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  suggestionText: {
+    ...theme.typography.bodyMedium,
+    color: theme.colors.onSurface,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  suggestionButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  confidenceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  confidenceBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.full,
+    marginRight: spacing.md,
+  },
+  confidenceFill: {
+    height: '100%',
+    backgroundColor: theme.colors.primary,
+    borderRadius: borderRadius.full,
+  },
+  confidenceText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: 'bold',
+  },
+  modalFooter: {
+    padding: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  modalCancelButton: {
+    alignItems: 'center',
+    padding: spacing.md,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
+  },
+  modalCancelButtonText: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '600',
   },
 });
 

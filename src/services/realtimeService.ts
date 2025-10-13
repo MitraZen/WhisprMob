@@ -165,6 +165,12 @@ class RealtimeService {
         return;
       }
       
+      // Check if this message was sent by the current user (prevent self-notifications)
+      if (payload.new.sender_id === this.userId) {
+        console.log('🔔 Message sent by current user, ignoring self-notification:', payload.new.sender_id);
+        return;
+      }
+      
       // Check if this message is for the current user by verifying buddy relationship
       const isForCurrentUser = await this.isMessageForCurrentUser(payload.new.buddy_id);
       if (!isForCurrentUser) {
@@ -193,6 +199,19 @@ class RealtimeService {
 
   private async handleNewNote(payload: any): Promise<void> {
     try {
+      // Dispatch event to notify UI components
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        const event = new CustomEvent('notes-updated', {
+          detail: { 
+            type: 'notes-updated',
+            newNotesCount: 1,
+            userId: this.userId,
+            source: 'realtime'
+          }
+        });
+        window.dispatchEvent(event);
+      }
+      
       // Send notification
       await notificationService.showNoteNotification(
         'New Whispr Note',

@@ -301,6 +301,19 @@ class NotificationManagerClass implements NotificationManager {
       
       if (newNotes.length > 0) {
         console.log(`📝 Polling: Found ${newNotes.length} new notes`);
+        
+        // Dispatch event to notify UI components
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          const event = new CustomEvent('notes-updated', {
+            detail: { 
+              type: 'notes-updated',
+              newNotesCount: newNotes.length,
+              userId: this.userId 
+            }
+          });
+          window.dispatchEvent(event);
+        }
+        
         for (const note of newNotes.slice(0, 10)) {
           await notificationService.showNoteNotification(
             'New Whispr Note',

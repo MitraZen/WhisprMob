@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, BackHandler
+  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, BackHandler, RefreshControl, AppState
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
@@ -19,12 +19,14 @@ interface WhisprNotesScreenProps {
 export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate, user }) => {
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
   const [noteAlerts, setNoteAlerts] = useState<number>(0);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const { enableAdminMode } = useAdmin();
 
   // Load notes
@@ -32,10 +34,47 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     if (user?.id) loadNotes();
   }, [user?.id]);
 
+  // Listen for real-time updates from notification manager
   useEffect(() => {
     if (!user?.id) return;
-    const interval = setInterval(loadNotes, 15000);
-    return () => clearInterval(interval);
+
+    const handleRealtimeUpdate = () => {
+      console.log('📱 Real-time update received, refreshing notes');
+      loadNotes(false);
+    };
+
+    // Listen for custom events from notification manager
+    const eventListener = (event: any) => {
+      if (event.detail?.type === 'notes-updated') {
+        handleRealtimeUpdate();
+      }
+    };
+
+    // Add event listener for real-time updates
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('notes-updated', eventListener);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('notes-updated', eventListener);
+      }
+    };
+  }, [user?.id]);
+
+  // Smart refresh strategy - only refresh when app becomes active
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        console.log('App became active, refreshing notes');
+        loadNotes();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
   }, [user?.id]);
 
   // Handle Android back button - prevent going back to login screen
@@ -93,9 +132,15 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     calculateNoteAlerts();
   }, [notes]);
 
-  const loadNotes = async () => {
+  const loadNotes = async (isManualRefresh = false) => {
     if (!user?.id) return;
-    setIsLoading(true);
+    
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    
     setError(null);
     try {
       const buddies = await BuddiesService.getBuddies(user.id);
@@ -105,11 +150,32 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         ? await BuddiesService.getNewUserNotes(user.id, 5)
         : await BuddiesService.getWhisprNotes(user.id);
       setNotes(notesData);
+      setLastUpdated(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notes');
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    await loadNotes(true);
+  };
+
+  const formatLastUpdated = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   };
 
 
@@ -226,7 +292,14 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         >
           <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Whispr Notes</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Whispr Notes</Text>
+          {lastUpdated && (
+            <Text style={styles.lastUpdatedText}>
+              Updated {formatLastUpdated(lastUpdated)}
+            </Text>
+          )}
+        </View>
         <TouchableOpacity 
           style={styles.alertsButton}
           onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
@@ -320,7 +393,20 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       </View>
 
       {/* Notes List */}
-      <ScrollView style={styles.notesContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.notesContainer} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+            title="Pull to refresh"
+            titleColor={theme.colors.text}
+          />
+        }
+      >
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -441,6 +527,16 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineMedium,
     color: theme.colors.onSurface,
     fontWeight: 'bold',
+  },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  lastUpdatedText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+    marginTop: 2,
+    fontSize: 12,
   },
   alertsButton: {
     position: 'relative',
