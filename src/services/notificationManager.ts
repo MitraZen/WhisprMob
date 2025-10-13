@@ -38,6 +38,7 @@ class NotificationManagerClass implements NotificationManager {
   };
   private lastInitializationAttempt = 0;
   private initializationCooldown = 30000; // 30 seconds cooldown between attempts
+  private isStopping = false; // Add flag to prevent infinite loops
 
       async startNotificationService(userId: string): Promise<void> {
         this.userId = userId;
@@ -343,7 +344,17 @@ class NotificationManagerClass implements NotificationManager {
 
   stopPolling() {
     console.log('🛑 Legacy stopPolling called - using hybrid service');
-    this.stopNotificationService();
+    
+    // Prevent infinite loops by checking if already stopping
+    if (this.isStopping) {
+      console.log('🛑 Already stopping - preventing infinite loop');
+      return;
+    }
+    
+    this.isStopping = true;
+    this.stopNotificationService().finally(() => {
+      this.isStopping = false;
+    });
   }
 
   isPolling(): boolean {

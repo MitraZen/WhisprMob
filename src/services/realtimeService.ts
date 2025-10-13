@@ -83,21 +83,27 @@ class RealtimeService {
       throw new Error('Supabase client is not available');
     }
     
-    const channel = supabase
-      .channel(`messages-${this.userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'buddy_messages',
-          filter: `receiver_id=eq.${this.userId}`,
-        },
-        async (payload) => {
-          console.log('📨 New message received via realtime:', payload);
-          await this.handleNewMessage(payload);
-        }
-      )
+        const channel = supabase
+          .channel(`messages-${this.userId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'buddy_messages',
+            },
+            async (payload) => {
+              console.log('📨 New message received via realtime:', payload);
+              console.log('📨 Payload details:', {
+                hasNew: !!payload.new,
+                senderId: payload.new?.sender_id,
+                buddyId: payload.new?.buddy_id,
+                content: payload.new?.content,
+                userId: this.userId
+              });
+              await this.handleNewMessage(payload);
+            }
+          )
       .subscribe((status) => {
         console.log('📨 Message subscription status:', status);
         if (status === 'SUBSCRIBED') {
@@ -152,10 +158,27 @@ class RealtimeService {
 
   private async handleNewMessage(payload: any): Promise<void> {
     try {
+      console.log('🔔 handleNewMessage called with payload:', payload);
+      
+      if (!payload || !payload.new) {
+        console.warn('🔔 Invalid payload structure:', payload);
+        return;
+      }
+      
+      // Check if this message is for the current user by verifying buddy relationship
+      const isForCurrentUser = await this.isMessageForCurrentUser(payload.new.buddy_id);
+      if (!isForCurrentUser) {
+        console.log('🔔 Message not for current user, ignoring:', payload.new.buddy_id);
+        return;
+      }
+      
       // Get buddy information
+      console.log('🔔 Getting buddy info for sender:', payload.new.sender_id);
       const buddyInfo = await this.getBuddyInfo(payload.new.sender_id);
+      console.log('🔔 Buddy info retrieved:', buddyInfo);
       
       // Send notification
+      console.log('🔔 Sending notification...');
       await notificationService.showMessageNotification(
         'New Message',
         payload.new.content,
@@ -179,6 +202,31 @@ class RealtimeService {
       console.log('✅ Note notification sent');
     } catch (error) {
       console.error('❌ Error processing note notification:', error);
+    }
+  }
+
+  private async isMessageForCurrentUser(buddyId: string): Promise<boolean> {
+    try {
+      if (!supabase || !this.userId) {
+        return false;
+      }
+      
+      const { data, error } = await supabase
+        .from('buddies')
+        .select('id')
+        .eq('id', buddyId)
+        .eq('user_id', this.userId)
+        .single();
+        
+      if (error) {
+        console.warn('Error checking buddy relationship:', error);
+        return false;
+      }
+      
+      return !!data;
+    } catch (error) {
+      console.error('Error checking if message is for current user:', error);
+      return false;
     }
   }
 

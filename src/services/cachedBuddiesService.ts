@@ -349,7 +349,16 @@ export class CachedBuddiesService {
     QueryCache.invalidateMessages(buddyId);
     QueryCache.invalidateBuddies(userId);
     
-    return result;
+    // If the result contains buddy_user_id, also invalidate that user's cache
+    if (result && typeof result === 'object' && 'buddy_user_id' in result) {
+      const buddyUserId = (result as any).buddy_user_id;
+      if (buddyUserId) {
+        QueryCache.invalidateBuddies(buddyUserId);
+        console.log('Cache invalidated for both users:', userId, 'and', buddyUserId);
+      }
+    }
+    
+    return result.success || false;
   }
 
   /**

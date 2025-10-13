@@ -1377,7 +1377,7 @@ export class BuddiesService {
    * Delete a buddy relationship (remove from buddies list)
    * Uses database function to handle foreign key constraints properly
    */
-  static async deleteBuddy(buddyId: string, userId: string): Promise<boolean> {
+  static async deleteBuddy(buddyId: string, userId: string): Promise<any> {
     try {
       console.log('Deleting buddy relationship:', buddyId);
       
@@ -1391,7 +1391,7 @@ export class BuddiesService {
       
       if (result && result.success) {
         console.log(`Successfully deleted buddy and ${result.deleted_messages} messages`);
-        return true;
+        return result; // Return the full result object including buddy_user_id
       } else {
         throw new Error(result?.message || 'Failed to delete buddy');
       }

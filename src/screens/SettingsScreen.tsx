@@ -7,6 +7,8 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { notificationService } from '@/services/notificationService';
 import PermissionService from '../services/permissionService';
 import PermissionInitializer from '../services/permissionInitializer';
+import { testRealtimeSubscription, testNotificationDirectly } from '@/utils/realtimeDebug';
+import { AdminService } from '@/services/adminService'; // Import admin service
 
 interface SettingsScreenProps {
   onNavigate: (screen: string) => void;
@@ -20,6 +22,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
+  const [isAdmin, setIsAdmin] = useState(false); // Add admin state
   
   const styles = createStyles(theme);
 
@@ -38,9 +41,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       }),
     ]).start();
 
-    // Load actual permission status
-    loadPermissionStatus();
-  }, []);
+        // Load actual permission status
+        loadPermissionStatus();
+        
+        // Check if user is admin
+        checkAdminStatus();
+      }, []);
 
   const loadPermissionStatus = async () => {
     try {
@@ -51,6 +57,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       setLocationEnabled(currentPermissions.location);
     } catch (error) {
       console.error('Error loading permissions:', error);
+    }
+  };
+
+  const checkAdminStatus = async () => {
+    try {
+      if (user?.id) {
+        const adminStatus = await AdminService.isUserAdmin(user.id);
+        setIsAdmin(adminStatus);
+        console.log('SettingsScreen: User admin status:', adminStatus);
+      }
+    } catch (error) {
+      console.error('Failed to check admin status:', error);
+      setIsAdmin(false);
     }
   };
 
@@ -111,7 +130,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     Alert.alert('Export Data', 'Your data export will be sent to your email address.');
   };
 
-  const settingsOptions = [
+  const handleTestNotification = async () => {
+    try {
+      console.log('🧪 Testing notification directly...');
+      const result = await testNotificationDirectly();
+      Alert.alert('Test Result', `Notification test: ${result}`);
+    } catch (error) {
+      console.error('🧪 Notification test failed:', error);
+      Alert.alert('Test Failed', `Error: ${error.message}`);
+    }
+  };
+
+  const handleTestRealtime = async () => {
+    try {
+      console.log('🧪 Testing realtime subscription...');
+      const result = await testRealtimeSubscription(user.id);
+      Alert.alert('Test Result', `Realtime test: ${JSON.stringify(result)}`);
+    } catch (error) {
+      console.error('🧪 Realtime test failed:', error);
+      Alert.alert('Test Failed', `Error: ${error.message}`);
+    }
+  };
+
+  // Base settings options (available to all users)
+  const baseSettingsOptions = [
     {
       id: 'notifications',
       title: 'Notification Settings',
@@ -193,6 +235,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       color: '#16a34a'
     }
   ];
+
+  // Admin-only debug options
+  const adminDebugOptions = [
+    {
+      id: 'debug-notification',
+      title: '🧪 Test Notification',
+      subtitle: 'Test notification system directly',
+      icon: 'bug-outline',
+      onPress: handleTestNotification,
+      color: '#dc2626'
+    },
+    {
+      id: 'debug-realtime',
+      title: '🧪 Test Realtime',
+      subtitle: 'Test realtime subscription',
+      icon: 'bug-outline',
+      onPress: handleTestRealtime,
+      color: '#dc2626'
+    }
+  ];
+
+  // Combine settings options based on admin status
+  const settingsOptions = isAdmin 
+    ? [...baseSettingsOptions, ...adminDebugOptions]
+    : baseSettingsOptions;
 
   return (
     <Animated.View 
