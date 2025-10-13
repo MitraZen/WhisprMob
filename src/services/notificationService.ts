@@ -132,25 +132,11 @@ class NotificationServiceClass implements NotificationService {
       }
       
       // If permissions is undefined or null, try alternative approach
-      console.warn('Notification permissions check returned undefined/null - trying alternative approach');
+      console.warn('Notification permissions check returned undefined/null - assuming permissions granted for Android');
       
-      // For Android, try to send a test notification to check if permissions work
-      try {
-        PushNotification.localNotification({
-          channelId: 'whispr-messages',
-          title: 'Permission Test',
-          message: 'Testing notification permissions',
-          playSound: false, // Silent test
-          vibrate: false,
-          priority: 'low',
-          importance: 'low',
-        });
-        console.log('Test notification sent successfully - permissions likely granted');
-        return true;
-      } catch (testError) {
-        console.warn('Test notification failed - permissions likely not granted:', testError);
-        return false;
-      }
+      // For Android, assume permissions are granted if checkPermissions returns undefined
+      // This is a common Android behavior where permissions work but aren't explicitly reported
+      return true;
     } catch (error) {
       console.error('Error checking notification permissions:', error);
       // On error, assume not granted to be safe
@@ -160,8 +146,12 @@ class NotificationServiceClass implements NotificationService {
   
   async showMessageNotification(title: string, message: string, buddyName: string): Promise<string> {
     try {
+      console.log('🔔 showMessageNotification called:', { title, message, buddyName });
+      
       // Check if notifications are enabled
       const hasPermission = await this.checkNotificationPermission();
+      console.log('🔔 Notification permission status:', hasPermission);
+      
       if (!hasPermission) {
         console.warn('Notification permission not granted - attempting to request permissions');
         

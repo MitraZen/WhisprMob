@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Alert, Platform } from 'react-native';
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { BuddiesService } from '@/services/buddiesService';
+import { notificationService } from '@/services/notificationService';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -64,6 +65,48 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const [isProfileComplete, setIsProfileComplete] = React.useState<boolean | undefined>(undefined);
+
+  // Check and prompt for notification permissions
+  const checkNotificationPermissions = async () => {
+    try {
+      const hasPermission = await notificationService.checkNotificationPermission();
+      
+      if (!hasPermission) {
+        console.log('🔔 Notification permissions not granted - showing prompt');
+        
+        Alert.alert(
+          'Enable Notifications',
+          'Whispr needs notification permission to alert you about new messages and notes. Would you like to enable notifications?',
+          [
+            {
+              text: 'Not Now',
+              style: 'cancel',
+              onPress: () => {
+                console.log('User declined notification permissions');
+              }
+            },
+            {
+              text: 'Enable',
+              onPress: async () => {
+                try {
+                  console.log('User accepted notification permissions - requesting...');
+                  await notificationService.testNotification();
+                  console.log('Notification permission request completed');
+                } catch (error) {
+                  console.error('Error requesting notification permissions:', error);
+                }
+              }
+            }
+          ],
+          { cancelable: true }
+        );
+      } else {
+        console.log('🔔 Notification permissions already granted');
+      }
+    } catch (error) {
+      console.error('Error checking notification permissions:', error);
+    }
+  };
 
   useEffect(() => {
     checkAuthStatus();
@@ -186,6 +229,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           // Initialize notification services for existing user
           await initializeNotificationServicesSafely(dbUser.id);
+          
+          // Check notification permissions and prompt if needed
+          await checkNotificationPermissions();
         } else {
           // User no longer exists in database, clear local storage
           await StorageService.removeItem('user');
@@ -224,6 +270,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Initialize notification services after successful login
       await initializeNotificationServicesSafely(newUser.id);
       
+      // Check notification permissions and prompt if needed
+      await checkNotificationPermissions();
+      
       console.log('User logged in successfully with ID:', newUser.id);
     } catch (error) {
       console.error('Login error:', error);
@@ -242,6 +291,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Initialize notification services after setting authenticated user
       await initializeNotificationServicesSafely(user.id);
+      
+      // Check notification permissions and prompt if needed
+      await checkNotificationPermissions();
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
     }
