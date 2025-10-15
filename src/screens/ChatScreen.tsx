@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { CachedBuddiesService, BuddyMessage } from '@/services/cachedBuddiesService';
-import { UserProfileView } from '@/components/UserProfileView';
+import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -575,9 +575,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
         </View>
       </View>
       
-      {/* User Profile View Modal */}
+      {/* Enhanced Buddy Profile View Modal */}
       {showProfileView && (
-        <UserProfileView
+        <EnhancedBuddyProfileView
           visible={showProfileView}
           onClose={() => setShowProfileView(false)}
           userId={buddy.buddyUserId || buddy.id}

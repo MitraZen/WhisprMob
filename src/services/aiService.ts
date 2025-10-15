@@ -1,7 +1,7 @@
 import { MoodType } from '@/types';
 
 // OpenAI API configuration
-const OPENAI_API_KEY = 'your-api-key-here'; // Replace with your actual API key
+const OPENAI_API_KEY: string = 'your-api-key-here'; // Replace with your actual API key
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
 export interface AIEnhancementOptions {
@@ -41,6 +41,10 @@ class AIService {
       
       // Create mood-specific prompts
       const moodPrompts = {
+        happy: "Make this message joyful, positive, and uplifting while keeping it anonymous and mysterious.",
+        sad: "Make this message empathetic, comforting, and understanding while maintaining anonymity.",
+        anxious: "Make this message calming, reassuring, and supportive while maintaining anonymity.",
+        angry: "Make this message more constructive, channeling frustration into something meaningful while maintaining anonymity.",
         joyful: "Make this message more joyful, uplifting, and positive while keeping it anonymous and mysterious.",
         reflective: "Make this message more thoughtful, introspective, and contemplative while maintaining anonymity.",
         excited: "Make this message more energetic, enthusiastic, and exciting while keeping it mysterious.",
@@ -50,7 +54,8 @@ class AIService {
         hopeful: "Make this message more optimistic, inspiring, and hopeful while keeping it mysterious.",
         playful: "Make this message more fun, lighthearted, and playful while maintaining its anonymous nature.",
         nostalgic: "Make this message more wistful, sentimental, and nostalgic while keeping it mysterious.",
-        determined: "Make this message more focused, resolute, and determined while maintaining anonymity."
+        determined: "Make this message more focused, resolute, and determined while maintaining anonymity.",
+        lonely: "Make this message more connecting, understanding, and supportive while maintaining anonymity."
       };
 
       const enhancementPrompts = {
@@ -146,6 +151,10 @@ Format your response as JSON:
       }
 
       const moodStarters = {
+        happy: "Generate 3 joyful, uplifting conversation starters for anonymous messaging",
+        sad: "Generate 3 empathetic, comforting conversation starters for anonymous messaging",
+        anxious: "Generate 3 calming, reassuring conversation starters for anonymous messaging",
+        angry: "Generate 3 constructive, channeling frustration conversation starters for anonymous messaging",
         joyful: "Generate 3 joyful, uplifting conversation starters for anonymous messaging",
         reflective: "Generate 3 thoughtful, introspective conversation starters for anonymous messaging",
         excited: "Generate 3 energetic, exciting conversation starters for anonymous messaging",
@@ -155,7 +164,8 @@ Format your response as JSON:
         hopeful: "Generate 3 optimistic, inspiring conversation starters for anonymous messaging",
         playful: "Generate 3 fun, lighthearted conversation starters for anonymous messaging",
         nostalgic: "Generate 3 wistful, sentimental conversation starters for anonymous messaging",
-        determined: "Generate 3 focused, determined conversation starters for anonymous messaging"
+        determined: "Generate 3 focused, determined conversation starters for anonymous messaging",
+        lonely: "Generate 3 connecting, supportive conversation starters for anonymous messaging"
       };
 
       const prompt = `${moodStarters[mood] || moodStarters.reflective}. 
@@ -229,6 +239,10 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
    */
   private getMockConversationStarters(mood: MoodType): string[] {
     const mockStarters = {
+      happy: ["What made you smile today? 😊", "Share a happy moment! 🌟", "What brings you joy? ✨"],
+      sad: ["What's weighing on your heart? 💙", "Share what's troubling you 🌧️", "What comfort do you need? 🤗"],
+      anxious: ["What's on your mind? 🤔", "Share what's worrying you 🌊", "What brings you peace? 🕊️"],
+      angry: ["What's frustrating you? 😤", "Share what's bothering you 🔥", "What needs to change? 💪"],
       joyful: ["What made you smile today? 😊", "Share a happy moment! 🌟", "What brings you joy? ✨"],
       reflective: ["What's on your mind tonight? 🤔", "Tell me your thoughts 💭", "What are you pondering? 🌙"],
       excited: ["What's got you excited? 🚀", "Share your enthusiasm! ⚡", "What's buzzing? 🐝"],
@@ -238,7 +252,8 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
       hopeful: ["What are you hoping for? 🌅", "Share your dreams 🌟", "What gives you hope? 🌈"],
       playful: ["Let's play a word game! 🎮", "Share something fun! 🎪", "What's your playful side? 🎭"],
       nostalgic: ["What memories do you cherish? 📸", "Share a fond memory 💭", "What takes you back? 🕰️"],
-      determined: ["What are you working towards? 🎯", "Share your goals! 🏆", "What drives you? 💪"]
+      determined: ["What are you working towards? 🎯", "Share your goals! 🏆", "What drives you? 💪"],
+      lonely: ["What connection do you seek? 🤝", "Share what's on your heart 💙", "What companionship do you need? 🌙"]
     };
 
     return mockStarters[mood] || mockStarters.reflective;

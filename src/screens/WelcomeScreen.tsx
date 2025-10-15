@@ -7,7 +7,7 @@ import {
   Dimensions,
   Animated,
 } from 'react-native';
-
+import LinearGradient from 'react-native-linear-gradient';
 import { theme, spacing } from '@/utils/theme';
 
 const { height } = Dimensions.get('window');
@@ -19,105 +19,175 @@ interface WelcomeScreenProps {
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNavigate }) => {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(50)).current;
+  const scaleAnim = React.useRef(new Animated.Value(1)).current;
+  const bubbleY = React.useRef(new Animated.Value(0)).current;
+  const bubbleOpacity = React.useRef(new Animated.Value(0)).current;
+  const [isAnimating, setIsAnimating] = React.useState(false);
 
+  // --- Entry + Logo Pulse Animations ---
   React.useEffect(() => {
+    const startAnimations = () => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(scaleAnim, {
+            toValue: 1.05,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(scaleAnim, {
+            toValue: 1,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    const timeoutId = setTimeout(startAnimations, 100);
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  // --- Whisper Send Bubble + Fade-Out Transition ---
+  const handleNavigate = (screen: string) => {
+    if (isAnimating) return;
+    setIsAnimating(true);
+
+    bubbleY.setValue(0);
+    bubbleOpacity.setValue(0);
+
     Animated.parallel([
-      Animated.timing(fadeAnim, {
+      Animated.timing(bubbleOpacity, {
         toValue: 1,
-        duration: 1000,
+        duration: 100,
         useNativeDriver: true,
       }),
-      Animated.timing(slideAnim, {
+      Animated.timing(bubbleY, {
+        toValue: -120,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(bubbleOpacity, {
         toValue: 0,
-        duration: 800,
+        duration: 600,
+        delay: 200,
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+
+    setTimeout(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setIsAnimating(false);
+        onNavigate(screen);
+      });
+    }, 500);
+  };
 
   return (
     <View style={styles.container}>
-      <View style={styles.gradient}>
-        <Animated.View 
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          {/* Header Section */}
-          <View style={styles.headerSection}>
-            <View style={styles.logoContainer}>
+      {/* Soft Pastel Background */}
+      <LinearGradient colors={['#FDFBFB', '#EBEDEE']} style={styles.gradient} />
+
+      {/* Whisper Bubble */}
+      <Animated.View
+        style={[
+          styles.bubble,
+          {
+            opacity: bubbleOpacity,
+            transform: [{ translateY: bubbleY }],
+          },
+        ]}
+      >
+        <Text style={styles.bubbleText}>💭</Text>
+      </Animated.View>
+
+      {/* Animated Content */}
+      <Animated.View
+        style={[
+          styles.content,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        {/* Header Section */}
+        <View style={styles.headerSection}>
+          <View style={styles.logoContainer}>
+            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
               <Text style={styles.logo}>💬</Text>
-              <Text style={styles.appName}>Whispr</Text>
-              <Text style={styles.tagline}>
-                Connect anonymously through{'\n'}mood-based conversations
-              </Text>
-            </View>
+            </Animated.View>
+            <Text style={styles.appName}>Whispr</Text>
+            <Text style={styles.tagline}>"Where whisprs find hearts."</Text>
           </View>
+        </View>
 
-          {/* Features Section */}
-          <View style={styles.featuresSection}>
-            <View style={styles.featureCard}>
+        {/* Features Section */}
+        <View style={styles.featuresSection}>
+          <View style={styles.featureRow}>
+            <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>🔒</Text>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Anonymous</Text>
-                <Text style={styles.featureDescription}>
-                  Share your thoughts without revealing your identity
-                </Text>
-              </View>
+              <Text style={styles.featureTitle}>Anonymous</Text>
             </View>
 
-            <View style={styles.featureCard}>
+            <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>💭</Text>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Mood-Based</Text>
-                <Text style={styles.featureDescription}>
-                  Connect with others who share your current emotional state
-                </Text>
-              </View>
+              <Text style={styles.featureTitle}>Mood-Based</Text>
             </View>
 
-            <View style={styles.featureCard}>
+            <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>🛡️</Text>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Safe & Secure</Text>
-                <Text style={styles.featureDescription}>
-                  Protected conversations with built-in safety features
-                </Text>
-              </View>
+              <Text style={styles.featureTitle}>Safe & Secure</Text>
             </View>
           </View>
+        </View>
 
-          {/* Action Section */}
-          <View style={styles.actionSection}>
-            <TouchableOpacity 
-              style={styles.primaryButton} 
-              onPress={() => onNavigate('signup')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.primaryButtonText}>Get Started</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.secondaryButton} 
-              onPress={() => onNavigate('signin')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.secondaryButtonText}>Already have an account?</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Action Section */}
+        <View style={styles.actionSection}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => handleNavigate('signup')}
+            activeOpacity={0.8}
+            disabled={isAnimating}
+          >
+            <Text style={styles.primaryButtonText}>Get Started</Text>
+          </TouchableOpacity>
 
-          {/* Footer */}
-          <View style={styles.footerSection}>
-            <Text style={styles.footerText}>
-              Join thousands of users sharing anonymous messages
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => handleNavigate('signin')}
+            activeOpacity={0.7}
+            disabled={isAnimating}
+          >
+            <Text style={styles.secondaryButtonText}>
+              Already have an account?
             </Text>
-          </View>
-        </Animated.View>
-      </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer Section */}
+        <View style={styles.footerSection}>
+          <Text style={styles.footerText}>
+            Join thousands of users sharing anonymous messages
+          </Text>
+        </View>
+      </Animated.View>
     </View>
   );
 };
@@ -125,10 +195,20 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FDFBFB',
   },
   gradient: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
+    ...StyleSheet.absoluteFillObject,
+  },
+  bubble: {
+    position: 'absolute',
+    bottom: height * 0.25,
+    alignSelf: 'center',
+    zIndex: 10,
+  },
+  bubbleText: {
+    fontSize: 26,
+    opacity: 0.9,
   },
   content: {
     flex: 1,
@@ -136,8 +216,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xl,
   },
-  
-  // Header Section
   headerSection: {
     flex: 1,
     justifyContent: 'center',
@@ -154,105 +232,97 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 42,
     fontWeight: 'bold',
-    color: 'white',
-    marginBottom: spacing.sm,
+    color: '#7B5CF4', // 💜 Whispr brand color
+    marginBottom: spacing.xs,
     letterSpacing: 1,
   },
   tagline: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: '#4B3F8A',
     textAlign: 'center',
     lineHeight: 22,
-    fontWeight: '400',
+    fontStyle: 'italic',
+    fontWeight: 'bold',
+    marginTop: 6,
   },
-
-  // Features Section
   featuresSection: {
     flex: 1.2,
     justifyContent: 'center',
     paddingVertical: spacing.lg,
   },
-  featureCard: {
+  featureRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
+  },
+  featureBlock: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#F3EEFF', // soft lavender tone
     paddingVertical: spacing.md,
-    borderRadius: 16,
-    marginBottom: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 14,
+    marginHorizontal: spacing.xs,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: '#DAD0FF', // lavender border
+    shadowColor: 'rgba(123, 92, 244, 0.25)', // brand glow
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
   featureIcon: {
-    fontSize: 28,
-    marginRight: spacing.md,
-    width: 40,
-    textAlign: 'center',
-  },
-  featureContent: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 16,
-    color: 'white',
-    fontWeight: '600',
+    fontSize: 26,
     marginBottom: spacing.xs,
   },
-  featureDescription: {
+  featureTitle: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.8)',
-    lineHeight: 18,
+    color: '#3B2E6F', // improved contrast text color
+    fontWeight: '600',
+    textAlign: 'center',
   },
-
-  // Action Section
   actionSection: {
     alignItems: 'center',
     paddingVertical: spacing.lg,
   },
   primaryButton: {
-    backgroundColor: 'white',
+    backgroundColor: '#7B5CF4',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: 25,
     width: '100%',
     alignItems: 'center',
     marginBottom: spacing.md,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
+    shadowColor: '#7B5CF4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 4,
   },
   primaryButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: theme.colors.primary,
+    color: 'white',
   },
   secondaryButton: {
     paddingVertical: spacing.sm,
   },
   secondaryButtonText: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#7B5CF4',
     textDecorationLine: 'underline',
   },
-
-  // Footer Section
   footerSection: {
     alignItems: 'center',
     paddingBottom: spacing.lg,
   },
   footerText: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: '#777',
     textAlign: 'center',
     lineHeight: 16,
   },
 });
 
 export default WelcomeScreen;
-
-

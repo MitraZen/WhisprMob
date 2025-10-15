@@ -83,8 +83,8 @@ android {
         applicationId "com.whisprmobiletemp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-            versionCode 24
-            versionName "1.2.6"
+        versionCode 32
+        versionName "1.2.13"
         
         // Network configuration
         manifestPlaceholders = [

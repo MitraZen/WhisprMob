@@ -1,0 +1,872 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  FlatList,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
+import { useTheme } from '@/store/ThemeContext';
+import { useAuth } from '@/store/AuthContext';
+import AnonymousChatService, { ChatRoom, ChatParticipant, ChatMessage, BuddyRequest } from '@/services/anonymousChatService';
+import { testAnonymousChatTables } from '@/utils/testAnonymousChatTables';
+
+interface AnonymousChatModalProps {
+  visible: boolean;
+  whisprId: string;
+  onClose: () => void;
+}
+
+const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
+  visible,
+  whisprId,
+  onClose,
+}) => {
+  const { theme } = useTheme();
+  const { user } = useAuth();
+  const [chatRoom, setChatRoom] = useState<ChatRoom | null>(null);
+  const [participants, setParticipants] = useState<ChatParticipant[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [currentParticipant, setCurrentParticipant] = useState<ChatParticipant | null>(null);
+  const [buddyStatuses, setBuddyStatuses] = useState<Map<string, 'none' | 'pending' | 'buddies'>>(new Map());
+  const [buddyRequests, setBuddyRequests] = useState<BuddyRequest[]>([]);
+
+  // Check buddy status for participants when they change
+  useEffect(() => {
+    const checkBuddyStatuses = async () => {
+      if (!user || participants.length === 0) return;
+
+      console.log('🔍 [DEBUG] Checking buddy statuses for participants:', participants.length);
+      const statusMap = new Map<string, 'none' | 'pending' | 'buddies'>();
+      
+      for (const participant of participants) {
+        if (participant.user_id !== user.id) {
+          try {
+            console.log(`🔍 [DEBUG] Checking buddy status for ${participant.anonymous_name} (${participant.user_id})`);
+            const [areBuddies, hasPending] = await Promise.all([
+              AnonymousChatService.areUsersBuddies(user.id, participant.user_id),
+              AnonymousChatService.hasPendingBuddyRequest(user.id, participant.user_id)
+            ]);
+
+            console.log(`🔍 [DEBUG] Buddy status for ${participant.anonymous_name}: areBuddies=${areBuddies}, hasPending=${hasPending}`);
+
+            if (areBuddies) {
+              statusMap.set(participant.user_id, 'buddies');
+            } else if (hasPending) {
+              statusMap.set(participant.user_id, 'pending');
+            } else {
+              statusMap.set(participant.user_id, 'none');
+            }
+          } catch (error) {
+            console.error('Error checking buddy status:', error);
+            statusMap.set(participant.user_id, 'none');
+          }
+        }
+      }
+
+      console.log('🔍 [DEBUG] Final buddy statuses:', Array.from(statusMap.entries()));
+      setBuddyStatuses(statusMap);
+    };
+
+    checkBuddyStatuses();
+  }, [participants, user]);
+  const [lastMessageCount, setLastMessageCount] = useState(0);
+  const [lastParticipantCount, setLastParticipantCount] = useState(0);
+  const [knownParticipantIds, setKnownParticipantIds] = useState<Set<string>>(new Set());
+  const [lastMessageIds, setLastMessageIds] = useState<Set<string>>(new Set());
+  
+  // Use refs to track state for polling to avoid stale closure issues
+  const knownParticipantIdsRef = useRef<Set<string>>(new Set());
+  const lastMessageIdsRef = useRef<Set<string>>(new Set());
+  
+  const flatListRef = useRef<FlatList>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (visible && whisprId && user) {
+      initializeChat();
+    } else if (!visible) {
+      // Clean up subscriptions when modal closes
+      AnonymousChatService.unsubscribeFromChatRoom();
+      stopPolling();
+      
+      // Reset state to prevent stale data
+      setParticipants([]);
+      setMessages([]);
+      setKnownParticipantIds(new Set());
+      setLastMessageIds(new Set());
+      setCurrentParticipant(null);
+      setBuddyRequests([]);
+      
+      // Also reset refs
+      knownParticipantIdsRef.current = new Set();
+      lastMessageIdsRef.current = new Set();
+    }
+  }, [visible, whisprId, user]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
+  const initializeChat = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Check if chat room exists
+      let room = await AnonymousChatService.getChatRoom(whisprId);
+      
+      if (!room) {
+        // Create new chat room (first user)
+        room = await AnonymousChatService.createChatRoom(whisprId, user!.id);
+      } else {
+        // Try to join existing chat room
+        try {
+          await AnonymousChatService.joinChatRoom(room.id, user!.id);
+        } catch (joinError) {
+          if (joinError instanceof Error && joinError.message.includes('Chat room is full')) {
+            Alert.alert(
+              'Chat Room Full',
+              'This chat room already has 2 people. You cannot join this conversation.',
+              [{ text: 'OK', onPress: onClose }]
+            );
+            return;
+          }
+          throw joinError;
+        }
+      }
+      
+      setChatRoom(room);
+      
+      // Load participants and messages
+      await loadChatData(room.id);
+      
+      // Set up real-time subscriptions
+      AnonymousChatService.subscribeToChatRoom(
+        room.id,
+        user!.id,
+        handleNewMessage,
+        handleNewParticipant,
+        handleNewBuddyRequest
+      );
+      
+      // Start polling as fallback
+      startPolling(room.id);
+      
+    } catch (error) {
+      console.error('Error initializing chat:', error);
+      Alert.alert('Error', 'Failed to initialize chat room');
+      onClose();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startPolling = (roomId: string) => {
+    // Clear existing polling
+    stopPolling();
+    
+    // Poll every 5 seconds for new messages and participants
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const [participantsData, messagesData] = await Promise.all([
+          AnonymousChatService.getChatParticipants(roomId),
+          AnonymousChatService.getChatMessages(roomId)
+        ]);
+        
+        // Always update state to keep it synchronized, regardless of changes
+        const currentParticipantIds = new Set(participantsData.map(p => p.id));
+        const currentMessageIds = new Set(messagesData.map(m => m.id));
+        
+        // Check for new messages by comparing actual message IDs
+        const hasNewMessages = messagesData.some(msg => !lastMessageIdsRef.current.has(msg.id));
+        
+        if (hasNewMessages) {
+          setMessages(messagesData);
+          setLastMessageIds(currentMessageIds);
+          lastMessageIdsRef.current = currentMessageIds;
+          
+          // Scroll to bottom
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        }
+        
+        // Check for new participants by comparing actual participant IDs
+        const hasNewParticipants = participantsData.some(p => !knownParticipantIdsRef.current.has(p.id));
+        
+        if (hasNewParticipants) {
+          // Find truly new participants BEFORE updating state
+          const newParticipants = participantsData.filter(participant => 
+            participant.user_id !== user!.id && !knownParticipantIdsRef.current.has(participant.id)
+          );
+          
+          // Update state IMMEDIATELY to prevent duplicate notifications
+          setParticipants(participantsData);
+          setKnownParticipantIds(currentParticipantIds);
+          knownParticipantIdsRef.current = currentParticipantIds;
+          
+          // Show notifications for new participants
+          newParticipants.forEach(participant => {
+            Alert.alert(
+              'New Participant',
+              `${participant.anonymous_name} joined the chat!`,
+              [{ text: 'OK' }]
+            );
+          });
+        } else {
+          // Still update state even if no new participants to keep it in sync
+          setParticipants(participantsData);
+          setKnownParticipantIds(currentParticipantIds);
+          knownParticipantIdsRef.current = currentParticipantIds;
+        }
+        
+      } catch (error) {
+        console.error('Error during polling:', error);
+      }
+    }, 5000); // Poll every 5 seconds
+  };
+
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  };
+
+  const loadChatData = async (roomId: string) => {
+    try {
+      const [participantsData, messagesData] = await Promise.all([
+        AnonymousChatService.getChatParticipants(roomId),
+        AnonymousChatService.getChatMessages(roomId)
+      ]);
+      
+      setParticipants(participantsData);
+      setMessages(messagesData);
+      
+      // Set initial counts for polling
+      setLastMessageCount(messagesData.length);
+      setLastParticipantCount(participantsData.length);
+      
+      // Initialize known participants and messages sets
+      const participantIds = new Set(participantsData.map(p => p.id));
+      const messageIds = new Set(messagesData.map(m => m.id));
+      
+      setKnownParticipantIds(participantIds);
+      setLastMessageIds(messageIds);
+      
+      // Also update refs for polling
+      knownParticipantIdsRef.current = participantIds;
+      lastMessageIdsRef.current = messageIds;
+      
+      // Find current user's participant record
+      const currentUserParticipant = participantsData.find(p => p.user_id === user!.id);
+      setCurrentParticipant(currentUserParticipant || null);
+      
+    } catch (error) {
+      console.error('Error loading chat data:', error);
+    }
+  };
+
+  const handleNewMessage = (message: ChatMessage) => {
+    console.log('💬 Received new message via real-time:', message);
+    setMessages(prev => [...prev, message]);
+    
+    // Add to known messages
+    setLastMessageIds(prev => new Set([...prev, message.id]));
+    
+    // Scroll to bottom
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  const handleNewParticipant = (participant: ChatParticipant) => {
+    // Check if this participant is already known to avoid duplicates
+    if (knownParticipantIds.has(participant.id)) {
+      return;
+    }
+    
+    // Update state first
+    setParticipants(prev => [...prev, participant]);
+    setKnownParticipantIds(prev => {
+      const newSet = new Set([...prev, participant.id]);
+      return newSet;
+    });
+    
+    // Show notification only if not current user
+    if (participant.user_id !== user!.id) {
+      Alert.alert(
+        'New Participant',
+        `${participant.anonymous_name} joined the chat!`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleNewBuddyRequest = (request: BuddyRequest) => {
+    setBuddyRequests(prev => [...prev, request]);
+    
+    // Show notification
+    Alert.alert(
+      'New Buddy Request',
+      'Someone wants to be your buddy! Check your requests.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !chatRoom || isSending) return;
+    
+    try {
+      setIsSending(true);
+      
+      await AnonymousChatService.sendMessage(chatRoom.id, user!.id, messageText);
+      setMessageText('');
+      
+      // Note: Real-time subscription will handle adding the message to the list
+      // No need to manually reload messages
+      
+      // Scroll to bottom
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error sending message:', error);
+      Alert.alert('Error', 'Failed to send message');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleBuddyRequest = async (participant: ChatParticipant) => {
+    if (!chatRoom || !user) return;
+    
+    try {
+      console.log('🔍 [DEBUG] Sending buddy request:');
+      console.log('  - Requester (current user):', user.id, user.email);
+      console.log('  - Receiver (participant):', participant.user_id, participant.anonymous_name);
+      console.log('  - Chat Room:', chatRoom.id);
+      console.log('  - Whispr ID:', whisprId);
+      
+      await AnonymousChatService.sendBuddyRequest(
+        user.id,
+        participant.user_id,
+        chatRoom.id,
+        whisprId,
+        'Would you like to be buddies?'
+      );
+      
+      Alert.alert('Success', 'Buddy request sent!');
+    } catch (error) {
+      console.error('Error sending buddy request:', error);
+      
+      // Show more specific error messages based on the error type
+      let errorMessage = 'Failed to send buddy request. Please try again.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('already pending')) {
+          errorMessage = 'A buddy request is already pending with this user.';
+        } else if (error.message.includes('already buddies')) {
+          errorMessage = 'You are already buddies with this user.';
+        } else if (error.message.includes('duplicate key')) {
+          errorMessage = 'A buddy request already exists between you and this user.';
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
+    }
+  };
+
+  // Check if chat room is at capacity (2 people max)
+  const isChatRoomAtCapacity = () => {
+    const MAX_PARTICIPANTS = 2; // 1-on-1 chat only
+    return participants.length >= MAX_PARTICIPANTS;
+  };
+
+  // Get participant count display
+  const getParticipantCountText = () => {
+    const count = participants.length;
+    if (count === 1) return 'Waiting for someone to join...';
+    if (count === 2) return '1-on-1 Chat';
+    return `${count} people`;
+  };
+
+  // Close chat room
+  const handleCloseChat = async () => {
+    if (!chatRoom || !user) return;
+    
+    try {
+      await AnonymousChatService.closeChatRoom(chatRoom.id, user.id);
+      Alert.alert(
+        'Chat Closed',
+        'This chat room has been closed. You cannot rejoin this conversation.',
+        [{ text: 'OK', onPress: onClose }]
+      );
+    } catch (error) {
+      console.error('Error closing chat:', error);
+      Alert.alert('Error', 'Failed to close chat room');
+    }
+  };
+
+  const renderMessage = ({ item }: { item: ChatMessage }) => {
+    const participant = participants.find(p => p.user_id === item.sender_user_id);
+    const isCurrentUser = item.sender_user_id === user?.id;
+    
+    return (
+      <View style={[
+        styles.messageContainer,
+        isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage
+      ]}>
+        {!isCurrentUser && (
+          <Text style={[styles.senderName, { color: theme.colors.text }]}>
+            {participant?.anonymous_name || 'Unknown'}
+          </Text>
+        )}
+        <Text style={[
+          styles.messageText,
+          { color: isCurrentUser ? theme.colors.surface : theme.colors.text }
+        ]}>
+          {item.message_text}
+        </Text>
+        <Text style={[
+          styles.messageTime,
+          { color: theme.colors.textSecondary }
+        ]}>
+          {new Date(item.created_at).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderParticipant = ({ item }: { item: ChatParticipant }) => {
+    const isCurrentUser = item.user_id === user?.id;
+    
+    return (
+      <View style={styles.participantItem}>
+        <View style={styles.participantInfo}>
+          <Icon 
+            name="person-circle-outline" 
+            size={24} 
+            color={theme.colors.primary} 
+          />
+          <Text style={[styles.participantName, { color: theme.colors.text }]}>
+            {item.anonymous_name}
+          </Text>
+          {isCurrentUser && (
+            <Text style={[styles.youLabel, { color: theme.colors.primary }]}>
+              (You)
+            </Text>
+          )}
+        </View>
+        
+        {!isCurrentUser && (() => {
+          const buddyStatus = buddyStatuses.get(item.user_id) || 'none';
+          
+          if (buddyStatus === 'buddies') {
+            return (
+              <View style={[styles.buddyButton, { backgroundColor: theme.colors.success }]}>
+                <Icon name="checkmark-circle-outline" size={16} color={theme.colors.surface} />
+                <Text style={[styles.buddyButtonText, { color: theme.colors.surface }]}>
+                  Buddies
+                </Text>
+              </View>
+            );
+          } else if (buddyStatus === 'pending') {
+            return (
+              <View style={[styles.buddyButton, { backgroundColor: theme.colors.warning }]}>
+                <Icon name="time-outline" size={16} color={theme.colors.surface} />
+                <Text style={[styles.buddyButtonText, { color: theme.colors.surface }]}>
+                  Pending
+                </Text>
+              </View>
+            );
+          } else {
+            return (
+              <TouchableOpacity
+                style={[styles.buddyButton, { backgroundColor: theme.colors.primary }]}
+                onPress={() => handleBuddyRequest(item)}
+                testID={`add-buddy-button-${item.id}`}
+              >
+                <Icon name="person-add-outline" size={16} color={theme.colors.surface} />
+                <Text style={[styles.buddyButtonText, { color: theme.colors.surface }]}>
+                  Add Buddy
+                </Text>
+              </TouchableOpacity>
+            );
+          }
+        })()}
+      </View>
+    );
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* Header */}
+        <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <Icon name="close" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+              Anonymous Chat
+            </Text>
+            <Text style={[styles.participantCount, { color: theme.colors.textSecondary }]}>
+              {getParticipantCountText()}
+            </Text>
+          </View>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={[styles.loadingText, { color: theme.colors.text }]}>
+              Initializing chat...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Participants */}
+            <View style={[styles.participantsSection, { backgroundColor: theme.colors.surface }]}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                  Participants ({participants.length})
+                </Text>
+                <TouchableOpacity
+                  style={[styles.debugButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={async () => {
+                    console.log('🧹 [DEBUG] Cleaning up stale buddy requests...');
+                    await AnonymousChatService.cleanupStaleBuddyRequests();
+                    console.log('🔍 [DEBUG] Getting all buddy requests...');
+                    await AnonymousChatService.getAllBuddyRequests();
+                  }}
+                >
+                  <Text style={[styles.debugButtonText, { color: theme.colors.surface }]}>
+                    🧹 Debug
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={participants}
+                renderItem={renderParticipant}
+                keyExtractor={(item) => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.participantsList}
+              />
+            </View>
+
+            {/* Capacity Warning */}
+        {isChatRoomAtCapacity() && (
+          <View style={[styles.capacityWarning, { backgroundColor: theme.colors.primary + '20' }]}>
+            <Icon name="checkmark-circle-outline" size={16} color={theme.colors.primary} />
+            <Text style={[styles.capacityWarningText, { color: theme.colors.primary }]}>
+              Chat room is full (2/2 people) - 1-on-1 conversation active
+            </Text>
+          </View>
+        )}
+
+        {/* Close Chat Button - Only show when 2 people are in the room */}
+        {isChatRoomAtCapacity() && (
+          <View style={styles.closeChatContainer}>
+            <TouchableOpacity
+              style={[styles.closeChatButton, { backgroundColor: theme.colors.error }]}
+              onPress={handleCloseChat}
+            >
+              <Icon name="close-circle-outline" size={16} color="white" />
+              <Text style={styles.closeChatButtonText}>Close Chat Room</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Messages */}
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              style={styles.messagesList}
+              contentContainerStyle={styles.messagesContent}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            />
+
+            {/* Message Input */}
+            <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface }]}>
+              <TextInput
+                style={[
+                  styles.messageInput,
+                  { 
+                    backgroundColor: theme.colors.background,
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border
+                  }
+                ]}
+                value={messageText}
+                onChangeText={setMessageText}
+                placeholder="Type a message..."
+                placeholderTextColor={theme.colors.textSecondary}
+                multiline
+                maxLength={500}
+                editable={!isSending}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  { 
+                    backgroundColor: messageText.trim() ? theme.colors.primary : theme.colors.border,
+                    opacity: isSending ? 0.5 : 1
+                  }
+                ]}
+                onPress={handleSendMessage}
+                disabled={!messageText.trim() || isSending}
+              >
+                {isSending ? (
+                  <ActivityIndicator size="small" color={theme.colors.surface} />
+                ) : (
+                  <Icon name="send" size={20} color={theme.colors.surface} />
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+  },
+  participantsSection: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  debugButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  debugButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  participantsList: {
+    paddingRight: 16,
+  },
+  participantItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    minWidth: 120,
+  },
+  participantInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  participantName: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  youLabel: {
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  buddyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  buddyButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  participantCount: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  capacityWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+  },
+  capacityWarningText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 8,
+    flex: 1,
+  },
+  closeChatContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  closeChatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  closeChatButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  messagesList: {
+    flex: 1,
+  },
+  messagesContent: {
+    padding: 16,
+  },
+  messageContainer: {
+    marginBottom: 12,
+    maxWidth: '80%',
+  },
+  currentUserMessage: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderBottomRightRadius: 4,
+  },
+  otherUserMessage: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+  },
+  senderName: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  messageTime: {
+    fontSize: 11,
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  messageInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginRight: 12,
+    maxHeight: 100,
+    fontSize: 16,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
+
+export default AnonymousChatModal;

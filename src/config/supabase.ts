@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUPABASE_CONFIG } from './env';
 
-// Create Supabase client with realtime ENABLED and WebSocket polyfill
+// Create Supabase client with optimized realtime settings for React Native
 export const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
   auth: {
     autoRefreshToken: true,
@@ -17,10 +17,11 @@ export const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKe
     },
   },
   realtime: {
-    // Enable realtime with WebSocket polyfill support
-    enabled: true,
+    // Enable realtime with optimized settings for React Native
     params: {
       eventsPerSecond: 10, // Rate limiting for performance
+      heartbeatIntervalMs: 30000, // 30 seconds heartbeat
+      reconnectAfterMs: [1000, 2000, 5000, 10000], // Exponential backoff
     },
   },
 });

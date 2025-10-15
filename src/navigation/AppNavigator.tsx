@@ -5,6 +5,7 @@ import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
 import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
 import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
 import BuddiesScreen from '@/screens/BuddiesScreen';
+import { BuddyRequestsScreen } from '@/screens/BuddyRequestsScreen';
 import ChatScreen from '@/screens/ChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
@@ -13,85 +14,13 @@ import AdminPanel from '@/screens/AdminPanel';
 import SentNotesScreen from '@/screens/SentNotesScreen';
 import NotificationsScreen from '@/screens/NotificationsScreen';
 import SendNoteScreen from '@/screens/SendNoteScreen';
+import LiveWhisprsScreen from '@/screens/LiveWhisprsScreen';
+import WebSocketTestScreen from '@/screens/WebSocketTestScreen';
 import { NearbyScreen } from '@/modules/nearby';
 import { useAuth } from '@/store/AuthContext';
 import { useAdmin } from '@/store/AdminContext';
-
-// Simple screens without Paper components
-const WelcomeScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
-  const { enableAdminMode } = useAdmin();
-  const [adminTapCount, setAdminTapCount] = useState(0);
-
-  const handleLogoPress = () => {
-    setAdminTapCount(prev => prev + 1);
-    if (adminTapCount >= 4) { // 5 taps to enable admin
-      enableAdminMode();
-      setAdminTapCount(0);
-    }
-  };
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.gradient}>
-        <View style={styles.content}>
-          <View style={styles.logoContainer}>
-            <TouchableOpacity onPress={handleLogoPress}>
-              <View style={styles.logoIcon}>
-                <Text style={styles.logoEmoji}>💬</Text>
-              </View>
-            </TouchableOpacity>
-            <Text style={styles.appName}>Whispr</Text>
-            <Text style={styles.tagline}>Send anonymous messages to the world</Text>
-            <Text style={styles.taglineSub}>and discover meaningful connections</Text>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={styles.signUpButton} 
-              onPress={() => onNavigate('signup')}
-            >
-              <Text style={styles.signUpButtonText}>Sign Up</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.signInButton} 
-              onPress={() => onNavigate('signin')}
-            >
-              <Text style={styles.signInButtonText}>Sign In</Text>
-            </TouchableOpacity>
-            
-          </View>
-
-          <View style={styles.featuresContainer}>
-            <View style={styles.featureCard}>
-              <View style={styles.featureIconContainer}>
-                <Text style={styles.featureIcon}>💬</Text>
-              </View>
-              <Text style={styles.featureTitle}>Anonymous</Text>
-              <Text style={styles.featureSubtext}>Share without revealing identity</Text>
-            </View>
-            
-            <View style={styles.featureCard}>
-              <View style={styles.featureIconContainer}>
-                <Text style={styles.featureIcon}>❤️</Text>
-              </View>
-              <Text style={styles.featureTitle}>Mood-Based</Text>
-              <Text style={styles.featureSubtext}>Connect through emotions</Text>
-            </View>
-            
-            <View style={styles.featureCard}>
-              <View style={styles.featureIconContainer}>
-                <Text style={styles.featureIcon}>🛡️</Text>
-              </View>
-              <Text style={styles.featureTitle}>Safe & Secure</Text>
-              <Text style={styles.featureSubtext}>Protected conversations</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-};
+import SafeNavigation from '@/utils/safeNavigation';
+import WelcomeScreen from '@/screens/WelcomeScreen';
 
 const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -217,6 +146,14 @@ const AppNavigator = () => {
         const newHistory = [...prev];
         newHistory.pop(); // Remove current screen
         const previousScreen = newHistory[newHistory.length - 1];
+        
+        // Ensure we don't go back to auth screens if user is authenticated
+        if (isAuthenticated && (previousScreen === 'signin' || previousScreen === 'signup' || previousScreen === 'welcome')) {
+          // If authenticated user tries to go back to auth screens, go to notes instead
+          setCurrentScreen('notes');
+          return ['welcome', 'notes'];
+        }
+        
         setCurrentScreen(previousScreen);
         return newHistory;
       }
@@ -224,31 +161,28 @@ const AppNavigator = () => {
     });
   };
 
-  // Handle Android back button
+  // Handle Android back button with safe navigation
   useEffect(() => {
     const backAction = () => {
-      // Use navigation history for more accurate back navigation
-      if (navigationHistory.length > 1) {
-        goBack();
-        return true; // Prevent default behavior
-      } else {
-        // Show exit confirmation when at root screen
-        Alert.alert(
-          'Exit App',
-          'Are you sure you want to exit Whispr?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
-          ]
-        );
-        return true; // Prevent default behavior
-      }
+      return SafeNavigation.handleBackButton(
+        navigationHistory,
+        isAuthenticated,
+        (screen: string) => {
+          setCurrentScreen(screen);
+          // Update navigation history to reflect the safe navigation
+          setNavigationHistory(prev => {
+            const safeHistory = SafeNavigation.getSafeNavigationHistory(prev, isAuthenticated);
+            return [...safeHistory, screen];
+          });
+        },
+        SafeNavigation.getFallbackScreen(isAuthenticated, isProfileComplete)
+      );
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
 
     return () => backHandler.remove();
-  }, [navigationHistory, currentScreen]);
+  }, [navigationHistory, currentScreen, isAuthenticated, isProfileComplete]);
 
   console.log('AppNavigator - currentScreen:', currentScreen);
 
@@ -321,7 +255,14 @@ const AppNavigator = () => {
       return <WhisprNotesScreen onNavigate={navigate} user={user} />;
     case 'buddies':
       if (isAuthenticated) return <BuddiesScreen onNavigate={navigate} user={user} refreshTrigger={currentParams?.refreshTrigger} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      // Redirect to sign-in instead of welcome to avoid confusion
+      navigate('signin');
+      return null;
+    case 'buddyRequests':
+      if (isAuthenticated) return <BuddyRequestsScreen onNavigate={navigate} user={user} />;
+      // Redirect to sign-in instead of welcome to avoid confusion
+      navigate('signin');
+      return null;
     case 'chat':
       if (isAuthenticated) return (
         <ChatScreen
@@ -331,28 +272,45 @@ const AppNavigator = () => {
           onGoBack={goBack}
         />
       );
-      return <WelcomeScreen onNavigate={navigate} />;
+      // Redirect to sign-in instead of welcome
+      navigate('signin');
+      return null;
     case 'profile':
       if (isAuthenticated) return <ProfileScreen onNavigate={navigate} user={user} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
     case 'settingsHub':
       if (isAuthenticated) return <SettingsHubScreen onNavigate={navigate} user={user} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
     case 'settings':
       if (isAuthenticated) return <SettingsScreen onNavigate={navigate} user={user} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
     case 'sentNotes':
       if (isAuthenticated) return <SentNotesScreen onNavigate={navigate} user={user} onGoBack={goBack} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
     case 'notifications':
       if (isAuthenticated) return <NotificationsScreen onNavigate={navigate} user={user} onGoBack={goBack} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
     case 'sendNote':
       if (isAuthenticated) return <SendNoteScreen onNavigate={navigate} user={user} onGoBack={goBack} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
     case 'nearby':
       if (isAuthenticated) return <NearbyScreen userId={user?.id || ''} onNavigate={navigate} />;
-      return <WelcomeScreen onNavigate={navigate} />;
+      navigate('signin');
+      return null;
+    case 'liveWhisprs':
+      if (isAuthenticated) return <LiveWhisprsScreen />;
+      navigate('signin');
+      return null;
+    case 'websocketTest':
+      if (isAuthenticated) return <WebSocketTestScreen />;
+      navigate('signin');
+      return null;
     default:
       return <WelcomeScreen onNavigate={navigate} />;
   }

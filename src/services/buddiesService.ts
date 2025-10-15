@@ -150,7 +150,7 @@ export class BuddiesService {
     
     try {
       const data = await this.rpcRequest('get_user_buddies', {
-        target_user_id: userId,
+        user_id: userId,
         limit_count: 20  // Add LIMIT parameter to prevent unlimited retrieval
       });
 
@@ -278,14 +278,14 @@ export class BuddiesService {
   ): Promise<string> {
     try {
       if (!userId) {
-        throw new Error('User ID is required to send messages');
+        throw new Error('User ID is required');
       }
       
       const result = await this.rpcRequest('send_buddy_message', {
         buddy_id_param: buddyId,
         content,
-        user_id_param: userId,
-        message_type: messageType
+        message_type: messageType,
+        user_id_param: userId
       });
 
       // Check if the result indicates success
@@ -1001,7 +1001,7 @@ export class BuddiesService {
       const testMessage = `Test message at ${new Date().toISOString()}`;
       console.log('Sending test message:', testMessage);
       
-      const messageId = await this.sendMessage(buddyId, testMessage, 'text', userId);
+      const messageId = await this.sendMessage(buddyId, testMessage, 'text');
       console.log('Test message sent successfully, ID:', messageId);
       
       // Wait a moment then try to retrieve it

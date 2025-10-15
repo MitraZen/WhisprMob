@@ -39,8 +39,21 @@ class NotificationManagerClass implements NotificationManager {
   private lastInitializationAttempt = 0;
   private initializationCooldown = 30000; // 30 seconds cooldown between attempts
   private isStopping = false; // Add flag to prevent infinite loops
+  private initializationPromise: Promise<void> | null = null; // Prevent multiple simultaneous initializations
 
       async startNotificationService(userId: string): Promise<void> {
+        // Prevent multiple simultaneous initializations
+        if (this.initializationPromise) {
+          console.log('🔄 Notification service initialization already in progress, waiting...');
+          return this.initializationPromise;
+        }
+
+        // If already active for the same user, return early
+        if (this.userId === userId && (this.realtimeActive || this.pollingActive)) {
+          console.log('✅ Notification service already active for user:', userId);
+          return;
+        }
+
         this.userId = userId;
         
         // Check cooldown to prevent excessive initialization attempts
@@ -54,6 +67,17 @@ class NotificationManagerClass implements NotificationManager {
         this.lastInitializationAttempt = now;
         console.log('🚀 Starting hybrid notification service for user:', userId);
         
+        // Create initialization promise to prevent duplicates
+        this.initializationPromise = this.performInitialization(userId);
+        
+        try {
+          await this.initializationPromise;
+        } finally {
+          this.initializationPromise = null;
+        }
+      }
+
+      private async performInitialization(userId: string): Promise<void> {
         try {
           // Try realtime first (now with WebSocket polyfill)
           const realtimeSuccess = await realtimeService.initialize(userId);
@@ -82,7 +106,7 @@ class NotificationManagerClass implements NotificationManager {
     this.fallbackMode = true;
     this.realtimeActive = false;
     this.performanceMetrics.fallbackActivations++;
-    this.startPolling(userId);
+    this.startPollingInternal(userId);
     console.log('🔄 Polling fallback activated');
   }
 
@@ -106,9 +130,9 @@ class NotificationManagerClass implements NotificationManager {
     }
   }
 
-  private startPolling(userId: string): void {
+  private startPollingInternal(userId: string): void {
     if (this.pollingActive) {
-      this.stopPolling();
+      this.stopPollingInternal();
     }
 
     this.userId = userId;
@@ -129,13 +153,23 @@ class NotificationManagerClass implements NotificationManager {
     console.log(`🔄 Notification polling started (${this.fallbackMode ? 'fallback' : 'primary'} mode, ${interval}ms interval)`);
   }
 
-  private stopPolling(): void {
+  private startPollingPublic(userId: string): void {
+    console.log('🔄 Public startPolling called - delegating to internal method');
+    this.startPollingInternal(userId);
+  }
+
+  private stopPollingInternal(): void {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
     this.pollingActive = false;
-    console.log('🛑 Notification polling stopped');
+    console.log('🛑 Notification polling stopped (internal)');
+  }
+
+  private stopPollingPublic(): void {
+    console.log('🛑 Public stopPolling called - delegating to internal method');
+    this.stopPollingInternal();
   }
 
   async stopNotificationService(): Promise<void> {
@@ -148,7 +182,7 @@ class NotificationManagerClass implements NotificationManager {
     }
     
     // Stop polling
-    this.stopPolling();
+    this.stopPollingInternal();
     
     // Clean up event listeners
     if (this.realtimeFailureHandler && typeof window !== 'undefined' && window.removeEventListener) {
@@ -198,8 +232,8 @@ class NotificationManagerClass implements NotificationManager {
       console.log('📡 Maintaining realtime connection in background');
     } else if (this.pollingActive) {
       // Increase polling interval in background
-      this.stopPolling();
-      this.startPolling(this.userId!);
+      this.stopPollingInternal();
+      this.startPollingInternal(this.userId!);
       console.log('⏰ Reduced polling frequency for background');
     }
   }
@@ -222,7 +256,7 @@ class NotificationManagerClass implements NotificationManager {
         if (realtimeSuccess) {
           this.realtimeActive = true;
           this.fallbackMode = false;
-          this.stopPolling();
+          this.stopPollingInternal();
           console.log('✅ Reconnected to realtime in foreground');
         }
       } catch (error) {
@@ -233,7 +267,7 @@ class NotificationManagerClass implements NotificationManager {
 
   private startBackgroundOptimization(): void {
     // Monitor app state changes
-    if (typeof window !== 'undefined' && window.addEventListener) {
+    if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof window.addEventListener === 'function') {
       const handleVisibilityChange = () => {
         if (document.hidden) {
           this.optimizeForBackground();
@@ -351,23 +385,13 @@ class NotificationManagerClass implements NotificationManager {
 
   // Legacy methods for backward compatibility
   startPolling(userId: string) {
-    console.log('🔄 Legacy startPolling called - using hybrid service');
-    this.startNotificationService(userId);
+    console.log('🔄 Legacy startPolling called - starting polling directly');
+    this.startPollingInternal(userId);
   }
 
   stopPolling() {
-    console.log('🛑 Legacy stopPolling called - using hybrid service');
-    
-    // Prevent infinite loops by checking if already stopping
-    if (this.isStopping) {
-      console.log('🛑 Already stopping - preventing infinite loop');
-      return;
-    }
-    
-    this.isStopping = true;
-    this.stopNotificationService().finally(() => {
-      this.isStopping = false;
-    });
+    console.log('🛑 Legacy stopPolling called - stopping polling directly');
+    this.stopPollingInternal();
   }
 
   isPolling(): boolean {

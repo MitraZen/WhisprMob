@@ -14,6 +14,7 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({ currentScreen, o
   const menuItems = [
     { id: 'notes', label: 'Notes', icon: 'document-text-outline' },
     { id: 'buddies', label: 'Buddies', icon: 'people-outline' },
+    { id: 'liveWhisprs', label: 'Live Whisprs', icon: 'radio-outline' },
     { id: 'settingsHub', label: 'Settings', icon: 'settings-outline' },
   ];
   
