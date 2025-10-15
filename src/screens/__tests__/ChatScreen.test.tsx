@@ -53,7 +53,7 @@ describe('Chat Message Functionality', () => {
       senderId: 'user-456',
       receiverId: 'user-123',
       content: 'Hello there!',
-      messageType: 'text',
+      messageType: 'text' as const,
       timestamp: new Date('2024-01-01T10:00:00Z'),
       isRead: true,
       createdAt: new Date('2024-01-01T10:00:00Z'),
@@ -65,7 +65,7 @@ describe('Chat Message Functionality', () => {
       senderId: 'user-123',
       receiverId: 'user-456',
       content: 'Hi John!',
-      messageType: 'text',
+      messageType: 'text' as const,
       timestamp: new Date('2024-01-01T10:01:00Z'),
       isRead: true,
       createdAt: new Date('2024-01-01T10:01:00Z'),
@@ -79,8 +79,8 @@ describe('Chat Message Functionality', () => {
     // Mock successful service responses
     jest.mocked(CachedBuddiesService.getMessages).mockResolvedValue(mockMessages);
     jest.mocked(CachedBuddiesService.sendMessage).mockResolvedValue('new-msg-id');
-    jest.mocked(CachedBuddiesService.markMessagesAsRead).mockResolvedValue();
-    jest.mocked(CachedBuddiesService.clearBuddyChat).mockResolvedValue();
+    jest.mocked(CachedBuddiesService.markMessagesAsRead).mockResolvedValue(true);
+    jest.mocked(CachedBuddiesService.clearBuddyChat).mockResolvedValue(true);
   });
 
   describe('Message Loading', () => {
@@ -216,8 +216,7 @@ describe('Chat Message Functionality', () => {
         expect(CachedBuddiesService.sendMessage).toHaveBeenCalledWith(
           mockBuddy.id,
           'Hello World!',
-          'text',
-          mockUser.id
+          'text'
         );
       });
     });
@@ -634,7 +633,7 @@ describe('Chat Message Functionality', () => {
         senderId: i % 2 === 0 ? 'user-456' : 'user-123',
         receiverId: i % 2 === 0 ? 'user-123' : 'user-456',
         content: `Message ${i}`,
-        messageType: 'text',
+        messageType: 'text' as const,
         timestamp: new Date(`2024-01-01T${10 + Math.floor(i / 60)}:${i % 60}:00Z`),
         isRead: true,
         createdAt: new Date(`2024-01-01T${10 + Math.floor(i / 60)}:${i % 60}:00Z`),

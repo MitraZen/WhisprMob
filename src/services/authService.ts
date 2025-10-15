@@ -375,54 +375,128 @@ export class AuthService {
   // Sign in with email and password
   static async signIn(email: string, password: string): Promise<{ user: User | null; error: string | null }> {
     try {
-      const response = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/token?grant_type=password`, {
+      console.log('🔐 AuthService.signIn: Starting sign in process...');
+      console.log('🔐 AuthService.signIn: Email:', email);
+      console.log('🔐 AuthService.signIn: Supabase URL:', SUPABASE_CONFIG.url);
+      
+      // Test network connectivity first
+      const networkTest = await this.testNetworkConnectivity();
+      if (!networkTest.success) {
+        console.error('🔐 AuthService.signIn: Network connectivity test failed:', networkTest.error);
+        return { user: null, error: `Network error: ${networkTest.error}` };
+      }
+      
+      console.log('🔐 AuthService.signIn: Network connectivity test passed');
+      
+      const authUrl = `${SUPABASE_CONFIG.url}/auth/v1/token?grant_type=password`;
+      console.log('🔐 AuthService.signIn: Auth URL:', authUrl);
+      
+      const requestBody = {
+        email: email.toLowerCase().trim(),
+        password: password,
+      };
+      
+      console.log('🔐 AuthService.signIn: Request body prepared');
+      
+      const response = await fetch(authUrl, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
           'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
+      console.log('🔐 AuthService.signIn: Response status:', response.status);
+      console.log('🔐 AuthService.signIn: Response ok:', response.ok);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        return { user: null, error: errorData.msg || 'Sign in failed' };
+        let errorData;
+        try {
+          const errorText = await response.text();
+          console.error('🔐 AuthService.signIn: Error response text:', errorText);
+          errorData = errorText ? JSON.parse(errorText) : {};
+        } catch (parseError) {
+          console.error('🔐 AuthService.signIn: Failed to parse error response:', parseError);
+          errorData = { msg: `HTTP ${response.status}: ${response.statusText}` };
+        }
+        
+        console.error('🔐 AuthService.signIn: Sign in failed with error:', errorData);
+        return { user: null, error: errorData.msg || errorData.error_description || `Sign in failed: ${response.status}` };
       }
 
-      const authData = await response.json();
+      let authData;
+      try {
+        const responseText = await response.text();
+        console.log('🔐 AuthService.signIn: Response text length:', responseText.length);
+        authData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('🔐 AuthService.signIn: Failed to parse success response:', parseError);
+        return { user: null, error: 'Failed to parse authentication response' };
+      }
+
+      console.log('🔐 AuthService.signIn: Auth data received:', {
+        hasUser: !!authData?.user,
+        hasAccessToken: !!authData?.access_token,
+        hasError: !!authData?.error,
+        userId: authData?.user?.id,
+      });
 
       // Supabase error format: { error: string, error_description: string }
       if (authData?.error) {
-        return { user: null, error: authData.error_description || 'Sign in failed' };
+        console.error('🔐 AuthService.signIn: Auth data contains error:', authData.error);
+        return { user: null, error: authData.error_description || authData.error || 'Sign in failed' };
       }
 
       if (!authData?.user) {
-        return { user: null, error: 'Authentication failed' };
+        console.error('🔐 AuthService.signIn: No user in auth data');
+        return { user: null, error: 'Authentication failed - no user data received' };
       }
 
       const accessToken: string | undefined = authData?.access_token;
       if (!accessToken) {
+        console.error('🔐 AuthService.signIn: No access token received');
         // Likely email confirmation required or password grant disabled
         return { user: null, error: 'No access token returned. Confirm your email or check Auth settings.' };
       }
 
+      console.log('🔐 AuthService.signIn: Access token received, fetching user profile...');
+
       // Get user profile from our user_profiles table
-      const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${authData.user.id}`, {
+      const profileUrl = `${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${authData.user.id}`;
+      console.log('🔐 AuthService.signIn: Profile URL:', profileUrl);
+      
+      const profileResponse = await fetch(profileUrl, {
         method: 'GET',
         headers: this.getHeaders(accessToken),
       });
 
+      console.log('🔐 AuthService.signIn: Profile response status:', profileResponse.status);
+
       if (!profileResponse.ok) {
-        return { user: null, error: 'Profile fetch failed' };
+        const profileErrorText = await profileResponse.text();
+        console.error('🔐 AuthService.signIn: Profile fetch failed:', profileErrorText);
+        return { user: null, error: `Profile fetch failed: ${profileResponse.status}` };
       }
 
-      const profileData = await profileResponse.json();
+      let profileData;
+      try {
+        const profileText = await profileResponse.text();
+        profileData = profileText ? JSON.parse(profileText) : [];
+      } catch (parseError) {
+        console.error('🔐 AuthService.signIn: Failed to parse profile response:', parseError);
+        return { user: null, error: 'Failed to parse profile response' };
+      }
       
-      if (profileData.length === 0) {
+      console.log('🔐 AuthService.signIn: Profile data received:', {
+        isArray: Array.isArray(profileData),
+        length: Array.isArray(profileData) ? profileData.length : 'N/A',
+        hasData: !!profileData,
+      });
+      
+      if (!Array.isArray(profileData) || profileData.length === 0) {
+        console.error('🔐 AuthService.signIn: No profile data found');
         return { user: null, error: 'User profile not found' };
       }
 
@@ -436,13 +510,30 @@ export class AuthService {
         username: profileData[0].username, // Include username from profile
       };
 
+      console.log('🔐 AuthService.signIn: User object created:', {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        mood: user.mood,
+      });
+
       // Update online status
+      console.log('🔐 AuthService.signIn: Updating online status...');
       await this.updateOnlineStatus(authData.user.id, true, accessToken);
 
+      console.log('🔐 AuthService.signIn: Sign in successful!');
       return { user, error: null };
     } catch (error) {
-      console.error('Sign in error:', error);
-      return { user: null, error: error instanceof Error ? error.message : 'Unknown error' };
+      console.error('🔐 AuthService.signIn: Sign in error:', error);
+      
+      // Enhanced error handling for different error types
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        return { user: null, error: 'Network request failed. Please check your internet connection.' };
+      } else if (error instanceof Error) {
+        return { user: null, error: error.message };
+      } else {
+        return { user: null, error: 'Unknown error occurred during sign in' };
+      }
     }
   }
 
@@ -575,6 +666,41 @@ export class AuthService {
         success: false, 
         error: 'Network error. Please check your connection and try again.' 
       };
+    }
+  }
+
+  // Test network connectivity
+  static async testNetworkConnectivity(): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('🌐 Testing network connectivity...');
+      
+      // Test basic internet connectivity
+      const testResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/`, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+        },
+        timeout: 10000, // 10 second timeout
+      });
+
+      if (testResponse.ok) {
+        console.log('🌐 Network connectivity test passed');
+        return { success: true };
+      } else {
+        console.error('🌐 Network connectivity test failed:', testResponse.status);
+        return { success: false, error: `HTTP ${testResponse.status}: ${testResponse.statusText}` };
+      }
+    } catch (error) {
+      console.error('🌐 Network connectivity test error:', error);
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        return { success: false, error: 'Network request failed - check internet connection' };
+      } else if (error instanceof Error) {
+        return { success: false, error: error.message };
+      } else {
+        return { success: false, error: 'Unknown network error' };
+      }
     }
   }
 

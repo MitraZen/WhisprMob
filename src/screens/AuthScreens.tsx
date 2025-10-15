@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { theme, spacing, moodConfig } from '@/utils/theme';
 import { MoodType } from '@/types';
 import { AuthService } from '@/services/authService';
 import { useAuth } from '@/store/AuthContext';
+import BiometricService from '@/services/biometricService';
 
 interface SignUpScreenProps {
   onSignUpSuccess: (user: any) => void;
@@ -232,7 +233,24 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
   const { setAuthenticatedUser } = useAuth();
+
+  useEffect(() => {
+    checkBiometricStatus();
+  }, []);
+
+  const checkBiometricStatus = async () => {
+    try {
+      const isAvailable = await BiometricService.isBiometricAvailable();
+      const isEnabled = await BiometricService.isBiometricEnabled();
+      setBiometricAvailable(isAvailable);
+      setBiometricEnabled(isEnabled);
+    } catch (error) {
+      console.error('Error checking biometric status:', error);
+    }
+  };
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -248,10 +266,59 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
         Alert.alert('Sign In Failed', error);
       } else if (user) {
         await setAuthenticatedUser(user);
+        
+        // Offer to enable biometric authentication if available and not already enabled
+        if (biometricAvailable && !biometricEnabled) {
+          const shouldEnable = await BiometricService.promptBiometricSetup();
+          if (shouldEnable) {
+            try {
+              const result = await BiometricService.enableBiometric(user.id, password);
+              if (result.success) {
+                Alert.alert(
+                  'Biometric Authentication Enabled',
+                  `${result.biometryType?.name} authentication has been enabled for faster future sign-ins.`,
+                  [{ text: 'OK' }]
+                );
+              }
+            } catch (error) {
+              console.error('Error enabling biometric authentication:', error);
+            }
+          }
+        }
+        
         onSignInSuccess(user);
       }
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBiometricSignIn = async () => {
+    if (!biometricAvailable || !biometricEnabled) {
+      Alert.alert('Biometric Not Available', 'Biometric authentication is not available or not enabled.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await BiometricService.authenticateWithBiometric();
+      
+      if (result.success && result.credentials) {
+        const { user, error } = await AuthService.signIn(result.credentials.userId, result.credentials.password);
+        
+        if (error) {
+          Alert.alert('Sign In Failed', error);
+        } else if (user) {
+          await setAuthenticatedUser(user);
+          onSignInSuccess(user);
+        }
+      } else {
+        Alert.alert('Authentication Failed', result.error || 'Biometric authentication failed');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred during biometric authentication');
     } finally {
       setIsLoading(false);
     }
@@ -322,6 +389,17 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
               <Text style={styles.buttonText}>Sign In</Text>
             )}
           </TouchableOpacity>
+
+          {/* Biometric Sign In Button */}
+          {biometricAvailable && biometricEnabled && (
+            <TouchableOpacity
+              style={[styles.biometricButton, isLoading && styles.buttonDisabled]}
+              onPress={handleBiometricSignIn}
+              disabled={isLoading || isResettingPassword}
+            >
+              <Text style={styles.biometricButtonText}>🔐 Use Biometric Authentication</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={styles.forgotPasswordButton}
@@ -480,6 +558,21 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  biometricButton: {
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
+  biometricButtonText: {
+    color: '#475569',
+    fontSize: 16,
+    fontWeight: '600',
   },
   buttonText: {
     fontSize: 16,

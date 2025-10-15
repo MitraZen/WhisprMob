@@ -163,6 +163,10 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     await loadNotes(true);
   };
 
+  const handleRefreshControl = () => {
+    loadNotes(true);
+  };
+
   const formatLastUpdated = (date: Date) => {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -202,7 +206,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           console.log('🎧 Buddy created, triggering buddies refresh');
           // Use a callback approach instead of CustomEvent for React Native compatibility
           // The navigation callback will handle refreshing the buddies screen
-          onNavigate('buddies', { refreshTrigger: Date.now() });
+          onNavigate('buddies');
         }
       } else {
         console.log('🎧 Listen failed - result:', result);
@@ -399,7 +403,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={handleRefresh}
+            onRefresh={handleRefreshControl}
             colors={[theme.colors.primary]}
             tintColor={theme.colors.primary}
             title="Pull to refresh"
@@ -415,7 +419,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         ) : error ? (
           <View>
             <Text style={styles.errorText}>❌ {error}</Text>
-            <TouchableOpacity onPress={loadNotes} style={styles.retryButton}>
+            <TouchableOpacity onPress={() => loadNotes()} style={styles.retryButton}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>

@@ -5,6 +5,7 @@ import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { CachedBuddiesService, Buddy } from '@/services/cachedBuddiesService';
+import AnonymousChatService from '@/services/anonymousChatService';
 
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -22,6 +23,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [messageAlerts, setMessageAlerts] = useState<number>(0);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
+  const [buddyRequestsCount, setBuddyRequestsCount] = useState<number>(0);
   
   const styles = createStyles(theme);
 
@@ -35,6 +37,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   // Load buddies from database (initial load)
   useEffect(() => {
     loadBuddies(true);
+    loadBuddyRequestsCount();
   }, [user?.id]);
 
   // Smart refresh strategy - only refresh when app becomes active or user manually refreshes
@@ -64,6 +67,18 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   useEffect(() => {
     setMessageAlerts(getMessageAlerts());
   }, [buddies]);
+
+  // Load buddy requests count
+  const loadBuddyRequestsCount = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const requests = await AnonymousChatService.getBuddyRequests(user.id);
+      setBuddyRequestsCount(requests.length);
+    } catch (error) {
+      console.error('Error loading buddy requests count:', error);
+    }
+  };
 
   // Clear all message alerts
   const clearAllMessageAlerts = async () => {
@@ -227,19 +242,35 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
           <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Buddies</Text>
-        <TouchableOpacity 
-          style={styles.alertsButton}
-          onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
-        >
-          <Icon name="notifications" size={24} color={theme.colors.onSurface} />
-          {messageAlerts > 0 && (
-            <View style={styles.alertBadge}>
-              <Text style={styles.alertBadgeText}>
-                {messageAlerts > 99 ? '99+' : messageAlerts}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.buddyRequestsButton}
+            onPress={() => onNavigate('buddyRequests')}
+          >
+            <Icon name="people" size={24} color={theme.colors.onSurface} />
+            {buddyRequestsCount > 0 && (
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>
+                  {buddyRequestsCount > 99 ? '99+' : buddyRequestsCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.alertsButton}
+            onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
+          >
+            <Icon name="notifications" size={24} color={theme.colors.onSurface} />
+            {messageAlerts > 0 && (
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>
+                  {messageAlerts > 99 ? '99+' : messageAlerts}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
       
       {/* Message Alerts Dropdown */}
@@ -418,6 +449,17 @@ const createStyles = (theme: any) => StyleSheet.create({
     ...theme.typography.headlineMedium,
     color: theme.colors.onSurface,
     fontWeight: 'bold',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  buddyRequestsButton: {
+    position: 'relative',
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
   },
   alertsButton: {
     position: 'relative',

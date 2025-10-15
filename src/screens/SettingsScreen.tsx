@@ -9,6 +9,18 @@ import PermissionService from '../services/permissionService';
 import PermissionInitializer from '../services/permissionInitializer';
 import { testRealtimeSubscription, testNotificationDirectly } from '@/utils/realtimeDebug';
 import { AdminService } from '@/services/adminService'; // Import admin service
+import BiometricService from '@/services/biometricService';
+import AuthDebugger from '@/components/AuthDebugger';
+
+interface SettingsOption {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+  onPress: () => void;
+  color: string;
+  rightComponent?: React.ReactNode;
+}
 
 interface SettingsScreenProps {
   onNavigate: (screen: string) => void;
@@ -46,6 +58,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         
         // Check if user is admin
         checkAdminStatus();
+
+        // Check biometric authentication status
+        checkBiometricStatus();
       }, []);
 
   const loadPermissionStatus = async () => {
@@ -70,6 +85,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     } catch (error) {
       console.error('Failed to check admin status:', error);
       setIsAdmin(false);
+    }
+  };
+
+  const checkBiometricStatus = async () => {
+    try {
+      const isEnabled = await BiometricService.isBiometricEnabled();
+      setBiometricEnabled(isEnabled);
+    } catch (error) {
+      console.error('Error checking biometric status:', error);
     }
   };
 
@@ -110,8 +134,91 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   };
 
   const handleBiometricToggle = async (value: boolean) => {
-    setBiometricEnabled(value);
-    // Add biometric logic here if needed
+    try {
+      if (value) {
+        // Enable biometric authentication
+        const isAvailable = await BiometricService.isBiometricAvailable();
+        if (!isAvailable) {
+          Alert.alert(
+            'Biometric Not Available',
+            'Biometric authentication is not available on this device. Please check your device settings.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        const biometryType = await BiometricService.getBiometricType();
+        if (!biometryType) {
+          Alert.alert(
+            'Biometric Not Available',
+            'No biometric authentication method found on this device.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        // Prompt user to enable biometric authentication
+        const shouldEnable = await BiometricService.promptBiometricSetup();
+        if (!shouldEnable) {
+          return;
+        }
+
+        // For now, we'll need the user's password to enable biometric auth
+        // In a real implementation, you might want to prompt for password here
+        Alert.alert(
+          'Enable Biometric Authentication',
+          `To enable ${biometryType.name} authentication, you'll need to sign in again. This will securely store your credentials for future biometric access.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Continue', 
+              onPress: () => {
+                // Navigate to sign in screen or prompt for password
+                Alert.alert(
+                  'Password Required',
+                  'Please enter your password to enable biometric authentication.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { 
+                      text: 'Enter Password', 
+                      onPress: () => {
+                        // This would typically open a password input modal
+                        // For now, we'll show a placeholder
+                        Alert.alert('Info', 'Password input would be implemented here. For now, biometric authentication is ready to be enabled.');
+                      }
+                    }
+                  ]
+                );
+              }
+            }
+          ]
+        );
+      } else {
+        // Disable biometric authentication
+        const result = await BiometricService.disableBiometric();
+        if (result.success) {
+          setBiometricEnabled(false);
+          Alert.alert(
+            'Biometric Disabled',
+            'Biometric authentication has been disabled successfully.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Error',
+            result.error || 'Failed to disable biometric authentication.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling biometric authentication:', error);
+      Alert.alert(
+        'Error',
+        'An unexpected error occurred while updating biometric settings.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleRequestPermissions = async () => {
@@ -137,7 +244,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       Alert.alert('Test Result', `Notification test: ${result}`);
     } catch (error) {
       console.error('🧪 Notification test failed:', error);
-      Alert.alert('Test Failed', `Error: ${error.message}`);
+      Alert.alert('Test Failed', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -148,12 +255,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       Alert.alert('Test Result', `Realtime test: ${JSON.stringify(result)}`);
     } catch (error) {
       console.error('🧪 Realtime test failed:', error);
-      Alert.alert('Test Failed', `Error: ${error.message}`);
+      Alert.alert('Test Failed', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   // Base settings options (available to all users)
-  const baseSettingsOptions = [
+  const baseSettingsOptions: SettingsOption[] = [
     {
       id: 'notifications',
       title: 'Notification Settings',
@@ -233,6 +340,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       icon: 'download-outline',
       onPress: handleExportData,
       color: '#16a34a'
+    },
+    {
+      id: 'authDebugger',
+      title: 'Auth Debugger',
+      subtitle: 'Debug authentication and network issues',
+      icon: 'bug-outline',
+      onPress: () => onNavigate('authDebugger'),
+      color: '#f59e0b'
     }
   ];
 
@@ -252,6 +367,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       subtitle: 'Test realtime subscription',
       icon: 'bug-outline',
       onPress: handleTestRealtime,
+      color: '#dc2626'
+    },
+    {
+      id: 'debug-websocket',
+      title: '🔌 WebSocket Test Suite',
+      subtitle: 'Test WebSocket connectivity and real-time functionality',
+      icon: 'bug-outline',
+      onPress: () => onNavigate('websocketTest'),
       color: '#dc2626'
     }
   ];
@@ -317,8 +440,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
                   <Text style={styles.optionTitle}>{option.title}</Text>
                   <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
                 </View>
-                {option.rightComponent ? (
-                  option.rightComponent
+                {(option as SettingsOption).rightComponent ? (
+                  (option as SettingsOption).rightComponent
                 ) : (
                   <Icon 
                     name="chevron-forward" 

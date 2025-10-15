@@ -5,6 +5,7 @@ import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { BuddiesService } from '@/services/buddiesService';
 import { notificationService } from '@/services/notificationService';
+import BiometricService from '@/services/biometricService';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -215,8 +216,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('AuthContext - Stored user found:', !!storedUser);
       
       if (storedUser) {
-               // Verify user still exists in database
-               const dbUser = await FlexibleDatabaseService.getUserById(storedUser.id);
+        // Check if biometric authentication is enabled and available
+        const biometricEnabled = await BiometricService.isBiometricEnabled();
+        const biometricAvailable = await BiometricService.isBiometricAvailable();
+        
+        if (biometricEnabled && biometricAvailable) {
+          // Prompt for biometric authentication
+          const shouldAuthenticate = await BiometricService.promptBiometricAuth();
+          if (!shouldAuthenticate) {
+            console.log('AuthContext - Biometric authentication cancelled by user');
+            dispatch({ type: 'SET_LOADING', payload: false });
+            return;
+          }
+          
+          try {
+            const biometricResult = await BiometricService.authenticateWithBiometric();
+            if (!biometricResult.success) {
+              console.log('AuthContext - Biometric authentication failed:', biometricResult.error);
+              // Clear stored user and require manual login
+              await StorageService.removeItem('user');
+              dispatch({ type: 'SET_LOADING', payload: false });
+              return;
+            }
+            console.log('AuthContext - Biometric authentication successful');
+          } catch (error) {
+            console.error('AuthContext - Biometric authentication error:', error);
+            // Clear stored user and require manual login
+            await StorageService.removeItem('user');
+            dispatch({ type: 'SET_LOADING', payload: false });
+            return;
+          }
+        }
+        
+        // Verify user still exists in database
+        const dbUser = await FlexibleDatabaseService.getUserById(storedUser.id);
         if (dbUser) {
           // Update user's online status
           await FlexibleDatabaseService.updateUserOnlineStatus(storedUser.id, true);

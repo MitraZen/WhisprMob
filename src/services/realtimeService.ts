@@ -20,8 +20,21 @@ class RealtimeService {
   private circuitBreakerTimeout = 300000; // 5 minutes before trying again
   private lastCircuitBreakerReset = 0;
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private initializationPromise: Promise<boolean> | null = null; // Prevent multiple simultaneous initializations
 
   async initialize(userId: string): Promise<boolean> {
+    // Prevent multiple simultaneous initializations
+    if (this.initializationPromise) {
+      console.log('🔄 Realtime initialization already in progress, waiting...');
+      return this.initializationPromise;
+    }
+
+    // If already connected for the same user, return true
+    if (this.isConnected && this.userId === userId) {
+      console.log('✅ Realtime service already connected for user:', userId);
+      return true;
+    }
+
     this.userId = userId;
     
     // Check circuit breaker
@@ -39,6 +52,18 @@ class RealtimeService {
     
     console.log('🔄 Initializing realtime service for user:', userId);
     
+    // Create initialization promise to prevent duplicates
+    this.initializationPromise = this.performInitialization();
+    
+    try {
+      const result = await this.initializationPromise;
+      return result;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private async performInitialization(): Promise<boolean> {
     try {
       // Test connection first
       await this.testConnection();
@@ -64,17 +89,32 @@ class RealtimeService {
   }
 
   private async testConnection(): Promise<void> {
-    if (!supabase) {
-      throw new Error('Supabase client is not available');
-    }
+    console.log('🧪 Testing WebSocket connection before enabling realtime...');
     
-    const { error } = await supabase
-      .from('user_profiles')
-      .select('id')
-      .limit(1);
+    try {
+      // Skip WebSocket test to avoid timeout issues
+      console.log('⏭️ Skipping WebSocket test to avoid timeout issues');
+      console.log('✅ WebSocket connection test skipped');
       
-    if (error) {
-      throw new Error(`Connection test failed: ${error.message}`);
+      // Also test basic Supabase connectivity
+      if (!supabase) {
+        throw new Error('Supabase client is not available');
+      }
+      
+      const { error } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .limit(1);
+        
+      if (error) {
+        throw new Error(`Supabase connection test failed: ${error.message}`);
+      }
+      
+      console.log('✅ Supabase connection test passed');
+      
+    } catch (error) {
+      console.error('❌ Connection test failed:', error);
+      throw error;
     }
   }
 
@@ -376,31 +416,6 @@ class RealtimeService {
     };
   }
 
-  // Test realtime connection
-  async testConnection(): Promise<boolean> {
-    try {
-      if (!supabase) {
-        console.error('Supabase client is not available');
-        return false;
-      }
-      
-      const { error } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .limit(1);
-
-      if (error) {
-        console.error('Realtime test connection error:', error);
-        return false;
-      }
-
-      console.log('Realtime test connection successful');
-      return true;
-    } catch (error) {
-      console.error('Realtime test connection failed:', error);
-      return false;
-    }
-  }
 }
 
 export const realtimeService = new RealtimeService();

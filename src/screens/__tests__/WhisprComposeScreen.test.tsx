@@ -11,8 +11,8 @@ jest.mock('../../services/buddiesService', () => ({
   BuddiesService: {
     sendWhisprNote: jest.fn(),
     getWhisprNotes: jest.fn(),
-    listenToWhisprNote: jest.fn(),
-    rejectWhisprNote: jest.fn(),
+    listenToNote: jest.fn(),
+    rejectNote: jest.fn(),
   },
 }));
 
@@ -43,17 +43,23 @@ describe('Whispr Notes Functionality', () => {
       id: 'note-1',
       senderId: 'user-456',
       content: 'Hello from a stranger!',
-      mood: 'happy',
+      mood: 'happy' as const,
       status: 'active',
+      propagationCount: 0,
+      isActive: true,
       createdAt: new Date('2024-01-01T10:00:00Z'),
+      updatedAt: new Date('2024-01-01T10:00:00Z'),
     },
     {
       id: 'note-2',
       senderId: 'user-789',
       content: 'Hope you are having a great day!',
-      mood: 'excited',
+      mood: 'excited' as const,
       status: 'active',
+      propagationCount: 0,
+      isActive: true,
       createdAt: new Date('2024-01-01T11:00:00Z'),
+      updatedAt: new Date('2024-01-01T11:00:00Z'),
     },
   ];
 
@@ -63,8 +69,8 @@ describe('Whispr Notes Functionality', () => {
     // Mock successful service responses
     jest.mocked(BuddiesService.sendWhisprNote).mockResolvedValue('new-note-id');
     jest.mocked(BuddiesService.getWhisprNotes).mockResolvedValue(mockNotes);
-    jest.mocked(BuddiesService.listenToWhisprNote).mockResolvedValue();
-    jest.mocked(BuddiesService.rejectWhisprNote).mockResolvedValue();
+    jest.mocked(BuddiesService.listenToNote).mockResolvedValue({ success: true });
+    jest.mocked(BuddiesService.rejectNote).mockResolvedValue({ success: true });
   });
 
   describe('Note Composition', () => {
@@ -414,7 +420,7 @@ describe('Whispr Notes Functionality', () => {
       fireEvent.press(listenButton);
 
       await waitFor(() => {
-        expect(BuddiesService.listenToWhisprNote).toHaveBeenCalledWith('note-1');
+        expect(BuddiesService.listenToNote).toHaveBeenCalledWith('note-1');
       });
     });
 
@@ -438,12 +444,12 @@ describe('Whispr Notes Functionality', () => {
       fireEvent.press(rejectButton);
 
       await waitFor(() => {
-        expect(BuddiesService.rejectWhisprNote).toHaveBeenCalledWith('note-1');
+        expect(BuddiesService.rejectNote).toHaveBeenCalledWith('note-1');
       });
     });
 
     it('should handle note action errors gracefully', async () => {
-      jest.mocked(BuddiesService.listenToWhisprNote).mockRejectedValue(
+      jest.mocked(BuddiesService.listenToNote).mockRejectedValue(
         new Error('Failed to listen to note')
       );
 
@@ -466,7 +472,7 @@ describe('Whispr Notes Functionality', () => {
       fireEvent.press(listenButton);
 
       await waitFor(() => {
-        expect(BuddiesService.listenToWhisprNote).toHaveBeenCalled();
+        expect(BuddiesService.listenToNote).toHaveBeenCalled();
       });
 
       // Should show error message

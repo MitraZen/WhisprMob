@@ -115,9 +115,7 @@ export class CachedBuddiesService {
     QueryCache.invalidateMessages(buddyId);
     
     // Invalidate buddies cache to update last message info
-    if (userId) {
-      QueryCache.invalidateBuddies(userId);
-    }
+    QueryCache.invalidateBuddies();
     
     return result;
   }
@@ -339,27 +337,6 @@ export class CachedBuddiesService {
     return this.clearChatHistory(buddyId);
   }
 
-  /**
-   * Delete buddy and all associated messages
-   */
-  static async deleteBuddy(buddyId: string, userId: string): Promise<boolean> {
-    const result = await BuddiesService.deleteBuddy(buddyId, userId);
-    
-    // Invalidate all caches related to this buddy
-    QueryCache.invalidateMessages(buddyId);
-    QueryCache.invalidateBuddies(userId);
-    
-    // If the result contains buddy_user_id, also invalidate that user's cache
-    if (result && typeof result === 'object' && 'buddy_user_id' in result) {
-      const buddyUserId = (result as any).buddy_user_id;
-      if (buddyUserId) {
-        QueryCache.invalidateBuddies(buddyUserId);
-        console.log('Cache invalidated for both users:', userId, 'and', buddyUserId);
-      }
-    }
-    
-    return result.success || false;
-  }
 
   /**
    * Sync user online status and invalidate cache
