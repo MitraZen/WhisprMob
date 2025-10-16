@@ -6,6 +6,8 @@ import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { CachedBuddiesService, Buddy } from '@/services/cachedBuddiesService';
 import AnonymousChatService from '@/services/anonymousChatService';
+import { BuddyRealtimeService } from '@/services/buddyRealtimeService';
+import { WalkthroughManager } from '@/components/WalkthroughManager';
 
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -67,6 +69,51 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   useEffect(() => {
     setMessageAlerts(getMessageAlerts());
   }, [buddies]);
+
+  // Setup real-time buddy notifications
+  useEffect(() => {
+    if (!user?.id) return;
+
+    console.log('🔔 Setting up real-time buddy notifications for user:', user.id);
+
+    const handleBuddyDeleted = (deletedBuddy: any) => {
+      console.log('🗑️ Real-time buddy deletion received:', deletedBuddy);
+      // Remove the deleted buddy from the local state immediately
+      setBuddies(prevBuddies => 
+        prevBuddies.filter(buddy => buddy.id !== deletedBuddy.id)
+      );
+    };
+
+    const handleBuddyCreated = (newBuddy: any) => {
+      console.log('➕ Real-time buddy creation received:', newBuddy);
+      // Refresh buddies to get the latest data
+      loadBuddies(false);
+    };
+
+    const handleBuddyUpdated = (updatedBuddy: any) => {
+      console.log('🔄 Real-time buddy update received:', updatedBuddy);
+      // Update the specific buddy in the local state
+      setBuddies(prevBuddies => 
+        prevBuddies.map(buddy => 
+          buddy.id === updatedBuddy.id ? { ...buddy, ...updatedBuddy } : buddy
+        )
+      );
+    };
+
+    // Subscribe to real-time notifications
+    BuddyRealtimeService.subscribeToAllBuddyNotifications(
+      user.id,
+      handleBuddyDeleted,
+      handleBuddyCreated,
+      handleBuddyUpdated
+    );
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔕 Cleaning up real-time buddy notifications');
+      BuddyRealtimeService.unsubscribeFromBuddyNotifications(user.id);
+    };
+  }, [user?.id]);
 
   // Load buddy requests count
   const loadBuddyRequestsCount = async () => {
@@ -187,6 +234,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
       [
         { text: 'View Profile', onPress: () => onNavigate('profile', { userId: buddy.buddyUserId }) },
         { text: 'Clear Chat', onPress: () => clearBuddyChat(buddy) },
+        { text: 'Delete Buddy', style: 'destructive', onPress: () => handleDeleteBuddy(buddy) },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
@@ -202,6 +250,37 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
       console.error('Error clearing buddy chat:', error);
       Alert.alert('Error', 'Failed to clear chat. Please try again.');
     }
+  };
+
+  // Delete buddy with enhanced real-time handling
+  const handleDeleteBuddy = (buddy: Buddy) => {
+    Alert.alert(
+      'Delete Buddy',
+      `Are you sure you want to remove ${buddy.name} from your buddies list? This will end your relationship and remove all chat history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ Deleting buddy:', buddy.id);
+              const result = await CachedBuddiesService.deleteBuddy(buddy.id, user.id);
+              
+              // The real-time service will handle updating the UI immediately
+              // No need to manually reload buddies as the real-time notification will trigger it
+              
+              console.log('✅ Buddy deleted successfully:', result);
+              Alert.alert('Success', `${buddy.name} has been removed from your buddies list`);
+            } catch (error) {
+              console.error('❌ Error deleting buddy:', error);
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+              Alert.alert('Error', `Failed to delete buddy: ${errorMessage}`);
+            }
+          }
+        },
+      ]
+    );
   };
 
   // ✅ Instant local state updates (no reload needed)
@@ -423,6 +502,14 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
 
       {/* Bottom Navigation Menu */}
       <NavigationMenu currentScreen="buddies" onNavigate={onNavigate} />
+      
+      {/* Walkthrough for new users */}
+      <WalkthroughManager 
+        walkthroughId="main_app_tour" 
+        autoShow={true}
+        context="buddies"
+        userId={user?.id}
+      />
     </View>
   );
 };

@@ -116,28 +116,17 @@ export class BuddiesService {
     functionName: string,
     params: Record<string, any> = {}
   ): Promise<any> {
-    const url = `${SUPABASE_URL}/rest/v1/rpc/${functionName}`;
-    const headers = {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-    };
-
-    // Reduced logging for performance
+    // Use authenticated Supabase client for RPC calls
+    const { supabase } = await import('@/config/supabase');
+    
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(params),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`RPC error! status: ${response.status}, message: ${errorText}`);
+      const { data, error } = await supabase.rpc(functionName, params);
+      
+      if (error) {
+        throw new Error(`RPC error! status: ${error.code}, message: ${JSON.stringify(error)}`);
       }
-
-      const result = await response.json();
-      return result;
+      
+      return data;
     } catch (error) {
       console.error(`BuddiesService RPC error for ${functionName}:`, error);
       throw error;
@@ -382,13 +371,14 @@ export class BuddiesService {
   }
 
   // Clear chat history with a buddy
-  static async clearChatHistory(buddyId: string): Promise<boolean> {
+  static async clearChatHistory(buddyId: string, userId?: string): Promise<boolean> {
     try {
       console.log('Clearing chat history for buddy:', buddyId);
       
       // Use the database function to safely clear messages
       const result = await this.rpcRequest('clear_buddy_chat', {
-        p_buddy_id: buddyId
+        p_buddy_id: buddyId,
+        p_user_id: userId
       });
       
       console.log('Chat clear result:', result);

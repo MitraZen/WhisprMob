@@ -428,12 +428,12 @@ class AnonymousChatService {
   async sendBuddyRequest(requesterId: string, receiverId: string, chatRoomId: string, whisprId: string, message?: string): Promise<BuddyRequest> {
     try {
       console.log('👥 Sending buddy request');
-      console.log('🔍 [DEBUG] sendBuddyRequest parameters:');
-      console.log('  - requesterId:', requesterId);
-      console.log('  - receiverId:', receiverId);
-      console.log('  - chatRoomId:', chatRoomId);
-      console.log('  - whisprId:', whisprId);
-      console.log('  - message:', message);
+      console.log('sendBuddyRequest parameters:');
+      console.log('- requesterId:', requesterId);
+      console.log('- receiverId:', receiverId);
+      console.log('- chatRoomId:', chatRoomId);
+      console.log('- whisprId:', whisprId);
+      console.log('- message:', message);
 
       // First check if a buddy request already exists between these users
       const { data: existingRequest, error: checkError } = await supabase
@@ -489,7 +489,7 @@ class AnonymousChatService {
   }
 
   /**
-   * Create buddy relationship between two users
+   * Create buddy relationship between two users using the improved database function
    */
   async createBuddyRelationship(userId1: string, userId2: string): Promise<void> {
     try {
@@ -525,53 +525,24 @@ class AnonymousChatService {
       const user1Initials = getInitials(user1.display_name || 'User');
       const user2Initials = getInitials(user2.display_name || 'User');
 
-      // Create buddy relationship for user1 -> user2
-      const { error: error3 } = await supabase
-        .from('buddies')
-        .insert({
-          user_id: userId1,
-          buddy_user_id: userId2,
-          name: user2.display_name || 'Anonymous User',
-          initials: user2Initials,
-          avatar_url: user2.avatar_url,
-          is_pinned: false,
-          is_online: false,
-          status: 'active',
-          mood: null,
-          last_message: null,
-          last_message_time: null,
-          unread_count: 0
-        });
+      // Use the improved database function for safe buddy creation
+      const { data, error } = await supabase.rpc('create_buddy_relationship_safe', {
+        p_user_id_1: userId1,
+        p_user_id_2: userId2,
+        p_user_1_name: user1.display_name || 'Anonymous User',
+        p_user_2_name: user2.display_name || 'Anonymous User',
+        p_user_1_initials: user1Initials,
+        p_user_2_initials: user2Initials,
+        p_user_1_avatar_url: user1.avatar_url,
+        p_user_2_avatar_url: user2.avatar_url
+      });
 
-      if (error3) {
-        console.error('Error creating buddy relationship (user1->user2):', error3);
-        // Don't throw error here, continue with second relationship
+      if (error) {
+        console.error('Error creating buddy relationship:', error);
+        throw new Error(`Failed to create buddy relationship: ${error.message}`);
       }
 
-      // Create buddy relationship for user2 -> user1
-      const { error: error4 } = await supabase
-        .from('buddies')
-        .insert({
-          user_id: userId2,
-          buddy_user_id: userId1,
-          name: user1.display_name || 'Anonymous User',
-          initials: user1Initials,
-          avatar_url: user1.avatar_url,
-          is_pinned: false,
-          is_online: false,
-          status: 'active',
-          mood: null,
-          last_message: null,
-          last_message_time: null,
-          unread_count: 0
-        });
-
-      if (error4) {
-        console.error('Error creating buddy relationship (user2->user1):', error4);
-        // Don't throw error here, one relationship might already exist
-      }
-
-      console.log('✅ Buddy relationships created successfully');
+      console.log('✅ Buddy relationships created successfully:', data);
     } catch (error) {
       console.error('❌ Error creating buddy relationship:', error);
       throw error;
@@ -633,8 +604,8 @@ class AnonymousChatService {
     onNewBuddyRequest: (request: BuddyRequest) => void
   ): void {
     try {
-      console.log('🔄 [DEBUG] Setting up real-time chat subscription for room:', chatRoomId);
-      console.log('🔄 [DEBUG] User ID:', userId);
+      console.log('🔄  Setting up real-time chat subscription for room:', chatRoomId);
+      console.log('🔄  User ID:', userId);
       
       // Store callbacks
       this.onNewMessage = onNewMessage;
@@ -643,12 +614,12 @@ class AnonymousChatService {
 
       // Unsubscribe from previous subscription
       if (this.realtimeSubscription) {
-        console.log('🔄 [DEBUG] Unsubscribing from previous subscription');
+        console.log('🔄  Unsubscribing from previous subscription');
         this.realtimeSubscription.unsubscribe();
       }
 
       // Subscribe to chat messages
-      console.log('🔄 [DEBUG] Creating new real-time subscription...');
+      console.log('🔄  Creating new real-time subscription...');
       this.realtimeSubscription = supabase
         .channel(`chat-room-${chatRoomId}`)
         .on(
@@ -660,7 +631,7 @@ class AnonymousChatService {
             filter: `chat_room_id=eq.${chatRoomId}`
           },
           (payload) => {
-            console.log('💬 [DEBUG] New chat message received:', payload.new);
+            console.log('💬  New chat message received:', payload.new);
             if (this.onNewMessage) {
               this.onNewMessage(payload.new as ChatMessage);
             }
@@ -675,10 +646,10 @@ class AnonymousChatService {
             filter: `chat_room_id=eq.${chatRoomId}`
           },
           (payload) => {
-            console.log('👥 [DEBUG] New chat participant received via real-time:', payload.new);
-            console.log('👥 [DEBUG] - Participant ID:', payload.new.id);
-            console.log('👥 [DEBUG] - Participant name:', payload.new.anonymous_name);
-            console.log('👥 [DEBUG] - Participant user ID:', payload.new.user_id);
+            console.log('👥  New chat participant received via real-time:', payload.new);
+            console.log('👥  - Participant ID:', payload.new.id);
+            console.log('👥  - Participant name:', payload.new.anonymous_name);
+            console.log('👥  - Participant user ID:', payload.new.user_id);
             if (this.onNewParticipant) {
               this.onNewParticipant(payload.new as ChatParticipant);
             }
@@ -775,7 +746,7 @@ class AnonymousChatService {
    */
   async cleanupStaleBuddyRequests(): Promise<void> {
     try {
-      console.log('🧹 [DEBUG] Cleaning up stale buddy requests...');
+      console.log('🧹  Cleaning up stale buddy requests...');
       
       // Delete buddy requests older than 1 hour
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -810,7 +781,7 @@ class AnonymousChatService {
         return [];
       }
       
-      console.log('🔍 [DEBUG] All buddy requests:', data);
+      console.log('All buddy requests:', data);
       return data || [];
     } catch (error) {
       console.error('❌ Error getting all buddy requests:', error);

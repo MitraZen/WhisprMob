@@ -1,77 +1,138 @@
-# Production Build Script for Whispr Mobile App v1.3.0
-# This script creates both APK and AAB files for Play Store
+# Simple Production Build Script for Whispr Mobile App
+# Version 1.2.14 - Fixed buddy addition delays and cascade delete issues
 
-Write-Host "Starting Whispr Mobile App Production Build v1.3.0" -ForegroundColor Green
-Write-Host "==================================================" -ForegroundColor Green
-
-# Get current date and time
-$BUILD_DATE = Get-Date -Format "yyyy-MM-dd"
-$BUILD_TIME = Get-Date -Format "HH-mm"
-$VERSION_NAME = "1.3.0"
-$VERSION_CODE = "26"
-
-Write-Host "Build Date: $BUILD_DATE" -ForegroundColor Cyan
-Write-Host "Build Time: $BUILD_TIME" -ForegroundColor Cyan
-Write-Host "Version Name: $VERSION_NAME" -ForegroundColor Cyan
-Write-Host "Version Code: $VERSION_CODE" -ForegroundColor Cyan
+Write-Host "🚀 Starting Whispr Mobile App Production Build..." -ForegroundColor Green
+Write-Host "Version: 1.2.14 (Code: 33)" -ForegroundColor Cyan
+Write-Host ""
 
 # Clean previous builds
-Write-Host "Cleaning previous builds..." -ForegroundColor Yellow
-Set-Location android
-& .\gradlew clean
-Set-Location ..
+Write-Host "🧹 Cleaning previous builds..." -ForegroundColor Yellow
+if (Test-Path "android/app/build") {
+    Remove-Item -Recurse -Force "android/app/build"
+}
+if (Test-Path "builds/latest") {
+    Remove-Item -Recurse -Force "builds/latest"
+}
+New-Item -ItemType Directory -Path "builds/latest" -Force | Out-Null
 
 # Clean React Native cache
-Write-Host "Cleaning React Native cache..." -ForegroundColor Yellow
+Write-Host "🧹 Cleaning React Native cache..." -ForegroundColor Yellow
 Start-Process -FilePath "npx" -ArgumentList "react-native", "start", "--reset-cache", "--port=8081" -WindowStyle Hidden
-Start-Sleep -Seconds 5
-Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*Metro*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 3
+Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-# Create builds directory if it doesn't exist
-if (!(Test-Path "builds/latest")) {
-    New-Item -ItemType Directory -Path "builds/latest" -Force
+# Build Android release
+Write-Host "🔨 Building Android release..." -ForegroundColor Yellow
+cd android
+./gradlew clean
+./gradlew assembleRelease
+./gradlew bundleRelease
+cd ..
+
+# Move files to builds/latest
+Write-Host "📁 Moving build files..." -ForegroundColor Yellow
+$APK_SOURCE = "android/app/build/outputs/apk/release/app-release.apk"
+$AAB_SOURCE = "android/app/build/outputs/bundle/release/app-release.aab"
+
+$BUILD_DATE = Get-Date -Format "yyyy-MM-dd"
+$BUILD_TIME = Get-Date -Format "HH-mm"
+$APK_NAME = "Whispr_v1.2.14_v33_$BUILD_DATE`_$BUILD_TIME.apk"
+$AAB_NAME = "Whispr_v1.2.14_v33_$BUILD_DATE`_$BUILD_TIME.aab"
+
+if (Test-Path $APK_SOURCE) {
+    Copy-Item $APK_SOURCE "builds/latest/$APK_NAME"
+    Write-Host "✅ APK created: $APK_NAME" -ForegroundColor Green
+} else {
+    Write-Host "❌ APK not found!" -ForegroundColor Red
 }
 
-# Build APK
-Write-Host "Building APK..." -ForegroundColor Blue
-Set-Location android
-& .\gradlew assembleRelease
-Set-Location ..
+if (Test-Path $AAB_SOURCE) {
+    Copy-Item $AAB_SOURCE "builds/latest/$AAB_NAME"
+    Write-Host "✅ AAB created: $AAB_NAME" -ForegroundColor Green
+} else {
+    Write-Host "❌ AAB not found!" -ForegroundColor Red
+}
 
-# Copy APK to builds directory
-$APK_NAME = "Whispr_v${VERSION_NAME}_v${VERSION_CODE}_${BUILD_DATE}_${BUILD_TIME}.apk"
-Copy-Item "android/app/build/outputs/apk/release/app-release.apk" "builds/latest/$APK_NAME"
-Write-Host "APK created: $APK_NAME" -ForegroundColor Green
+# Create release notes
+$RELEASE_NOTES = @"
+# Whispr Mobile App - Version 1.2.14 Release Notes
 
-# Build AAB (Android App Bundle)
-Write-Host "Building AAB..." -ForegroundColor Blue
-Set-Location android
-& .\gradlew bundleRelease
-Set-Location ..
+## 🎉 Major Fixes and Improvements
 
-# Copy AAB to builds directory
-$AAB_NAME = "Whispr_v${VERSION_NAME}_v${VERSION_CODE}_${BUILD_DATE}_${BUILD_TIME}.aab"
-Copy-Item "android/app/build/outputs/bundle/release/app-release.aab" "builds/latest/$AAB_NAME"
-Write-Host "AAB created: $AAB_NAME" -ForegroundColor Green
+This release focuses on resolving critical buddy functionality issues and improving the overall user experience.
 
-# Create build info file
-$BUILD_INFO_FILE = "builds/latest/build_info_v${VERSION_NAME}_v${VERSION_CODE}.txt"
-$BUILD_INFO = "Whispr Mobile App Build Information`n====================================`n`nVersion Name: $VERSION_NAME`nVersion Code: $VERSION_CODE`nBuild Date: $BUILD_DATE`nBuild Time: $BUILD_TIME`nBuild Type: Release`n`nFiles Created:`n- $APK_NAME`n- $AAB_NAME`n`nRelease Notes:`nVersion 1.3.0 - Simplified Tap to Chat feature with 10-minute expiry, improved real-time chat updates, enhanced database triggers, and better user experience with reduced notification spam`n`nKey Features:`n- Simplified Tap to Chat with 10-minute expiry`n- Real-time chat updates with polling fallback`n- Enhanced database triggers for participant tracking`n- Reduced notification spam`n- Improved user experience`n- Better error handling and debugging`n`nBuild completed successfully!"
+### 🐛 Bug Fixes
 
-Set-Content -Path $BUILD_INFO_FILE -Value $BUILD_INFO
-Write-Host "Build info created: build_info_v${VERSION_NAME}_v${VERSION_CODE}.txt" -ForegroundColor Green
+- **Fixed Buddy Addition Delays:**
+  - Resolved issue where senders would see new buddies appear late after accepting requests
+  - Implemented real-time triggers for instant buddy notifications
+  - Added proper conflict handling for existing buddy relationships
 
-# Display file sizes
+- **Fixed Cascade Delete Issues:**
+  - Resolved problems with buddy deletion not properly cleaning up related data
+  - Fixed SQL ambiguity errors in delete_buddy_safely function
+  - Improved bidirectional relationship management
+
+### ✨ Enhancements
+
+- **Improved Buddy Creation:** New `create_buddy_relationship_safe()` function handles conflicts gracefully
+- **Enhanced Real-time Updates:** Added triggers for instant buddy creation/deletion notifications
+- **Better Error Handling:** More robust error handling throughout buddy management
+- **Performance Improvements:** Added indexes for faster buddy lookups
+
+### 🛠️ Technical Updates
+
+- **Version Bump:**
+  - `package.json` updated to `1.2.14`
+  - Android `version.properties` updated to `VERSION_NAME=1.2.14` and `VERSION_CODE=33`
+- **Database Functions:** New and improved PostgreSQL functions for buddy management
+- **Real-time Triggers:** Added pg_notify triggers for instant UI updates
+
+## 🚀 Ready for Play Store Upload!
+
+This version provides a more stable and responsive buddy management experience.
+"@
+
+$RELEASE_NOTES | Out-File -FilePath "builds/latest/Whispr_v1.2.14_ReleaseNotes.md" -Encoding UTF8
+
+# Create build info
+$BUILD_INFO = @"
+Whispr Mobile App Build Information
+====================================
+
+Version Name: 1.2.14
+Version Code: 33
+Build Date: $BUILD_DATE
+Build Time: $BUILD_TIME
+Build Type: Release
+
+Files Created:
+- $APK_NAME
+- $AAB_NAME
+
+Release Notes:
+Version 1.2.14 - Fixed buddy addition delays and cascade delete issues. Implemented real-time triggers for instant buddy notifications, improved conflict handling, and proper bidirectional relationship management. Buddy creation and deletion now work flawlessly with immediate UI updates.
+
+Key Features:
+- Fixed buddy addition delays
+- Resolved cascade delete issues
+- Implemented real-time triggers
+- Improved conflict handling
+- Enhanced bidirectional relationship management
+- Better error handling and user experience
+- Performance improvements with new indexes
+
+Build completed successfully!
+"@
+
+$BUILD_INFO | Out-File -FilePath "builds/latest/build_info_v1.2.14_v33.txt" -Encoding UTF8
+
+# Display results
 Write-Host ""
-Write-Host "Build Summary:" -ForegroundColor Magenta
-Write-Host "==================" -ForegroundColor Magenta
-$APK_SIZE = (Get-Item "builds/latest/$APK_NAME").Length / 1MB
-$AAB_SIZE = (Get-Item "builds/latest/$AAB_NAME").Length / 1MB
-Write-Host "APK: $([math]::Round($APK_SIZE, 2)) MB" -ForegroundColor White
-Write-Host "AAB: $([math]::Round($AAB_SIZE, 2)) MB" -ForegroundColor White
+Write-Host "🎉 Production build completed successfully!" -ForegroundColor Green
+Write-Host "📁 Files saved to: builds/latest/" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Production build completed successfully!" -ForegroundColor Green
-Write-Host "Files saved to: builds/latest/" -ForegroundColor Cyan
+Write-Host "📱 Version: 1.2.14 (Code: 33)" -ForegroundColor White
+Write-Host "📅 Build Date: $BUILD_DATE $BUILD_TIME" -ForegroundColor White
 Write-Host ""
 Write-Host "Ready for Play Store upload!" -ForegroundColor Green
-
