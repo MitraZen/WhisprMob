@@ -10,6 +10,7 @@ import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import { CachedBuddiesService } from '@/services/cachedBuddiesService';
 import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
+import { WalkthroughManager } from '@/components/WalkthroughManager';
 
 interface WhisprNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -204,6 +205,9 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         // If a buddy was created, trigger a global event to refresh buddies screen
         if (buddyCreated) {
           console.log('🎧 Buddy created, triggering buddies refresh');
+          // Invalidate buddies cache to ensure the new buddy appears immediately
+          const { QueryCache } = await import('@/services/queryCache');
+          QueryCache.invalidateBuddies(user.id);
           // Use a callback approach instead of CustomEvent for React Native compatibility
           // The navigation callback will handle refreshing the buddies screen
           onNavigate('buddies');
@@ -505,6 +509,14 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
 
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
       <DebugOverlay onToggleAdmin={enableAdminMode} />
+      
+      {/* Walkthrough for new users */}
+      <WalkthroughManager 
+        walkthroughId="main_app_tour" 
+        autoShow={true}
+        context="whispr_notes"
+        userId={user?.id}
+      />
     </KeyboardAvoidingView>
   );
 };

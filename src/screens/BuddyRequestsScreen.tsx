@@ -67,6 +67,10 @@ export const BuddyRequestsScreen: React.FC<BuddyRequestsScreenProps> = ({ onNavi
       // Remove the request from the list
       setBuddyRequests(prev => prev.filter(req => req.id !== request.id));
       
+      // Invalidate buddies cache to ensure the new buddy appears immediately
+      const { QueryCache } = await import('@/services/queryCache');
+      QueryCache.invalidateBuddies(user.id);
+      
       Alert.alert(
         'Request Accepted!',
         'You are now buddies! You can start chatting.',

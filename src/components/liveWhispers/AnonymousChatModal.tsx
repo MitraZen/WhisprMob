@@ -46,19 +46,19 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
     const checkBuddyStatuses = async () => {
       if (!user || participants.length === 0) return;
 
-      console.log('🔍 [DEBUG] Checking buddy statuses for participants:', participants.length);
+      console.log('Checking buddy statuses for participants:', participants.length);
       const statusMap = new Map<string, 'none' | 'pending' | 'buddies'>();
       
       for (const participant of participants) {
         if (participant.user_id !== user.id) {
           try {
-            console.log(`🔍 [DEBUG] Checking buddy status for ${participant.anonymous_name} (${participant.user_id})`);
+            console.log(` Checking buddy status for ${participant.anonymous_name} (${participant.user_id})`);
             const [areBuddies, hasPending] = await Promise.all([
               AnonymousChatService.areUsersBuddies(user.id, participant.user_id),
               AnonymousChatService.hasPendingBuddyRequest(user.id, participant.user_id)
             ]);
 
-            console.log(`🔍 [DEBUG] Buddy status for ${participant.anonymous_name}: areBuddies=${areBuddies}, hasPending=${hasPending}`);
+            console.log(` Buddy status for ${participant.anonymous_name}: areBuddies=${areBuddies}, hasPending=${hasPending}`);
 
             if (areBuddies) {
               statusMap.set(participant.user_id, 'buddies');
@@ -74,7 +74,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
         }
       }
 
-      console.log('🔍 [DEBUG] Final buddy statuses:', Array.from(statusMap.entries()));
+      console.log('Final buddy statuses:', Array.from(statusMap.entries()));
       setBuddyStatuses(statusMap);
     };
 
@@ -356,11 +356,11 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
     if (!chatRoom || !user) return;
     
     try {
-      console.log('🔍 [DEBUG] Sending buddy request:');
-      console.log('  - Requester (current user):', user.id, user.email);
-      console.log('  - Receiver (participant):', participant.user_id, participant.anonymous_name);
-      console.log('  - Chat Room:', chatRoom.id);
-      console.log('  - Whispr ID:', whisprId);
+      console.log('Sending buddy request:');
+      console.log(' - Requester (current user):', user.id, user.email);
+      console.log(' - Receiver (participant):', participant.user_id, participant.anonymous_name);
+      console.log(' - Chat Room:', chatRoom.id);
+      console.log(' - Whispr ID:', whisprId);
       
       await AnonymousChatService.sendBuddyRequest(
         user.id,
@@ -563,9 +563,9 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
                 <TouchableOpacity
                   style={[styles.debugButton, { backgroundColor: theme.colors.primary }]}
                   onPress={async () => {
-                    console.log('🧹 [DEBUG] Cleaning up stale buddy requests...');
+                    console.log('🧹 Cleaning up stale buddy requests...');
                     await AnonymousChatService.cleanupStaleBuddyRequests();
-                    console.log('🔍 [DEBUG] Getting all buddy requests...');
+                    console.log('Getting all buddy requests...');
                     await AnonymousChatService.getAllBuddyRequests();
                   }}
                 >

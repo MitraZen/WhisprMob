@@ -269,7 +269,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           style: 'destructive',
           onPress: async () => {
             try {
-              await CachedBuddiesService.clearChatHistory(buddy.id);
+              await CachedBuddiesService.clearChatHistory(buddy.id, user.id);
               setMessages([]); // Clear local messages
               Alert.alert('Success', 'Chat history cleared successfully');
             } catch (error) {

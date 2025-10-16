@@ -1,5 +1,5 @@
 import { BuddiesService, Buddy, BuddyMessage, WhisprNote } from './buddiesService';
-import { QueryCache } from './queryCache';
+import { QueryCache } from './enhancedQueryCache';
 import { MoodType } from '@/types';
 
 // Re-export types for external use
@@ -34,11 +34,11 @@ export class CachedBuddiesService {
   }
 
   /**
-   * Get messages with caching
+   * Get messages with enhanced caching
    */
   static async getMessages(buddyId: string, userId?: string): Promise<BuddyMessage[]> {
-    // Check cache first
-    const cached = QueryCache.getMessages(buddyId);
+    // Check cache first with user context
+    const cached = QueryCache.getMessages(buddyId, userId);
     if (cached) {
       console.log('📦 Cache HIT: Messages for buddy', buddyId);
       return cached;
@@ -49,8 +49,8 @@ export class CachedBuddiesService {
     // Fetch from database
     const messages = await BuddiesService.getMessages(buddyId, userId);
     
-    // Cache the result
-    QueryCache.setMessages(buddyId, messages);
+    // Cache the result with dynamic TTL
+    QueryCache.setMessages(buddyId, messages, userId);
     
     return messages;
   }
@@ -100,7 +100,7 @@ export class CachedBuddiesService {
   }
 
   /**
-   * Send message and invalidate relevant caches
+   * Send message with smart cache updates
    */
   static async sendMessage(
     buddyId: string,
@@ -111,27 +111,58 @@ export class CachedBuddiesService {
     // Send message
     const result = await BuddiesService.sendMessage(buddyId, content, messageType, userId);
     
-    // Invalidate message cache for this buddy
-    QueryCache.invalidateMessages(buddyId);
-    
-    // Invalidate buddies cache to update last message info
-    QueryCache.invalidateBuddies();
+    // Smart cache update instead of full invalidation
+    if (userId) {
+      // Create a new message object for cache update
+      const newMessage: BuddyMessage = {
+        id: result,
+        buddyId: buddyId,
+        senderId: userId,
+        receiverId: '', // Will be filled by the database
+        content: content,
+        messageType: messageType,
+        timestamp: new Date(),
+        isRead: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      // Add message to cache instead of invalidating
+      QueryCache.addMessage(buddyId, newMessage, userId);
+      
+      // Still invalidate buddies cache to update last message info
+      QueryCache.invalidateBuddies(userId);
+    } else {
+      // Fallback to full invalidation if no userId
+      QueryCache.invalidateMessages(buddyId, userId);
+    }
     
     return result;
   }
 
   /**
-   * Mark messages as read and invalidate cache
+   * Mark messages as read with smart cache updates
    */
   static async markMessagesAsRead(buddyId: string, userId?: string): Promise<boolean> {
     const result = await BuddiesService.markMessagesAsRead(buddyId, userId);
     
-    // Invalidate message cache to refresh read status
-    QueryCache.invalidateMessages(buddyId);
-    
-    // Invalidate buddies cache to update unread count
-    if (userId) {
-      QueryCache.invalidateBuddies(userId);
+    if (result) {
+      // Update cache instead of invalidating
+      const cached = QueryCache.getMessages(buddyId, userId);
+      if (cached) {
+        const updatedMessages = cached.map(msg => ({
+          ...msg,
+          isRead: true,
+          updatedAt: new Date()
+        }));
+        QueryCache.setMessages(buddyId, updatedMessages, userId);
+        console.log('📦 Cache UPDATED: Marked messages as read for buddy', buddyId);
+      }
+      
+      // Invalidate buddies cache to update unread count
+      if (userId) {
+        QueryCache.invalidateBuddies(userId);
+      }
     }
     
     return result;
@@ -277,17 +308,27 @@ export class CachedBuddiesService {
   }
 
   /**
-   * Delete buddy and invalidate cache
+   * Delete buddy and invalidate cache with enhanced real-time handling
    */
   static async deleteBuddy(buddyId: string, userId?: string): Promise<boolean> {
-    const result = await BuddiesService.deleteBuddy(buddyId, userId || '');
-    
-    // Invalidate buddies cache
-    if (userId) {
-      QueryCache.invalidateBuddies(userId);
+    try {
+      const result = await BuddiesService.deleteBuddy(buddyId, userId || '');
+      
+      // Invalidate buddies cache for the deleting user
+      if (userId) {
+        QueryCache.invalidateBuddies(userId);
+      }
+      
+      // If we have the buddy_user_id from the result, also invalidate their cache
+      if (result && result.buddy_user_id) {
+        QueryCache.invalidateBuddies(result.buddy_user_id);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error deleting buddy:', error);
+      throw error;
     }
-    
-    return result;
   }
 
   /**
@@ -321,11 +362,16 @@ export class CachedBuddiesService {
   /**
    * Clear chat history and invalidate cache
    */
-  static async clearChatHistory(buddyId: string): Promise<boolean> {
-    const result = await BuddiesService.clearChatHistory(buddyId);
+  static async clearChatHistory(buddyId: string, userId?: string): Promise<boolean> {
+    const result = await BuddiesService.clearChatHistory(buddyId, userId);
     
-    // Invalidate message cache for this buddy
-    QueryCache.invalidateMessages(buddyId);
+    // Invalidate message cache for this buddy with userId context
+    QueryCache.invalidateMessages(buddyId, userId);
+    
+    // Also clear the cache directly to ensure immediate effect
+    QueryCache.atomicClearMessages(buddyId, userId || '');
+    
+    console.log('🗑️ Cache CLEARED: Messages for buddy', buddyId, 'after clear chat');
     
     return result;
   }
@@ -334,7 +380,17 @@ export class CachedBuddiesService {
    * Clear buddy chat (alias for clearChatHistory)
    */
   static async clearBuddyChat(buddyId: string, userId?: string): Promise<boolean> {
-    return this.clearChatHistory(buddyId);
+    const result = await BuddiesService.clearChatHistory(buddyId, userId);
+    
+    // Invalidate message cache for this buddy with userId context
+    QueryCache.invalidateMessages(buddyId, userId);
+    
+    // Also clear the cache directly to ensure immediate effect
+    QueryCache.atomicClearMessages(buddyId, userId || '');
+    
+    console.log('🗑️ Cache CLEARED: Messages for buddy', buddyId, 'after clear chat');
+    
+    return result;
   }
 
 
@@ -352,43 +408,71 @@ export class CachedBuddiesService {
   }
 
   /**
-   * Get cache statistics
+   * Force refresh messages for more frequent updates
+   * Useful for ensuring fresh data on user interaction
+   */
+  static forceRefreshMessages(buddyId: string, userId?: string): void {
+    QueryCache.forceRefreshMessages(buddyId, userId);
+    console.log('🔄 Force refresh: Messages cache cleared for buddy', buddyId);
+  }
+
+  /**
+   * Force refresh all message caches (for debugging/testing)
+   */
+  static forceRefreshAllMessages(): void {
+    QueryCache.forceRefreshAllMessages();
+    console.log('🔄 Force refresh: All message caches cleared');
+  }
+
+  /**
+   * Get cache statistics for monitoring
    */
   static getCacheStats() {
     return QueryCache.getStats();
   }
 
   /**
-   * Clear all caches
+   * Clear all caches (for debugging/testing)
    */
   static clearAllCaches(): void {
     QueryCache.clearAll();
+    console.log('🧹 All caches cleared');
   }
 
   /**
-   * Clear caches for a specific user
+   * Preload data for better performance
    */
-  static clearUserCaches(userId: string): void {
-    QueryCache.invalidateUser(userId);
-  }
-
-  /**
-   * Warm up cache with frequently accessed data
-   */
-  static async warmUpCache(userId: string): Promise<void> {
-    console.log('🔥 Warming up cache for user:', userId);
-    
+  static async preloadUserData(userId: string): Promise<void> {
     try {
-      // Pre-load frequently accessed data
-      await Promise.all([
-        this.getBuddies(userId),
-        this.getWhisprNotes(userId),
-        this.getUserProfile(userId),
-      ]);
+      // Get buddies first
+      const buddies = await this.getBuddies(userId);
       
-      console.log('✅ Cache warmed up successfully');
+      // Extract buddy IDs for message preloading
+      const buddyIds = buddies.map(buddy => buddy.id);
+      
+      // Preload messages for all buddies in background
+      await QueryCache.preloadBuddyData(userId, buddyIds);
+      
+      console.log('🚀 Data PRELOADED: All buddy data for user', userId);
     } catch (error) {
-      console.error('❌ Error warming up cache:', error);
+      console.error('Failed to preload user data:', error);
     }
   }
+
+  /**
+   * Warm up cache for specific user
+   */
+  static async warmUpCache(userId: string): Promise<void> {
+    try {
+      console.log('🔥 Warming up cache for user:', userId);
+      
+      // Preload all user data
+      await this.preloadUserData(userId);
+      
+      console.log('✅ Cache warmed up successfully for user:', userId);
+    } catch (error) {
+      console.error('Failed to warm up cache:', error);
+    }
+  }
+
 }

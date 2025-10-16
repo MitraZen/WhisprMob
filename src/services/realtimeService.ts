@@ -1,11 +1,12 @@
 import { notificationService } from './notificationService';
 import { BuddiesService } from './buddiesService';
 import { supabase } from '@/config/supabase';
+import { QueryCache } from './enhancedQueryCache'; // Add this import
 
 interface RealtimeSubscription {
   channel: any;
   unsubscribe: () => void;
-  type: 'messages' | 'notes';
+  type: 'messages' | 'notes' | 'notifications';
 }
 
 class RealtimeService {
@@ -49,28 +50,25 @@ class RealtimeService {
         this.connectionRetryCount = 0;
       }
     }
-    
-    console.log('🔄 Initializing realtime service for user:', userId);
-    
-    // Create initialization promise to prevent duplicates
-    this.initializationPromise = this.performInitialization();
-    
-    try {
-      const result = await this.initializationPromise;
-      return result;
-    } finally {
-      this.initializationPromise = null;
-    }
+
+    this.initializationPromise = this.performInitialization(userId);
+    const result = await this.initializationPromise;
+    this.initializationPromise = null;
+    return result;
   }
 
-  private async performInitialization(): Promise<boolean> {
+  private async performInitialization(userId: string): Promise<boolean> {
     try {
-      // Test connection first
+      console.log('🚀 Initializing realtime service for user:', userId);
+      
+      // Test connection before proceeding
       await this.testConnection();
       
-      // Subscribe to events
-      await this.subscribeToMessages();
-      await this.subscribeToNotes();
+      // Clear existing subscriptions
+      this.cleanup();
+      
+      // Set up new subscriptions
+      await this.setupSubscriptions(userId);
       
       // Start health monitoring
       this.startHealthMonitoring();
@@ -81,31 +79,24 @@ class RealtimeService {
       
       console.log('✅ Realtime service initialized successfully');
       return true;
+      
     } catch (error) {
       console.error('❌ Failed to initialize realtime service:', error);
-      await this.handleConnectionFailure();
+      this.handleConnectionError();
       return false;
     }
   }
 
   private async testConnection(): Promise<void> {
-    console.log('🧪 Testing WebSocket connection before enabling realtime...');
-    
     try {
+      console.log('🧪 Testing WebSocket connection before enabling realtime...');
+      
       // Skip WebSocket test to avoid timeout issues
       console.log('⏭️ Skipping WebSocket test to avoid timeout issues');
       console.log('✅ WebSocket connection test skipped');
       
-      // Also test basic Supabase connectivity
-      if (!supabase) {
-        throw new Error('Supabase client is not available');
-      }
-      
-      const { error } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .limit(1);
-        
+      // Test Supabase connection
+      const { data, error } = await supabase.from('buddies').select('id').limit(1);
       if (error) {
         throw new Error(`Supabase connection test failed: ${error.message}`);
       }
@@ -118,122 +109,206 @@ class RealtimeService {
     }
   }
 
-  private async subscribeToMessages(): Promise<void> {
-    if (!supabase) {
-      throw new Error('Supabase client is not available');
-    }
-    
-        const channel = supabase
-          .channel(`messages-${this.userId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'buddy_messages',
-            },
-            async (payload) => {
-              console.log('📨 New message received via realtime:', payload);
-              console.log('📨 Payload details:', {
-                hasNew: !!payload.new,
-                senderId: payload.new?.sender_id,
-                buddyId: payload.new?.buddy_id,
-                content: payload.new?.content,
-                userId: this.userId
-              });
-              await this.handleNewMessage(payload);
-            }
-          )
-      .subscribe((status) => {
-        console.log('📨 Message subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          this.connectionRetryCount = 0;
-        } else if (status === 'CHANNEL_ERROR') {
-          this.handleSubscriptionError('messages');
-        }
+  private async setupSubscriptions(userId: string): Promise<void> {
+    try {
+      console.log('📡 Setting up realtime subscriptions for user:', userId);
+      
+      // Subscribe to buddy messages
+      const messagesChannel = supabase
+        .channel('buddy_messages')
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'buddy_messages' 
+          }, 
+          (payload) => {
+            console.log('📨 New message received via realtime:', payload);
+            console.log('📨 Payload details:', {
+              hasNew: !!payload.new,
+              senderId: payload.new?.sender_id,
+              buddyId: payload.new?.buddy_id,
+              content: payload.new?.content,
+              userId: this.userId
+            });
+            this.handleNewMessage(payload);
+          }
+        )
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'buddy_messages' 
+          }, 
+          (payload) => {
+            console.log('📝 Message updated via realtime:', payload);
+            this.handleMessageUpdate(payload);
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Buddy messages subscription status:', status);
+        });
+
+      this.subscriptions.push({
+        channel: messagesChannel,
+        unsubscribe: () => messagesChannel.unsubscribe(),
+        type: 'messages'
       });
 
-    this.subscriptions.push({
-      channel,
-      unsubscribe: () => supabase.removeChannel(channel),
-      type: 'messages'
-    });
-  }
+      // Subscribe to whispr notes
+      const notesChannel = supabase
+        .channel('whispr_notes')
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'whispr_notes' 
+          }, 
+          (payload) => {
+            console.log('📝 New note received via realtime:', payload);
+            this.handleNewNote(payload);
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Whispr notes subscription status:', status);
+        });
 
-  private async subscribeToNotes(): Promise<void> {
-    if (!supabase) {
-      throw new Error('Supabase client is not available');
-    }
-    
-    const channel = supabase
-      .channel(`notes-${this.userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'whispr_notes',
-          filter: `sender_id=neq.${this.userId}`,
-        },
-        async (payload) => {
-          console.log('📝 New note received via realtime:', payload);
-          await this.handleNewNote(payload);
-        }
-      )
-      .subscribe((status) => {
-        console.log('📝 Note subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          this.connectionRetryCount = 0;
-        } else if (status === 'CHANNEL_ERROR') {
-          this.handleSubscriptionError('notes');
-        }
+      this.subscriptions.push({
+        channel: notesChannel,
+        unsubscribe: () => notesChannel.unsubscribe(),
+        type: 'notes'
       });
 
-    this.subscriptions.push({
-      channel,
-      unsubscribe: () => supabase.removeChannel(channel),
-      type: 'notes'
-    });
+      // Subscribe to database trigger notifications via PostgreSQL changes
+      // Note: We can't filter by buddy relationship in the subscription, so we'll filter in the handler
+      const notificationChannel = supabase
+        .channel(`message_notifications_${userId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT',
+            schema: 'public',
+            table: 'buddy_messages'
+          }, 
+          (payload) => {
+            console.log('Database trigger notification received via postgres_changes:', JSON.stringify(payload, null, 2));
+            this.handleDatabaseNotification(payload);
+          }
+        )
+        .subscribe((status) => {
+          console.log('Database notification subscription status:', status);
+        });
+
+      this.subscriptions.push({
+        channel: notificationChannel,
+        unsubscribe: () => notificationChannel.unsubscribe(),
+        type: 'notifications'
+      });
+
+      console.log('✅ Realtime subscriptions set up successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to set up subscriptions:', error);
+      throw error;
+    }
   }
 
   private async handleNewMessage(payload: any): Promise<void> {
     try {
-      console.log('🔔 handleNewMessage called with payload:', payload);
+      console.log('handleNewMessage called with payload:', JSON.stringify(payload, null, 2));
       
       if (!payload || !payload.new) {
-        console.warn('🔔 Invalid payload structure:', payload);
+        console.warn('Invalid payload structure:', payload);
         return;
       }
       
+      // Log message details
+      console.log('Message details:', {
+        messageId: payload.new.id,
+        buddyId: payload.new.buddy_id,
+        senderId: payload.new.sender_id,
+        content: payload.new.content?.substring(0, 50),
+        messageType: payload.new.message_type,
+        isRead: payload.new.is_read,
+        createdAt: payload.new.created_at,
+        currentUserId: this.userId
+      });
+      
       // Check if this message was sent by the current user (prevent self-notifications)
       if (payload.new.sender_id === this.userId) {
-        console.log('🔔 Message sent by current user, ignoring self-notification:', payload.new.sender_id);
+        console.log('Message sent by current user, ignoring self-notification:', payload.new.sender_id);
+        // Still invalidate cache for UI consistency
+        console.log('Invalidating cache for self-message UI consistency');
+        QueryCache.safeInvalidateMessages(payload.new.buddy_id, this.userId || '');
+        QueryCache.invalidateBuddies(this.userId || '');
+        this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated');
+        console.log('Self-message cache invalidation completed');
         return;
       }
       
       // Check if this message is for the current user by verifying buddy relationship
+      console.log('Checking if message is for current user...');
       const isForCurrentUser = await this.isMessageForCurrentUser(payload.new.buddy_id);
+      console.log('Message for current user check result:', isForCurrentUser);
+      
       if (!isForCurrentUser) {
-        console.log('🔔 Message not for current user, ignoring:', payload.new.buddy_id);
+        console.log('Message not for current user, ignoring:', payload.new.buddy_id);
         return;
       }
       
-      // Get buddy information
-      console.log('🔔 Getting buddy info for sender:', payload.new.sender_id);
-      const buddyInfo = await this.getBuddyInfo(payload.new.sender_id);
-      console.log('🔔 Buddy info retrieved:', buddyInfo);
+      // CRITICAL FIX: Only handle cache invalidation and UI updates
+      // NOTIFICATIONS ARE NOW HANDLED BY DATABASE TRIGGERS ONLY
+      console.log('Processing message for current user - cache invalidation only');
+      console.log('Safely invalidating message cache for buddy:', payload.new.buddy_id);
+      QueryCache.safeInvalidateMessages(payload.new.buddy_id, this.userId || '');
       
-      // Send notification
-      console.log('🔔 Sending notification...');
-      await notificationService.showMessageNotification(
-        'New Message',
-        payload.new.content,
-        buddyInfo.name
-      );
+      console.log('Invalidating buddies cache for user:', this.userId);
+      QueryCache.invalidateBuddies(this.userId || '');
       
-      console.log('✅ Message notification sent for:', buddyInfo.name);
+      // Dispatch UI refresh event
+      console.log('Dispatching UI update event');
+      this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated');
+      
+      console.log('Message processing completed - cache invalidated and UI refresh triggered (no client-side notification)');
+      
     } catch (error) {
-      console.error('❌ Error processing message notification:', error);
+      console.error(' Error processing message notification:', error);
+      console.error(' Error stack:', (error as Error).stack);
+    }
+  }
+
+  private async handleMessageUpdate(payload: any): Promise<void> {
+    try {
+      console.log('📝 handleMessageUpdate called with payload:', payload);
+      
+      if (!payload || !payload.new) {
+        console.warn('📝 Invalid payload structure:', payload);
+        return;
+      }
+      
+      // Invalidate message cache for this buddy
+      console.log('🔄 Invalidating message cache for updated message:', payload.new.buddy_id);
+      QueryCache.invalidateMessages(payload.new.buddy_id, this.userId || '');
+      
+      // Dispatch custom event to trigger UI refresh
+      console.log('🔄 Dispatching message-updated event for UI refresh');
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        const event = new CustomEvent('message-updated', {
+          detail: { 
+            type: 'message-updated',
+            buddyId: payload.new.buddy_id,
+            senderId: payload.new.sender_id,
+            content: payload.new.content,
+            userId: this.userId,
+            source: 'realtime'
+          }
+        });
+        window.dispatchEvent(event);
+      }
+      
+      console.log('✅ Message update processed and cache invalidated');
+      
+    } catch (error) {
+      console.error('❌ Error processing message update:', error);
     }
   }
 
@@ -252,13 +327,11 @@ class RealtimeService {
         window.dispatchEvent(event);
       }
       
-      // Send notification
-      await notificationService.showNoteNotification(
-        'New Whispr Note',
-        payload.new.content
-      );
+      // Invalidate notes cache
+      QueryCache.invalidateWhisprNotes(this.userId || '');
       
-      console.log('✅ Note notification sent');
+      console.log('✅ Note update processed and cache invalidated');
+      
     } catch (error) {
       console.error('❌ Error processing note notification:', error);
     }
@@ -266,162 +339,204 @@ class RealtimeService {
 
   private async isMessageForCurrentUser(buddyId: string): Promise<boolean> {
     try {
-      if (!supabase || !this.userId) {
-        return false;
-      }
-      
+      // Check if the current user is either the user_id or buddy_user_id in this relationship
       const { data, error } = await supabase
         .from('buddies')
         .select('id')
         .eq('id', buddyId)
-        .eq('user_id', this.userId)
+        .or(`user_id.eq.${this.userId},buddy_user_id.eq.${this.userId}`)
         .single();
-        
+
       if (error) {
-        console.warn('Error checking buddy relationship:', error);
+        console.error('Error checking buddy relationship:', error);
         return false;
       }
-      
+
       return !!data;
     } catch (error) {
-      console.error('Error checking if message is for current user:', error);
+      console.error('Error checking buddy relationship:', error);
       return false;
     }
   }
 
   private async getBuddyInfo(senderId: string): Promise<{ name: string }> {
     try {
-      if (!supabase) {
-        return { name: 'Anonymous User' };
-      }
-      
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('display_name, username')
+        .select('name')
         .eq('id', senderId)
         .single();
-        
-      if (error) throw error;
-      
-      return {
-        name: data.display_name || data.username || 'Anonymous User'
-      };
+
+      if (error) {
+        console.error('Error getting buddy info:', error);
+        return { name: 'Unknown' };
+      }
+
+      return { name: data.name || 'Unknown' };
     } catch (error) {
       console.error('Error getting buddy info:', error);
-      return { name: 'Anonymous User' };
+      return { name: 'Unknown' };
+    }
+  }
+
+  private dispatchUIUpdateEvent(buddyId: string, eventType: string): void {
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      const event = new CustomEvent(eventType, {
+        detail: { 
+          type: eventType,
+          buddyId: buddyId,
+          userId: this.userId,
+          source: 'realtime'
+        }
+      });
+      window.dispatchEvent(event);
+      console.log(`📢 Dispatched ${eventType} event for buddy ${buddyId}`);
+    }
+  }
+
+  private async handleDatabaseNotification(payload: any): Promise<void> {
+    try {
+      console.log('Processing database notification:', JSON.stringify(payload, null, 2));
+      
+      // Handle PostgreSQL changes payload format
+      if (!payload || !payload.new) {
+        console.warn(' Invalid notification payload:', payload);
+        return;
+      }
+
+      // Extract notification data from the message record
+      const message = payload.new;
+      
+      // Log notification details
+      console.log('Database notification details:', {
+        messageId: message.id,
+        buddyId: message.buddy_id,
+        senderId: message.sender_id,
+        content: message.content?.substring(0, 50),
+        messageType: message.message_type,
+        isRead: message.is_read,
+        createdAt: message.created_at,
+        currentUserId: this.userId
+      });
+      
+      // Check if this notification is for current user
+      if (message.sender_id === this.userId) {
+        console.log('Self-notification ignored - sender matches current user');
+        return;
+      }
+      
+      // Check if this message is for the current user by verifying buddy relationship
+      console.log('Checking if message is for current user...');
+      const isForCurrentUser = await this.isMessageForCurrentUser(message.buddy_id);
+      console.log('Message for current user check result:', isForCurrentUser);
+      
+      if (!isForCurrentUser) {
+        console.log('Message not for current user, ignoring:', message.buddy_id);
+        return;
+      }
+      
+      console.log('Processing new message notification from database trigger');
+      
+      // Invalidate cache and refresh UI (using safe operations)
+      console.log('Safely invalidating message cache for buddy:', message.buddy_id);
+      QueryCache.safeInvalidateMessages(message.buddy_id, this.userId || '');
+      
+      console.log('Invalidating buddies cache for user:', this.userId);
+      QueryCache.invalidateBuddies(this.userId || '');
+      
+      // Dispatch UI refresh events
+      console.log('Dispatching UI refresh events');
+      this.dispatchUIUpdateEvent(message.buddy_id, 'messages-updated');
+      this.dispatchUIUpdateEvent(message.buddy_id, 'buddies-updated');
+      
+      // Show notification (only from database trigger)
+      console.log('Showing notification from database trigger');
+      await notificationService.showMessageNotification(
+        'New Message',
+        message.content ? message.content.substring(0, 100) : 'New message',
+        'Buddy' // We'll get the actual name from the database trigger
+      );
+      
+      console.log('Database notification processed successfully');
+      
+    } catch (error) {
+      console.error(' Error processing database notification:', error);
+      console.error(' Error stack:', (error as Error).stack);
     }
   }
 
   private startHealthMonitoring(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
     this.healthCheckInterval = setInterval(async () => {
-      if (!this.isConnected) return;
-      
       try {
-        await this.testConnection();
+        // Simple health check
+        const { data, error } = await supabase.from('buddies').select('id').limit(1);
+        if (error) {
+          throw new Error(`Health check failed: ${error.message}`);
+        }
+        
         console.log('💚 Realtime health check passed');
       } catch (error) {
-        console.warn('💛 Realtime health check failed:', error);
-        await this.handleConnectionFailure();
+        console.error('💔 Realtime health check failed:', error);
+        this.handleConnectionError();
       }
-    }, 60000); // Check every minute
+    }, 30000); // Check every 30 seconds
   }
 
-  private async handleConnectionFailure(): Promise<void> {
-    this.isConnected = false;
+  private handleConnectionError(): void {
+    console.error('❌ Realtime connection error occurred');
     this.connectionRetryCount++;
     
-    console.log(`🔄 Connection failure #${this.connectionRetryCount}`);
-    
-    if (this.connectionRetryCount <= this.maxRetries) {
-      const delay = Math.min(
-        this.retryDelay * Math.pow(2, this.connectionRetryCount - 1),
-        this.maxRetryDelay
-      );
-      
-      console.log(`⏰ Retrying connection in ${delay}ms`);
-      
-      setTimeout(async () => {
-        if (this.userId && !this.circuitBreakerOpen) {
-          await this.initialize(this.userId);
-        }
-      }, delay);
-    } else {
-      console.log('🔒 Max retries reached, opening circuit breaker');
+    if (this.connectionRetryCount >= this.maxRetries) {
+      console.error('🔒 Max retries reached, opening circuit breaker');
       this.circuitBreakerOpen = true;
       this.lastCircuitBreakerReset = Date.now();
-      this.triggerPollingFallback();
     }
+    
+    this.isConnected = false;
+    this.cleanup();
   }
 
-  private handleSubscriptionError(type: 'messages' | 'notes'): void {
-    console.error(`❌ ${type} subscription error`);
-    // Remove failed subscription
-    this.subscriptions = this.subscriptions.filter(sub => sub.type !== type);
+  private cleanup(): void {
+    console.log('🧹 Cleaning up realtime subscriptions');
     
-    // Try to resubscribe
-    setTimeout(async () => {
-      if (type === 'messages') {
-        await this.subscribeToMessages();
-      } else {
-        await this.subscribeToNotes();
+    this.subscriptions.forEach(subscription => {
+      try {
+        subscription.unsubscribe();
+      } catch (error) {
+        console.error('Error unsubscribing from channel:', error);
       }
-    }, 5000);
-  }
-
-  private triggerPollingFallback(): void {
-    // Dispatch event to notify notification manager
-    // Check if we're in a test environment
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
-      const event = new CustomEvent('realtime-failed', {
-        detail: { userId: this.userId }
-      });
-      window.dispatchEvent(event);
-    } else {
-      // In test environment or React Native, use console logging
-      console.log('🔄 Realtime failed - would trigger polling fallback for user:', this.userId);
-    }
-  }
-
-  async disconnect(): Promise<void> {
-    console.log('🔌 Disconnecting realtime service...');
+    });
     
-    // Clear health check
+    this.subscriptions = [];
+    
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
-    
-    // Unsubscribe from all channels
-    this.subscriptions.forEach(subscription => {
-      subscription.unsubscribe();
-    });
-    
-    this.subscriptions = [];
-    this.isConnected = false;
-    this.userId = null;
-    
-    console.log('✅ Realtime service disconnected');
   }
 
-  isRealtimeConnected(): boolean {
+  async disconnect(): Promise<void> {
+    console.log('🔌 Disconnecting realtime service');
+    this.cleanup();
+    this.isConnected = false;
+    this.userId = null;
+  }
+
+  isConnectedToRealtime(): boolean {
     return this.isConnected;
   }
 
-  getConnectionStatus() {
+  getConnectionStatus(): { connected: boolean; userId: string | null; retryCount: number } {
     return {
-      isConnected: this.isConnected,
+      connected: this.isConnected,
       userId: this.userId,
-      subscriptionCount: this.subscriptions.length,
-      retryCount: this.connectionRetryCount,
+      retryCount: this.connectionRetryCount
     };
   }
-
 }
 
 export const realtimeService = new RealtimeService();
-
-
-
-
-
-

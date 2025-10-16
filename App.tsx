@@ -5,6 +5,7 @@ import AppNavigator from '@/navigation/AppNavigator';
 import { AuthProvider } from '@/store/AuthContext';
 import { AdminProvider } from '@/store/AdminContext';
 import { ThemeProvider, useTheme } from '@/store/ThemeContext';
+import { WalkthroughProvider } from '@/store/WalkthroughContext';
 
 const AppContent: React.FC = () => {
   const { theme, isDark } = useTheme();
@@ -25,7 +26,9 @@ const App: React.FC = () => {
     <ThemeProvider>
       <AdminProvider>
         <AuthProvider>
-          <AppContent />
+          <WalkthroughProvider>
+            <AppContent />
+          </WalkthroughProvider>
         </AuthProvider>
       </AdminProvider>
     </ThemeProvider>

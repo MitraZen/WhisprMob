@@ -340,7 +340,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       icon: 'download-outline',
       onPress: handleExportData,
       color: '#16a34a'
-    },
+    }
+  ];
+
+  // Admin-only debug options
+  const adminDebugOptions = [
     {
       id: 'authDebugger',
       title: 'Auth Debugger',
@@ -348,11 +352,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       icon: 'bug-outline',
       onPress: () => onNavigate('authDebugger'),
       color: '#f59e0b'
-    }
-  ];
-
-  // Admin-only debug options
-  const adminDebugOptions = [
+    },
     {
       id: 'debug-notification',
       title: '🧪 Test Notification',

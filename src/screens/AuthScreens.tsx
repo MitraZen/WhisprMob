@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { 
+  View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, 
+  KeyboardAvoidingView, ScrollView, Platform, BackHandler 
+} from 'react-native';
 import { theme, spacing, moodConfig } from '@/utils/theme';
 import { MoodType } from '@/types';
 import { AuthService } from '@/services/authService';
@@ -21,6 +24,17 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const { setAuthenticatedUser } = useAuth();
+
+  // Handle Android back button
+  useEffect(() => {
+    const backAction = () => {
+      onBackToWelcome();
+      return true; // Prevent default behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [onBackToWelcome]);
 
   const checkUsernameAvailability = async (username: string) => {
     if (username.length < 3) {
@@ -112,12 +126,21 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
   const moods: MoodType[] = ['happy', 'sad', 'excited', 'anxious', 'calm', 'angry', 'curious', 'lonely', 'grateful', 'hopeful'];
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join Whispr and connect with like-minded people</Text>
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Join Whispr and connect with like-minded people</Text>
 
-        <View style={styles.form}>
+          <View style={styles.form}>
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -217,9 +240,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
           >
             <Text style={styles.backButtonText}>← Back to Welcome</Text>
           </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -240,6 +264,17 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   useEffect(() => {
     checkBiometricStatus();
   }, []);
+
+  // Handle Android back button
+  useEffect(() => {
+    const backAction = () => {
+      onBackToWelcome();
+      return true; // Prevent default behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [onBackToWelcome]);
 
   const checkBiometricStatus = async () => {
     try {
@@ -351,12 +386,21 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to continue your Whispr journey</Text>
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Sign in to continue your Whispr journey</Text>
 
-        <View style={styles.form}>
+          <View style={styles.form}>
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -420,9 +464,10 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
           >
             <Text style={styles.backButtonText}>← Back to Welcome</Text>
           </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -430,6 +475,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
