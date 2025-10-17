@@ -1,14 +1,14 @@
-# Production Build Script for Whispr Mobile App v1.2.18
+# Production Build Script for Whispr Mobile App v1.2.19
 # This script creates both APK and AAB files for Play Store
 
-Write-Host "🚀 Starting Whispr Mobile App Production Build v1.2.18" -ForegroundColor Green
+Write-Host "🚀 Starting Whispr Mobile App Production Build v1.2.19" -ForegroundColor Green
 Write-Host "==================================================" -ForegroundColor Green
 
 # Get current date and time
 $BUILD_DATE = Get-Date -Format "yyyy-MM-dd"
 $BUILD_TIME = Get-Date -Format "HH-mm"
-$VERSION_NAME = "1.2.18"
-$VERSION_CODE = "37"
+$VERSION_NAME = "1.2.19"
+$VERSION_CODE = "38"
 
 Write-Host "📅 Build Date: $BUILD_DATE" -ForegroundColor Cyan
 Write-Host "⏰ Build Time: $BUILD_TIME" -ForegroundColor Cyan
@@ -56,17 +56,17 @@ Write-Host "✅ AAB created: $AAB_NAME" -ForegroundColor Green
 
 # Create build info file
 $BUILD_INFO_FILE = "builds/latest/build_info_v${VERSION_NAME}_v${VERSION_CODE}.txt"
-$BUILD_INFO = "Whispr Mobile App Build Information`n====================================`n`nVersion Name: $VERSION_NAME`nVersion Code: $VERSION_CODE`nBuild Date: $BUILD_DATE`nBuild Time: $BUILD_TIME`nBuild Type: Release`n`nFiles Created:`n- $APK_NAME`n- $AAB_NAME`n`nRelease Notes:`nVersion 1.2.18 - Enhanced user onboarding with comprehensive walkthrough system. Fixed walkthrough layout issues for better mobile experience. Made Auth Debugger admin-only for improved security. Implemented user-based walkthrough tracking and optimized performance. Added scrollable walkthrough content and centered navigation buttons.`n`nKey Features:`n- Comprehensive walkthrough system for new users`n- Fixed walkthrough layout and button positioning`n- Auth Debugger now admin-only for security`n- User-based walkthrough tracking`n- Optimized walkthrough performance`n- Scrollable content for better mobile experience`n- Centered navigation buttons`n- Enhanced user onboarding flow`n`nBuild completed successfully!"
+$BUILD_INFO = "Whispr Mobile App Build Information`n====================================`n`nVersion Name: $VERSION_NAME`nVersion Code: $VERSION_CODE`nBuild Date: $BUILD_DATE`nBuild Time: $BUILD_TIME`nBuild Type: Release`n`nFiles Created:`n- $APK_NAME`n- $AAB_NAME`n`nRelease Notes:`nVersion 1.2.19 - Enhanced Profile Visibility and User Experience. Added conversation mode display for better user communication. Fixed database query errors in ActivityScreen. Improved UserProfileView with conversation preferences. Enhanced error handling and data fetching. Streamlined Recent Activity section for cleaner interface.`n`nKey Features:`n- Conversation mode display on user profiles`n- Real-time conversation status indicators`n- Enhanced UserProfileView with conversation preferences`n- Fixed ActivityScreen database queries`n- Improved error handling and logging`n- Streamlined Recent Activity section`n- Better visual hierarchy for conversation modes`n- Enhanced profile viewing experience`n`nBuild completed successfully!"
 
 Set-Content -Path $BUILD_INFO_FILE -Value $BUILD_INFO
 Write-Host "📄 Build info created: build_info_v${VERSION_NAME}_v${VERSION_CODE}.txt" -ForegroundColor Green
 
 # Display file sizes
-Write-Host ""
-Write-Host "📊 Build Summary:" -ForegroundColor Magenta
-Write-Host "==================" -ForegroundColor Magenta
 $APK_SIZE = (Get-Item "builds/latest/$APK_NAME").Length / 1MB
 $AAB_SIZE = (Get-Item "builds/latest/$AAB_NAME").Length / 1MB
+
+Write-Host ""
+Write-Host "📊 File Sizes:" -ForegroundColor Yellow
 Write-Host "APK: $([math]::Round($APK_SIZE, 2)) MB" -ForegroundColor White
 Write-Host "AAB: $([math]::Round($AAB_SIZE, 2)) MB" -ForegroundColor White
 Write-Host ""
