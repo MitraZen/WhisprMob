@@ -6,6 +6,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
+import { ThemedModal } from '@/components/themed';
 import { BuddiesService } from '@/services/buddiesService';
 import { useAuth } from '@/store/AuthContext';
 
@@ -79,6 +80,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const [trustMarkers, setTrustMarkers] = useState<any[]>([]);
   const [showTrustMarkersModal, setShowTrustMarkersModal] = useState(false);
   const [trustScore, setTrustScore] = useState(0);
+
+  // Section visibility states for fold/unfold functionality
+  const [isAchievementsExpanded, setIsAchievementsExpanded] = useState(true);
+  const [isActivityExpanded, setIsActivityExpanded] = useState(true);
 
   const trustMarkerConfig = {
     // Activity Markers
@@ -1062,22 +1067,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
 
   const profileOptions = [
     {
-      id: 'edit',
-      title: 'Edit Profile',
-      subtitle: 'Update your bio, age, location, and gender',
-      icon: 'create-outline',
-      onPress: handleEditProfile,
-      color: '#7c3aed'
-    },
-    {
-      id: 'mood',
-      title: 'Change Mood',
-      subtitle: `${getMoodConfig(profileData.mood).description}`,
-      icon: 'happy-outline',
-      onPress: () => setShowMoodModal(true),
-      color: '#059669'
-    },
-    {
       id: 'delete',
       title: 'Delete Account',
       subtitle: 'Permanently delete your account',
@@ -1191,6 +1180,45 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
           </View>
         </Animated.View>
 
+        {/* Quick Actions Section - Edit Profile & Change Mood */}
+        <Animated.View 
+          style={[
+            styles.quickActionsSection,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
+          <View style={styles.quickActionsHeader}>
+            <Icon name="settings-outline" size={20} color={theme.colors.primary} />
+            <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+          </View>
+          
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={handleEditProfile}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickActionIconContainer, { backgroundColor: '#7c3aed15' }]}>
+                <Icon name="create-outline" size={24} color="#7c3aed" />
+              </View>
+              <Text style={styles.quickActionTitle}>Edit Profile</Text>
+              <Text style={styles.quickActionSubtitle}>Update your info</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={() => setShowMoodModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickActionIconContainer, { backgroundColor: '#05966915' }]}>
+                <Icon name="happy-outline" size={24} color="#059669" />
+              </View>
+              <Text style={styles.quickActionTitle}>Change Mood</Text>
+              <Text style={styles.quickActionSubtitle}>{getMoodConfig(profileData.mood).description}</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
         {/* Achievements Section */}
         {achievements.length > 0 && (
         <Animated.View 
@@ -1199,68 +1227,93 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
             { transform: [{ translateY: slideAnim }] }
           ]}
         >
-            <View style={styles.achievementsHeader}>
-              <Icon name="trophy-outline" size={20} color={theme.colors.warning} />
-              <Text style={styles.achievementsTitle}>Recent Achievements</Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.achievementsHeader}
+              onPress={() => setIsAchievementsExpanded(!isAchievementsExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.achievementsHeaderLeft}>
+                <Icon name="trophy-outline" size={20} color={theme.colors.warning} />
+                <Text style={styles.achievementsTitle}>Recent Achievements</Text>
+              </View>
+              <Icon 
+                name={isAchievementsExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.colors.onSurfaceVariant} 
+              />
+            </TouchableOpacity>
             
-            <View style={styles.achievementsGrid}>
-              {achievements.map((achievement, index) => (
-                <View key={achievement.id} style={styles.achievementCard}>
-                  <View style={[
-                    styles.achievementIconContainer,
-                    { backgroundColor: achievement.isUnlocked ? achievement.color + '15' : theme.colors.surfaceVariant }
-                  ]}>
-                    <Text style={[
-                      styles.achievementIcon,
-                      { opacity: achievement.isUnlocked ? 1 : 0.5 }
-                    ]}>
-                      {achievement.icon}
-          </Text>
-                    {achievement.isUnlocked && (
-                      <View style={styles.achievementBadge}>
-                        <Icon name="checkmark" size={10} color="#fff" />
-                      </View>
-                    )}
-                  </View>
-                  
-                  <View style={styles.achievementContent}>
-                    <Text style={[
-                      styles.achievementTitle,
-                      { color: achievement.isUnlocked ? theme.colors.onSurface : theme.colors.onSurfaceVariant }
-                    ]}>
-                      {achievement.title}
-                    </Text>
-                    <Text style={styles.achievementDescription}>
-                      {achievement.description}
-                    </Text>
-                    
-                    {!achievement.isUnlocked && (
-                      <View style={styles.achievementProgress}>
-                        <View style={styles.achievementProgressBar}>
-                          <View style={[
-                            styles.achievementProgressFill,
-                            { 
-                              width: `${achievement.progressPercentage}%`,
-                              backgroundColor: achievement.color
-                            }
-                          ]} />
-                        </View>
-                        <Text style={styles.achievementProgressText}>
-                          {achievement.progress}/{achievement.requirement}
+            {isAchievementsExpanded && (
+              <View style={styles.achievementsContent}>
+                <View style={styles.achievementsGrid}>
+                  {achievements.map((achievement, index) => (
+                    <View key={achievement.id} style={styles.achievementCard}>
+                      <View style={[
+                        styles.achievementIconContainer,
+                        { backgroundColor: achievement.isUnlocked ? achievement.color + '15' : theme.colors.surfaceVariant }
+                      ]}>
+                        <Text style={[
+                          styles.achievementIcon,
+                          { opacity: achievement.isUnlocked ? 1 : 0.5 }
+                        ]}>
+                          {achievement.icon}
                         </Text>
+                        {achievement.isUnlocked && (
+                          <View style={styles.achievementBadge}>
+                            <Icon name="checkmark" size={10} color="#fff" />
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
+                      
+                      <View style={styles.achievementContent}>
+                        <Text style={[
+                          styles.achievementTitle,
+                          { color: achievement.isUnlocked ? theme.colors.onSurface : theme.colors.onSurfaceVariant }
+                        ]}>
+                          {achievement.title}
+                        </Text>
+                        <Text style={styles.achievementDescription}>
+                          {achievement.description}
+                        </Text>
+                        
+                        {!achievement.isUnlocked && (
+                          <View style={styles.achievementProgress}>
+                            <View style={styles.achievementProgressBar}>
+                              <View style={[
+                                styles.achievementProgressFill,
+                                { 
+                                  width: `${achievement.progressPercentage}%`,
+                                  backgroundColor: achievement.color
+                                }
+                              ]} />
+                            </View>
+                            <Text style={styles.achievementProgressText}>
+                              {achievement.progress}/{achievement.requirement}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
+              </View>
+            )}
             
-            <View style={styles.achievementsFooter}>
-              <Text style={styles.achievementsFooterText}>
-                Keep engaging to unlock more achievements! 🏆
-              </Text>
-            </View>
+            {isAchievementsExpanded && (
+              <View style={styles.achievementsFooter}>
+                <Text style={styles.achievementsFooterText}>
+                  Keep engaging to unlock more achievements! 🏆
+                </Text>
+                <TouchableOpacity
+                  style={styles.viewAllButton}
+                  onPress={() => onNavigate('achievements')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewAllButtonText}>View All Achievements</Text>
+                  <Icon name="chevron-forward" size={16} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
         </Animated.View>
         )}
 
@@ -1506,53 +1559,37 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               { transform: [{ translateY: slideAnim }] }
             ]}
           >
-            <View style={styles.activityHeader}>
-              <Icon name="time-outline" size={20} color={theme.colors.primary} />
-              <Text style={styles.activityTitle}>Recent Activity</Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.activityHeader}
+              onPress={() => setIsActivityExpanded(!isActivityExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.activityHeaderLeft}>
+                <Icon name="time-outline" size={20} color={theme.colors.primary} />
+                <Text style={styles.activityTitle}>Recent Activity</Text>
+              </View>
+              <Icon 
+                name={isActivityExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.colors.onSurfaceVariant} 
+              />
+            </TouchableOpacity>
             
-            <View style={styles.activityList}>
-              {recentActivity.map((activity, index) => (
+            {isActivityExpanded && (
+              <View style={styles.activityFooter}>
+                <Text style={styles.activityFooterText}>
+                  Keep engaging to see more activity! 📱
+                </Text>
                 <TouchableOpacity
-                  key={activity.id}
-                  style={[
-                    styles.activityItem,
-                    index === recentActivity.length - 1 && styles.lastActivityItem
-                  ]}
-                  onPress={() => handleActivityPress(activity)}
+                  style={styles.viewAllButton}
+                  onPress={() => onNavigate('activity')}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.activityContent}>
-                    <View style={[
-                      styles.activityIconContainer,
-                      { backgroundColor: activity.color + '15' }
-                    ]}>
-                      <Text style={styles.activityIcon}>{activity.icon}</Text>
-                    </View>
-                    
-                    <View style={styles.activityTextContainer}>
-                      <Text style={styles.activityItemTitle}>{activity.title}</Text>
-                      <Text style={styles.activityItemDescription}>{activity.description}</Text>
-                      <Text style={styles.activityItemTime}>
-                        {formatActivityTime(activity.timestamp)}
-                      </Text>
-                    </View>
-                    
-                    <Icon 
-                      name="chevron-forward" 
-                      size={16} 
-                      color={theme.colors.onSurfaceVariant} 
-                    />
-                  </View>
+                  <Text style={styles.viewAllButtonText}>View All Activity</Text>
+                  <Icon name="chevron-forward" size={16} color={theme.colors.primary} />
                 </TouchableOpacity>
-              ))}
-            </View>
-            
-            <View style={styles.activityFooter}>
-              <Text style={styles.activityFooterText}>
-                Keep engaging to see more activity! 📱
-              </Text>
-            </View>
+              </View>
+            )}
           </Animated.View>
         )}
 
@@ -1635,62 +1672,49 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       <NavigationMenu currentScreen="profile" onNavigate={onNavigate} />
 
       {/* Mood Selection Modal */}
-      <Modal
+      <ThemedModal
         visible={showMoodModal}
-        transparent={true}
+        onClose={() => setShowMoodModal(false)}
+        title="How are you feeling?"
+        size="medium"
+        slideFrom="bottom"
         animationType="slide"
-        onRequestClose={() => setShowMoodModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.moodModalContainer}>
-            <View style={styles.moodModalHeader}>
-              <Icon name="happy-outline" size={24} color={theme.colors.primary} />
-              <Text style={styles.moodModalTitle}>How are you feeling?</Text>
-              <TouchableOpacity 
-                style={styles.moodModalCloseButton}
-                onPress={() => setShowMoodModal(false)}
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <Text style={styles.moodModalDescription}>
+            Select your current mood to express how you're feeling right now.
+          </Text>
+          
+          <View style={styles.moodGrid}>
+            {Object.entries(moodConfig).map(([moodType, config]) => (
+              <TouchableOpacity
+                key={moodType}
+                style={[
+                  styles.moodOption,
+                  profileData.mood === moodType && styles.selectedMoodOption
+                ]}
+                onPress={() => {
+                  setProfileData(prev => ({ ...prev, mood: moodType }));
+                  setShowMoodModal(false);
+                  Alert.alert(
+                    'Mood Updated',
+                    `You're now feeling ${config.description.toLowerCase()}!`
+                  );
+                }}
+                activeOpacity={0.7}
               >
-                <Icon name="close" size={24} color={theme.colors.onSurface} />
+                <Text style={styles.moodOptionEmoji}>{config.emoji}</Text>
+                <Text style={[
+                  styles.moodOptionText,
+                  profileData.mood === moodType && styles.selectedMoodOptionText
+                ]}>
+                  {config.description}
+                </Text>
               </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.moodModalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.moodModalDescription}>
-                Select your current mood to express how you're feeling right now.
-              </Text>
-              
-              <View style={styles.moodGrid}>
-                {Object.entries(moodConfig).map(([moodType, config]) => (
-                <TouchableOpacity
-                    key={moodType}
-                  style={[
-                    styles.moodOption,
-                      profileData.mood === moodType && styles.selectedMoodOption
-                  ]}
-                  onPress={() => {
-                      setProfileData(prev => ({ ...prev, mood: moodType }));
-                    setShowMoodModal(false);
-                      Alert.alert(
-                        'Mood Updated',
-                        `You're now feeling ${config.description.toLowerCase()}!`
-                      );
-                  }}
-                    activeOpacity={0.7}
-                >
-                  <Text style={styles.moodOptionEmoji}>{config.emoji}</Text>
-                    <Text style={[
-                      styles.moodOptionText,
-                      profileData.mood === moodType && styles.selectedMoodOptionText
-                    ]}>
-                      {config.description}
-                    </Text>
-                </TouchableOpacity>
-              ))}
-              </View>
-            </ScrollView>
+            ))}
           </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </ThemedModal>
 
       {/* Conversation State Modal */}
       <Modal
@@ -2303,6 +2327,66 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
+  quickActionsSection: {
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
+  },
+  quickActionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  quickActionsTitle: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+    marginLeft: spacing.sm,
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    gap: spacing.md,
+  },
+  quickActionCard: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  quickActionIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  quickActionTitle: {
+    ...theme.typography.titleSmall,
+    color: theme.colors.onSurface,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  quickActionSubtitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+    fontSize: 11,
+  },
   avatarContainer: {
     position: 'relative',
     marginBottom: spacing.md,
@@ -2416,14 +2500,23 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderColor: theme.colors.border,
     ...theme.shadows.md,
   },
+  achievementsContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
   achievementsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  achievementsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   achievementsTitle: {
     ...theme.typography.titleMedium,
@@ -2432,8 +2525,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginLeft: spacing.sm,
   },
   achievementsGrid: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
     gap: spacing.md,
   },
   achievementCard: {
@@ -2513,6 +2604,24 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
     fontStyle: 'italic',
+    marginBottom: spacing.md,
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  viewAllButtonText: {
+    ...theme.typography.titleSmall,
+    color: theme.colors.primary,
+    fontWeight: '600',
+    marginRight: spacing.xs,
   },
   activitySection: {
     backgroundColor: theme.colors.surface,
@@ -2523,14 +2632,23 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderColor: theme.colors.border,
     ...theme.shadows.md,
   },
+  activityContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
   activityHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  activityHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   activityTitle: {
     ...theme.typography.titleMedium,
@@ -2539,8 +2657,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginLeft: spacing.sm,
   },
   activityList: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    // Padding now handled by activityContent
   },
   activityItem: {
     backgroundColor: theme.colors.surfaceVariant,
@@ -2599,6 +2716,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
     fontStyle: 'italic',
+    marginBottom: spacing.md,
   },
   bioSection: {
     backgroundColor: theme.colors.surface,

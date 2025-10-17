@@ -16,6 +16,8 @@ import NotificationsScreen from '@/screens/NotificationsScreen';
 import SendNoteScreen from '@/screens/SendNoteScreen';
 import LiveWhisprsScreen from '@/screens/LiveWhisprsScreen';
 import WebSocketTestScreen from '@/screens/WebSocketTestScreen';
+import AchievementsScreen from '@/screens/AchievementsScreen';
+import ActivityScreen from '@/screens/ActivityScreen';
 import { NearbyScreen } from '@/modules/nearby';
 import { useAuth } from '@/store/AuthContext';
 import { useAdmin } from '@/store/AdminContext';
@@ -161,15 +163,16 @@ const AppNavigator = () => {
     });
   };
 
-  // Handle Android back button with safe navigation
+  // Handle Android back button with custom navigation flow
   useEffect(() => {
     const backAction = () => {
       return SafeNavigation.handleBackButton(
+        currentScreen,
         navigationHistory,
         isAuthenticated,
         (screen: string) => {
           setCurrentScreen(screen);
-          // Update navigation history to reflect the safe navigation
+          // Update navigation history to reflect the navigation
           setNavigationHistory(prev => {
             const safeHistory = SafeNavigation.getSafeNavigationHistory(prev, isAuthenticated);
             return [...safeHistory, screen];
@@ -309,6 +312,14 @@ const AppNavigator = () => {
       return null;
     case 'websocketTest':
       if (isAuthenticated) return <WebSocketTestScreen />;
+      navigate('signin');
+      return null;
+    case 'achievements':
+      if (isAuthenticated) return <AchievementsScreen onNavigate={navigate} user={user} />;
+      navigate('signin');
+      return null;
+    case 'activity':
+      if (isAuthenticated) return <ActivityScreen />;
       navigate('signin');
       return null;
     default:

@@ -6,6 +6,7 @@ import { AuthProvider } from '@/store/AuthContext';
 import { AdminProvider } from '@/store/AdminContext';
 import { ThemeProvider, useTheme } from '@/store/ThemeContext';
 import { WalkthroughProvider } from '@/store/WalkthroughContext';
+import { GlobalAlertProvider } from '@/services/globalAlertManager';
 
 const AppContent: React.FC = () => {
   const { theme, isDark } = useTheme();
@@ -27,7 +28,9 @@ const App: React.FC = () => {
       <AdminProvider>
         <AuthProvider>
           <WalkthroughProvider>
-            <AppContent />
+            <GlobalAlertProvider>
+              <AppContent />
+            </GlobalAlertProvider>
           </WalkthroughProvider>
         </AuthProvider>
       </AdminProvider>
