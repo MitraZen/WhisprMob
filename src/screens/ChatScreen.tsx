@@ -5,6 +5,7 @@ import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { CachedBuddiesService, BuddyMessage } from '@/services/cachedBuddiesService';
 import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView';
+import { activeChatService } from '@/services/activeChatService';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -24,6 +25,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isChatCleared, setIsChatCleared] = useState(false);
+  const clearedChatsRef = useRef<Set<string>>(new Set());
   
   const styles = createStyles(theme);
   const [showProfileView, setShowProfileView] = useState(false);
@@ -48,6 +51,45 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       loadMessages();
     }
   }, [buddy?.id]);
+
+  // Set active chat when component mounts and clear when unmounts
+  useEffect(() => {
+    if (buddy?.id) {
+      console.log('📱 ChatScreen: Setting active chat to:', buddy.id);
+      activeChatService.setActiveChat(buddy.id);
+    }
+
+    // Cleanup: Clear active chat when component unmounts
+    return () => {
+      console.log('📱 ChatScreen: Clearing active chat');
+      activeChatService.clearActiveChat();
+    };
+  }, [buddy?.id]);
+
+  // Cleanup old optimistic messages periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      setMessages(prevMessages => {
+        const now = Date.now();
+        const cleanedMessages = prevMessages.filter(msg => {
+          if (msg.id.startsWith('temp-')) {
+            const messageTime = new Date(msg.timestamp || msg.createdAt).getTime();
+            const ageSeconds = (now - messageTime) / 1000;
+            
+            if (ageSeconds > 30) {
+              console.log('🧹 Periodic cleanup: Removing old optimistic message:', msg.id, 'age:', ageSeconds, 'seconds');
+              return false;
+            }
+          }
+          return true;
+        });
+        
+        return cleanedMessages.length !== prevMessages.length ? cleanedMessages : prevMessages;
+      });
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   // Mark messages as read when chat screen is opened
   useEffect(() => {
@@ -86,6 +128,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const loadMessages = async (isRefresh = false, isSilent = false) => {
     if (!buddy?.id) return;
     
+    // ULTRA DIRECT: If chat was cleared, return empty data immediately
+    if (isChatCleared || clearedChatsRef.current.has(buddy.id)) {
+      console.log('🚫 ULTRA DIRECT: Chat was cleared, returning empty data');
+      setMessages([]);
+      return;
+    }
+    
     if (isRefresh && !isSilent) {
       setIsRefreshing(true);
     } else if (!isSilent) {
@@ -98,28 +147,96 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       const messagesData = await CachedBuddiesService.getMessages(buddy.id, user.id);
       console.log(`Loaded ${messagesData.length} messages successfully`);
       
+      // Debug: Check for duplicate message IDs
+      const messageIds = messagesData.map(m => m.id);
+      const uniqueIds = new Set(messageIds);
+      if (messageIds.length !== uniqueIds.size) {
+        console.warn('⚠️ DUPLICATE MESSAGE IDS DETECTED:', {
+          total: messageIds.length,
+          unique: uniqueIds.size,
+          duplicates: messageIds.filter((id, index) => messageIds.indexOf(id) !== index)
+        });
+      }
+      
       // Smart state update - only update if messages actually changed
       setMessages((prevMessages) => {
         // If lengths differ, definitely update
         if (prevMessages.length !== messagesData.length) return messagesData;
         
-        // Compare old vs new messages
+        // Compare old vs new messages and ensure no duplicates
         let changed = false;
-        const merged = messagesData.map((newMessage) => {
-          const oldMessage = prevMessages.find((m) => m.id === newMessage.id);
-          if (!oldMessage) {
-            changed = true;
-            return newMessage;
+        const messageMap = new Map<string, BuddyMessage>();
+        
+        // First, add all previous messages to the map
+        prevMessages.forEach((msg) => {
+          messageMap.set(msg.id, msg);
+        });
+        
+        // Then process new messages, updating or adding as needed
+        messagesData.forEach((newMessage) => {
+          const existingMessage = messageMap.get(newMessage.id);
+          
+          if (!existingMessage) {
+            // Check if this is a real message that should replace an optimistic one
+            const optimisticMessage = Array.from(messageMap.values()).find(msg => 
+              msg.id.startsWith('temp-') && 
+              msg.content === newMessage.content && 
+              msg.senderId === newMessage.senderId &&
+              Math.abs(new Date(msg.timestamp || msg.createdAt).getTime() - new Date(newMessage.timestamp || newMessage.createdAt).getTime()) < 10000 // Increased to 10 seconds
+            );
+            
+            if (optimisticMessage) {
+              // Replace optimistic message with real one
+              messageMap.delete(optimisticMessage.id);
+              messageMap.set(newMessage.id, newMessage);
+              changed = true;
+              console.log('🔄 Replaced optimistic message with real message:', optimisticMessage.id, '->', newMessage.id);
+            } else {
+              // New message
+              changed = true;
+              messageMap.set(newMessage.id, newMessage);
+            }
+          } else {
+            // Check if message content changed
+            const isSame =
+              existingMessage.content === newMessage.content &&
+              existingMessage.senderId === newMessage.senderId &&
+              existingMessage.timestamp?.toString() === newMessage.timestamp?.toString() &&
+              existingMessage.isRead === newMessage.isRead;
+            
+            if (!isSame) {
+              changed = true;
+              messageMap.set(newMessage.id, newMessage);
+            }
           }
-          
-          const isSame =
-            oldMessage.content === newMessage.content &&
-            oldMessage.senderId === newMessage.senderId &&
-            oldMessage.timestamp?.toString() === newMessage.timestamp?.toString() &&
-            oldMessage.isRead === newMessage.isRead;
-          
-          if (!isSame) changed = true;
-          return isSame ? oldMessage : newMessage;
+        });
+        
+        // Clean up any remaining optimistic messages that are older than 30 seconds
+        const now = Date.now();
+        const cleanedMessages = Array.from(messageMap.values()).filter(msg => {
+          if (msg.id.startsWith('temp-')) {
+            const messageTime = new Date(msg.timestamp || msg.createdAt).getTime();
+            const ageSeconds = (now - messageTime) / 1000;
+            
+            if (ageSeconds > 30) {
+              console.log('🧹 Cleaning up old optimistic message:', msg.id, 'age:', ageSeconds, 'seconds');
+              return false;
+            }
+          }
+          return true;
+        });
+        
+        if (cleanedMessages.length !== messageMap.size) {
+          changed = true;
+          messageMap.clear();
+          cleanedMessages.forEach(msg => messageMap.set(msg.id, msg));
+        }
+        
+        // Convert map back to array, sorted by timestamp
+        const merged = Array.from(messageMap.values()).sort((a, b) => {
+          const timeA = new Date(a.timestamp || a.createdAt).getTime();
+          const timeB = new Date(b.timestamp || b.createdAt).getTime();
+          return timeA - timeB;
         });
         
         return changed ? merged : prevMessages;
@@ -155,36 +272,57 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
     const messageContent = newMessage.trim();
     setNewMessage(''); // Clear input immediately for better UX
 
+    // Create optimistic message with temporary ID
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const optimisticMessage: BuddyMessage = {
+      id: tempId,
+      buddyId: buddy.id,
+      senderId: user.id,
+      receiverId: buddy.buddyUserId || '',
+      content: messageContent,
+      messageType: 'text',
+      timestamp: new Date(),
+      isRead: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Add optimistic message immediately
+    setMessages(prev => [...prev, optimisticMessage]);
+
     try {
       const result = await CachedBuddiesService.sendMessage(buddy.id, messageContent, 'text', user.id);
       
-      // Add the message to local state immediately for better UX
       if (result) {
-        const newMessageObj: BuddyMessage = {
-          id: result,
-          buddyId: buddy.id,
-          senderId: user.id,
-          receiverId: buddy.buddyUserId || '',
-          content: messageContent,
-          messageType: 'text',
-          timestamp: new Date(),
-          isRead: true,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
+        console.log('📤 Message sent successfully, replacing optimistic message:', tempId, '->', result);
         
-        setMessages(prev => [...prev, newMessageObj]);
+        // Replace the optimistic message with the real one
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempId 
+            ? { ...msg, id: result }
+            : msg
+        ));
         setLastUpdated(new Date());
+        
+        // Force a reload after a short delay to ensure the real message is properly loaded
+        // This handles cases where real-time updates might interfere
+        setTimeout(async () => {
+          console.log('🔄 Force reloading messages to ensure consistency');
+          await loadMessages(false, true);
+        }, 1500);
+      } else {
+        console.warn('⚠️ No message ID returned from server');
+        // Remove optimistic message if no ID returned
+        setMessages(prev => prev.filter(msg => msg.id !== tempId));
       }
-      
-      // Reload messages after a short delay to ensure consistency
-      setTimeout(async () => {
-        await loadMessages(false, true);
-      }, 1000);
       
     } catch (error) {
       console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
+      
+      // Remove the optimistic message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      
       // Restore the message content if sending failed
       setNewMessage(messageContent);
     } finally {
@@ -269,12 +407,28 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log('🧹 Starting chat clear for buddy:', buddy.id, 'user:', user.id);
+              
+              // ULTRA SIMPLE: Clear local messages and set cleared state
+              setMessages([]);
+              setIsChatCleared(true);
+              clearedChatsRef.current.add(buddy.id);
+              console.log('🚫 SIMPLE: Local messages cleared and state set to cleared');
+              
+              // Clear from database
               await CachedBuddiesService.clearChatHistory(buddy.id, user.id);
-              setMessages([]); // Clear local messages
+              console.log('✅ Database clear completed');
+              
               Alert.alert('Success', 'Chat history cleared successfully');
             } catch (error) {
-              console.error('Error clearing chat:', error);
-              Alert.alert('Error', 'Failed to clear chat history');
+              console.error('❌ Error clearing chat:', error);
+              console.error('❌ Error details:', {
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                buddyId: buddy.id,
+                userId: user.id
+              });
+              Alert.alert('Error', `Failed to clear chat history: ${error instanceof Error ? error.message : String(error)}`);
             }
           }
         }
@@ -489,9 +643,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
             <Text style={styles.emptySubtext}>Start the conversation!</Text>
           </View>
         ) : (
-          messages.map((message) => (
+          messages.map((message, index) => (
             <View
-              key={message.id}
+              key={`${message.id}-${index}`}
               style={[
                 styles.messageContainer,
                 message.senderId === user.id ? styles.userMessage : styles.buddyMessage,

@@ -179,31 +179,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Import services dynamically to avoid circular dependencies
       const { notificationManager } = await import('@/services/notificationManager');
+      const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
+      const { RealtimeService } = await import('@/services/realtimeService');
       
-      // Start hybrid notification service (realtime + polling fallback)
+      // Step 1: Warm up cache from MMKV storage and preload data (instant load + background sync)
+      console.log('🔥 AuthContext - Warming up cache and preloading data...');
+      await CachedBuddiesService.warmUpCache(userId);
+      
+      // Step 2: Initialize realtime service (keeps cache in sync)
+      console.log('📡 AuthContext - Initializing realtime service...');
+      const { realtimeService } = await import('@/services/realtimeService');
+      await realtimeService.initialize(userId);
+      
+      // Step 3: Start hybrid notification service (realtime + polling fallback)
       await notificationManager.startNotificationService(userId);
       
-      console.log('✅ AuthContext - Hybrid notification services initialized successfully');
+      console.log('✅ AuthContext - All services initialized successfully (cache + realtime + notifications)');
     } catch (error) {
-      console.error('❌ AuthContext - Error initializing hybrid notification services:', error);
-      // Don't throw - let the app continue without notifications
+      console.error('❌ AuthContext - Error initializing services:', error);
+      // Don't throw - let the app continue without these services
     }
   };
 
   // Safe notification service cleanup - Phase 2 Hybrid System
   const stopNotificationServicesSafely = async () => {
     try {
-      console.log('🛑 AuthContext - Stopping hybrid notification services');
+      console.log('🛑 AuthContext - Stopping all services');
       
       // Import services dynamically
       const { notificationManager } = await import('@/services/notificationManager');
+      const { realtimeService } = await import('@/services/realtimeService');
       
       // Stop hybrid notification service
       await notificationManager.stopNotificationService();
       
-      console.log('✅ AuthContext - Hybrid notification services stopped successfully');
+      // Disconnect realtime service
+      await realtimeService.disconnect();
+      
+      console.log('✅ AuthContext - All services stopped successfully');
     } catch (error) {
-      console.error('❌ AuthContext - Error stopping hybrid notification services:', error);
+      console.error('❌ AuthContext - Error stopping services:', error);
     }
   };
 

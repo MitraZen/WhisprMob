@@ -43,12 +43,12 @@ export class QueryCache {
   private static totalMisses = 0;
   private static messageDeliveryQueue: MessageDeliveryQueue = {};
 
-  // Cache TTL configuration (in milliseconds) - REDUCED for more frequent updates
+  // Cache TTL configuration (in milliseconds) - OPTIMIZED for better performance
   private static readonly CACHE_TTL: CacheConfig = {
-    buddies: 30 * 1000,        // 30 seconds (was 2 minutes)
-    messages: 15 * 1000,        // 15 seconds (was 1 minute) 
-    whisprNotes: 30 * 1000,    // 30 seconds (was 1 minute)
-    userProfile: 2 * 60 * 1000, // 2 minutes (was 5 minutes)
+    buddies: 2 * 60 * 1000,        // 2 minutes (reasonable for buddy list)
+    messages: 5 * 60 * 1000,        // 5 minutes (much longer for messages)
+    whisprNotes: 2 * 60 * 1000,    // 2 minutes (reasonable for notes)
+    userProfile: 5 * 60 * 1000,    // 5 minutes (user profile doesn't change often)
   };
 
   /**

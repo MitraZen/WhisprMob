@@ -376,24 +376,29 @@ class AnonymousChatService {
 
   /**
    * Check if two users are already buddies
+   * This checks the actual buddies table, not buddy_requests
    */
   async areUsersBuddies(userId1: string, userId2: string): Promise<boolean> {
     try {
-      const { data: buddyRequest, error } = await supabase
-        .from('buddy_requests')
-        .select('status')
-        .or(`and(requester_id.eq.${userId1},receiver_id.eq.${userId2}),and(requester_id.eq.${userId2},receiver_id.eq.${userId1})`)
-        .eq('status', 'accepted')
-        .single();
+      console.log(`🔍 Checking if users are buddies: ${userId1} <-> ${userId2}`);
+      
+      // Check the actual buddies table for existing relationship
+      const { data: buddyRelationship, error } = await supabase
+        .from('buddies')
+        .select('id')
+        .or(`and(user_id.eq.${userId1},buddy_user_id.eq.${userId2}),and(user_id.eq.${userId2},buddy_user_id.eq.${userId1})`)
+        .maybeSingle(); // Use maybeSingle() to handle 0 rows gracefully
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-        console.error('Error checking buddy status:', error);
+      if (error) {
+        console.error('❌ Error checking buddy relationship:', error);
         return false;
       }
 
-      return !!buddyRequest;
+      const areBuddies = !!buddyRelationship;
+      console.log(`✅ Buddy relationship check result: ${areBuddies}`);
+      return areBuddies;
     } catch (error) {
-      console.error('Error checking buddy status:', error);
+      console.error('❌ Error checking buddy status:', error);
       return false;
     }
   }

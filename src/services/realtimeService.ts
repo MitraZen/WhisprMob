@@ -2,6 +2,8 @@ import { notificationService } from './notificationService';
 import { BuddiesService } from './buddiesService';
 import { supabase } from '@/config/supabase';
 import { QueryCache } from './enhancedQueryCache'; // Add this import
+import { CachedBuddiesService } from './cachedBuddiesService';
+import { activeChatService } from './activeChatService';
 
 interface RealtimeSubscription {
   channel: any;
@@ -22,6 +24,7 @@ class RealtimeService {
   private lastCircuitBreakerReset = 0;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private initializationPromise: Promise<boolean> | null = null; // Prevent multiple simultaneous initializations
+  private recentNotifications: Set<string> = new Set(); // Track recent notifications to prevent duplicates
 
   async initialize(userId: string): Promise<boolean> {
     // Prevent multiple simultaneous initializations
@@ -198,9 +201,40 @@ class RealtimeService {
           console.log('Database notification subscription status:', status);
         });
 
+      // Subscribe to buddy deletion notifications
+      const handleBuddyDeletion = this.handleBuddyDeletion.bind(this);
+      console.log('🔧 Setting up buddy deletion handler:', typeof handleBuddyDeletion);
+      const buddyDeletionChannel = supabase
+        .channel(`buddy_deletions_${userId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'DELETE',
+            schema: 'public',
+            table: 'buddies'
+          }, 
+          (payload) => {
+            console.log('Buddy deletion notification received:', JSON.stringify(payload, null, 2));
+            console.log('🔧 Handler type:', typeof handleBuddyDeletion);
+            try {
+              handleBuddyDeletion(payload);
+            } catch (error) {
+              console.error('❌ Error in buddy deletion handler:', error);
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log('Buddy deletion subscription status:', status);
+        });
+
       this.subscriptions.push({
         channel: notificationChannel,
         unsubscribe: () => notificationChannel.unsubscribe(),
+        type: 'notifications'
+      });
+
+      this.subscriptions.push({
+        channel: buddyDeletionChannel,
+        unsubscribe: () => buddyDeletionChannel.unsubscribe(),
         type: 'notifications'
       });
 
@@ -220,6 +254,17 @@ class RealtimeService {
         console.warn('Invalid payload structure:', payload);
         return;
       }
+
+      // 🧩 Step 2: Skip duplicate events caused by database trigger
+      if (payload.new?.origin === 'trigger' && payload.new?.sender_id === this.userId) {
+        console.log('🛑 Duplicate trigger event detected — skipping cache invalidation.');
+        return;
+      }
+      
+      // For trigger-originated messages from other users, we still process them
+      // but we'll handle notifications differently to avoid duplicates
+      const isTriggerEvent = payload.origin === 'trigger';
+      const isSelfMessage = payload.new?.sender_id === this.userId;
       
       // Log message details
       console.log('Message details:', {
@@ -235,13 +280,13 @@ class RealtimeService {
       
       // Check if this message was sent by the current user (prevent self-notifications)
       if (payload.new.sender_id === this.userId) {
-        console.log('Message sent by current user, ignoring self-notification:', payload.new.sender_id);
-        // Still invalidate cache for UI consistency
-        console.log('Invalidating cache for self-message UI consistency');
-        QueryCache.safeInvalidateMessages(payload.new.buddy_id, this.userId || '');
-        QueryCache.invalidateBuddies(this.userId || '');
-        this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated');
-        console.log('Self-message cache invalidation completed');
+        console.log('Message sent by current user, applying real-time update for UI consistency:', payload.new.sender_id);
+        
+        // Apply real-time update for self-message UI consistency
+        CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
+        
+        this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
+        console.log('Self-message real-time update completed');
         return;
       }
       
@@ -255,20 +300,72 @@ class RealtimeService {
         return;
       }
       
-      // CRITICAL FIX: Only handle cache invalidation and UI updates
-      // NOTIFICATIONS ARE NOW HANDLED BY DATABASE TRIGGERS ONLY
-      console.log('Processing message for current user - cache invalidation only');
-      console.log('Safely invalidating message cache for buddy:', payload.new.buddy_id);
-      QueryCache.safeInvalidateMessages(payload.new.buddy_id, this.userId || '');
+      // CRITICAL FIX: Use CachedBuddiesService for intelligent cache updates
+      console.log('Processing message for current user - applying real-time update');
       
-      console.log('Invalidating buddies cache for user:', this.userId);
-      QueryCache.invalidateBuddies(this.userId || '');
+      // Apply real-time update using the new centralized method
+      CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
       
       // Dispatch UI refresh event
       console.log('Dispatching UI update event');
-      this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated');
+      this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
       
-      console.log('Message processing completed - cache invalidated and UI refresh triggered (no client-side notification)');
+      // Show notification for messages from other users (not self-messages)
+      // This handles both realtime INSERT events and database trigger events
+      if (!isSelfMessage) {
+        // Create a unique key for this notification to prevent duplicates
+        const notificationKey = `${payload.new.id}-${payload.new.sender_id}`;
+        
+        if (!this.recentNotifications.has(notificationKey)) {
+          // Check if the user is currently viewing this chat (handles reciprocal buddy relationships)
+          console.log('🔍 DEBUG: About to check active chat for buddy:', payload.new.buddy_id);
+          console.log('🔍 DEBUG: Active chat service debug state:', activeChatService.getDebugState());
+          
+          const isChatActive = await activeChatService.isMessageForActiveChat(payload.new.buddy_id);
+          
+          if (isChatActive) {
+            console.log('🔕 Skipping notification - user is actively viewing this chat');
+            console.log('🔍 DEBUG: Active chat check details:', {
+              messageBuddyId: payload.new.buddy_id,
+              activeChatId: activeChatService.getActiveChat(),
+              isActive: isChatActive
+            });
+          } else {
+            console.log('🔔 Showing notification for message from other user');
+            console.log('🔍 DEBUG: Notification will be shown because:', {
+              messageBuddyId: payload.new.buddy_id,
+              activeChatId: activeChatService.getActiveChat(),
+              isActive: isChatActive
+            });
+            try {
+              // OPTION 1 FIX: Force immediate cache update and UI refresh BEFORE notification
+              console.log('⚡ Forcing immediate cache update and UI refresh');
+              CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
+              this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
+              
+              await notificationService.showMessageNotification(
+                'New Message',
+                payload.new.content ? payload.new.content.substring(0, 100) : 'New message',
+                'Buddy' // We'll get the actual name from the database trigger
+              );
+              
+              // Add to recent notifications and clean up after 5 seconds
+              this.recentNotifications.add(notificationKey);
+              setTimeout(() => {
+                this.recentNotifications.delete(notificationKey);
+              }, 5000);
+            } catch (error) {
+              console.error('❌ Error showing notification:', error);
+            }
+          }
+        } else {
+          console.log('🔕 Duplicate notification prevented:', notificationKey);
+        }
+      } else {
+        console.log('🔕 Skipping notification for self-message');
+      }
+      
+      console.log('Message processing completed - real-time update applied and UI refresh triggered');
       
     } catch (error) {
       console.error(' Error processing message notification:', error);
@@ -285,27 +382,15 @@ class RealtimeService {
         return;
       }
       
-      // Invalidate message cache for this buddy
-      console.log('🔄 Invalidating message cache for updated message:', payload.new.buddy_id);
-      QueryCache.invalidateMessages(payload.new.buddy_id, this.userId || '');
+      // Apply real-time update using the new centralized method
+      console.log('🔄 Applying real-time buddy update for message change');
+      CachedBuddiesService.applyRealtimeUpdate('buddy', payload.new, this.userId!);
       
       // Dispatch custom event to trigger UI refresh
       console.log('🔄 Dispatching message-updated event for UI refresh');
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        const event = new CustomEvent('message-updated', {
-          detail: { 
-            type: 'message-updated',
-            buddyId: payload.new.buddy_id,
-            senderId: payload.new.sender_id,
-            content: payload.new.content,
-            userId: this.userId,
-            source: 'realtime'
-          }
-        });
-        window.dispatchEvent(event);
-      }
+      this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
       
-      console.log('✅ Message update processed and cache invalidated');
+      console.log('✅ Message update processed with real-time update');
       
     } catch (error) {
       console.error('❌ Error processing message update:', error);
@@ -345,7 +430,7 @@ class RealtimeService {
         .select('id')
         .eq('id', buddyId)
         .or(`user_id.eq.${this.userId},buddy_user_id.eq.${this.userId}`)
-        .single();
+        .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
 
       if (error) {
         console.error('Error checking buddy relationship:', error);
@@ -379,18 +464,23 @@ class RealtimeService {
     }
   }
 
-  private dispatchUIUpdateEvent(buddyId: string, eventType: string): void {
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
-      const event = new CustomEvent(eventType, {
-        detail: { 
-          type: eventType,
-          buddyId: buddyId,
-          userId: this.userId,
-          source: 'realtime'
-        }
+  private dispatchUIUpdateEvent(buddyId: string, eventType: string, messageData?: any): void {
+    try {
+      console.log(`📢 Dispatching UI event: ${eventType} for buddy: ${buddyId}`);
+      
+      // Use React Native's DeviceEventEmitter instead of window events
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit(eventType, { 
+        type: eventType,
+        buddyId: buddyId,
+        userId: this.userId,
+        source: 'realtime',
+        message: messageData // Include message data for message-updated events
       });
-      window.dispatchEvent(event);
-      console.log(`📢 Dispatched ${eventType} event for buddy ${buddyId}`);
+      
+      console.log(`✅ UI event dispatched successfully: ${eventType}`);
+    } catch (error) {
+      console.error(`❌ Error dispatching UI event ${eventType}:`, error);
     }
   }
 
@@ -437,31 +527,79 @@ class RealtimeService {
       
       console.log('Processing new message notification from database trigger');
       
-      // Invalidate cache and refresh UI (using safe operations)
-      console.log('Safely invalidating message cache for buddy:', message.buddy_id);
-      QueryCache.safeInvalidateMessages(message.buddy_id, this.userId || '');
+      // Step 1: Tag trigger-originated messages and route to handleNewMessage for unified processing
+      console.log('🔄 Tagging trigger-originated message and routing to handleNewMessage');
+      const messageWithOrigin = { ...message, origin: 'trigger' };
+      const triggerPayload = { ...payload, new: messageWithOrigin };
       
-      console.log('Invalidating buddies cache for user:', this.userId);
-      QueryCache.invalidateBuddies(this.userId || '');
+      // Route to handleNewMessage for unified deduplication logic
+      await this.handleNewMessage(triggerPayload);
       
-      // Dispatch UI refresh events
-      console.log('Dispatching UI refresh events');
-      this.dispatchUIUpdateEvent(message.buddy_id, 'messages-updated');
-      this.dispatchUIUpdateEvent(message.buddy_id, 'buddies-updated');
-      
-      // Show notification (only from database trigger)
-      console.log('Showing notification from database trigger');
-      await notificationService.showMessageNotification(
-        'New Message',
-        message.content ? message.content.substring(0, 100) : 'New message',
-        'Buddy' // We'll get the actual name from the database trigger
-      );
-      
-      console.log('Database notification processed successfully');
+      console.log('Database notification processed successfully via unified handler');
       
     } catch (error) {
       console.error(' Error processing database notification:', error);
       console.error(' Error stack:', (error as Error).stack);
+    }
+  }
+
+  private async handleBuddyDeletion(payload: any): Promise<void> {
+    try {
+      console.log('🗑️ Processing buddy deletion notification:', JSON.stringify(payload, null, 2));
+      
+      // Handle PostgreSQL changes payload format
+      if (!payload || !payload.old) {
+        console.warn('⚠️ Invalid buddy deletion payload:', payload);
+        return;
+      }
+
+      // Extract buddy data from the deleted record
+      const deletedBuddy = payload.old;
+      
+      // Log deletion details
+      console.log('🗑️ Buddy deletion details:', {
+        buddyId: deletedBuddy.id,
+        userId: deletedBuddy.user_id || 'unknown',
+        buddyUserId: deletedBuddy.buddy_user_id || 'unknown',
+        buddyName: deletedBuddy.name || 'unknown',
+        buddyInitials: deletedBuddy.initials || 'unknown',
+        currentUserId: this.userId
+      });
+      
+      // Check if this deletion affects the current user
+      // Since we only have the buddy ID, we need to check if this user has any buddy relationships
+      // For now, we'll invalidate cache for all buddies to be safe
+      const affectsCurrentUser = true; // Assume it affects current user for safety
+      
+      if (!affectsCurrentUser) {
+        console.log('🗑️ Buddy deletion does not affect current user, ignoring');
+        return;
+      }
+      
+      console.log('🗑️ Processing buddy deletion for current user');
+      
+      // Apply real-time update using the new centralized method
+      console.log('🔄 Applying real-time delete update');
+      CachedBuddiesService.applyRealtimeUpdate('delete', payload.old, this.userId!);
+      
+      // Dispatch UI refresh events
+      console.log('📢 Dispatching buddy deletion events');
+      this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddy-deleted');
+      this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddies-updated');
+      
+      // Show notification about buddy deletion
+      console.log('🔔 Showing buddy deletion notification');
+      await notificationService.showMessageNotification(
+        'Buddy Deleted',
+        'A buddy has been removed from your contacts',
+        'System'
+      );
+      
+      console.log('✅ Buddy deletion notification processed successfully');
+      
+    } catch (error) {
+      console.error('❌ Error processing buddy deletion notification:', error);
+      console.error('❌ Error stack:', (error as Error).stack);
     }
   }
 
@@ -539,4 +677,11 @@ class RealtimeService {
   }
 }
 
+export { RealtimeService };
 export const realtimeService = new RealtimeService();
+
+// Expose activeChatService for debugging
+if (__DEV__) {
+  (global as any).activeChatService = activeChatService;
+  (global as any).testActiveChat = () => activeChatService.testActiveChat();
+}

@@ -8,6 +8,7 @@ import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
 import { useAuth } from '@/store/AuthContext';
+import UserProfileDataService from '@/services/userProfileDataService';
 
 interface ProfileScreenProps {
   onNavigate: (screen: string) => void;
@@ -264,6 +265,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date(2000, 0, 1)); // Default to year 2000
   const [showDeleteDropdown, setShowDeleteDropdown] = useState(false);
+  const [isActivityExpanded, setIsActivityExpanded] = useState(true);
+  const [isAchievementsExpanded, setIsAchievementsExpanded] = useState(true);
 
   useEffect(() => {
     // Animate screen entrance
@@ -314,8 +317,46 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         };
         
         setUserStats(statsData);
-        setAchievements(calculateAchievements(statsData));
-        setRecentActivity(generateRecentActivity(statsData));
+        
+        // Get real achievements and activity using the new service
+        const profileDataService = UserProfileDataService.getInstance();
+        
+        // Check and create achievements based on real stats
+        await profileDataService.checkAndCreateAchievements(user.id, {
+          messagesSent: statsData.messagesSent,
+          buddiesCount: statsData.buddiesCount,
+          notesShared: statsData.notesShared,
+          lastActiveAt: profile.last_seen || new Date().toISOString(),
+        });
+        
+        // Get real achievements
+        const realAchievements = await profileDataService.getRealAchievements(user.id);
+        setAchievements(realAchievements.map(achievement => ({
+          id: achievement.id,
+          title: achievement.achievement_name,
+          description: achievement.achievement_description,
+          icon: achievement.icon,
+          color: '#f59e0b',
+          isUnlocked: true,
+          progress: 1,
+          requirement: 1,
+          progressPercentage: 100,
+          points: achievement.points,
+          unlockedAt: achievement.unlocked_at
+        })));
+        
+        // Get real activity
+        const realActivity = await profileDataService.getRealActivity(user.id);
+        setRecentActivity(realActivity.map(activity => ({
+          id: activity.id,
+          type: activity.activity_type,
+          title: activity.activity_description,
+          description: `Activity on ${new Date(activity.timestamp).toLocaleDateString()}`,
+          icon: activity.icon,
+          color: activity.color,
+          timestamp: new Date(activity.timestamp),
+          action: activity.activity_type
+        })));
         
         // Calculate trust markers with progress tracking
         const userData = {
@@ -346,8 +387,38 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         };
         
         setUserStats(fallbackStats);
-        setAchievements(calculateAchievements(fallbackStats));
-        setRecentActivity(generateRecentActivity(fallbackStats));
+        
+        // Get real achievements and activity even for fallback
+        const profileDataService = UserProfileDataService.getInstance();
+        
+        // Get real achievements
+        const realAchievements = await profileDataService.getRealAchievements(user.id);
+        setAchievements(realAchievements.map(achievement => ({
+          id: achievement.id,
+          title: achievement.achievement_name,
+          description: achievement.achievement_description,
+          icon: achievement.icon,
+          color: '#f59e0b',
+          isUnlocked: true,
+          progress: 1,
+          requirement: 1,
+          progressPercentage: 100,
+          points: achievement.points,
+          unlockedAt: achievement.unlocked_at
+        })));
+        
+        // Get real activity
+        const realActivity = await profileDataService.getRealActivity(user.id);
+        setRecentActivity(realActivity.map(activity => ({
+          id: activity.id,
+          type: activity.activity_type,
+          title: activity.activity_description,
+          description: `Activity on ${new Date(activity.timestamp).toLocaleDateString()}`,
+          icon: activity.icon,
+          color: activity.color,
+          timestamp: new Date(activity.timestamp),
+          action: activity.activity_type
+        })));
         
         // Calculate trust markers with progress tracking for fallback
         const userData = {
@@ -1076,14 +1147,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       icon: 'happy-outline',
       onPress: () => setShowMoodModal(true),
       color: '#059669'
-    },
-    {
-      id: 'delete',
-      title: 'Delete Account',
-      subtitle: 'Permanently delete your account',
-      icon: 'trash-outline',
-      onPress: handleDeleteAccount,
-      color: '#ef4444'
     }
   ];
 
@@ -1191,6 +1254,46 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
           </View>
         </Animated.View>
 
+        {/* Profile Options - Positioned below public profile and above achievements */}
+        <Animated.View 
+          style={[
+            styles.optionsContainer,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
+          {profileOptions.map((option, index) => (
+            <View key={option.id}>
+              <TouchableOpacity
+                style={[
+                  styles.optionCard,
+                  index === profileOptions.length - 1 && styles.lastOptionCard
+                ]}
+                onPress={option.onPress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.optionContent}>
+                  <View style={[styles.iconContainer, { backgroundColor: `${option.color}15` }]}>
+                    <Icon 
+                      name={option.icon} 
+                      size={24} 
+                      color={option.color} 
+                    />
+                  </View>
+                  <View style={styles.optionText}>
+                    <Text style={styles.optionTitle}>{option.title}</Text>
+                    <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+                  </View>
+                  <Icon 
+                    name="chevron-forward" 
+                    size={20} 
+                    color={theme.colors.onSurfaceVariant} 
+                  />
+                </View>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </Animated.View>
+
         {/* Achievements Section */}
         {achievements.length > 0 && (
         <Animated.View 
@@ -1199,68 +1302,83 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
             { transform: [{ translateY: slideAnim }] }
           ]}
         >
-            <View style={styles.achievementsHeader}>
-              <Icon name="trophy-outline" size={20} color={theme.colors.warning} />
-              <Text style={styles.achievementsTitle}>Recent Achievements</Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.achievementsHeader}
+              onPress={() => setIsAchievementsExpanded(!isAchievementsExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.achievementsHeaderContent}>
+                <Icon name="trophy-outline" size={20} color={theme.colors.warning} />
+                <Text style={styles.achievementsTitle}>Recent Achievements</Text>
+              </View>
+              <Icon 
+                name={isAchievementsExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.colors.onSurfaceVariant} 
+              />
+            </TouchableOpacity>
             
-            <View style={styles.achievementsGrid}>
-              {achievements.map((achievement, index) => (
-                <View key={achievement.id} style={styles.achievementCard}>
-                  <View style={[
-                    styles.achievementIconContainer,
-                    { backgroundColor: achievement.isUnlocked ? achievement.color + '15' : theme.colors.surfaceVariant }
-                  ]}>
-                    <Text style={[
-                      styles.achievementIcon,
-                      { opacity: achievement.isUnlocked ? 1 : 0.5 }
-                    ]}>
-                      {achievement.icon}
-          </Text>
-                    {achievement.isUnlocked && (
-                      <View style={styles.achievementBadge}>
-                        <Icon name="checkmark" size={10} color="#fff" />
+            {isAchievementsExpanded && (
+              <>
+                <View style={styles.achievementsGrid}>
+                  {achievements.map((achievement, index) => (
+                    <View key={achievement.id} style={styles.achievementCard}>
+                      <View style={[
+                        styles.achievementIconContainer,
+                        { backgroundColor: achievement.isUnlocked ? achievement.color + '15' : theme.colors.surfaceVariant }
+                      ]}>
+                        <Text style={[
+                          styles.achievementIcon,
+                          { opacity: achievement.isUnlocked ? 1 : 0.5 }
+                        ]}>
+                          {achievement.icon}
+            </Text>
+                        {achievement.isUnlocked && (
+                          <View style={styles.achievementBadge}>
+                            <Icon name="checkmark" size={10} color="#fff" />
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
-                  
-                  <View style={styles.achievementContent}>
-                    <Text style={[
-                      styles.achievementTitle,
-                      { color: achievement.isUnlocked ? theme.colors.onSurface : theme.colors.onSurfaceVariant }
-                    ]}>
-                      {achievement.title}
-                    </Text>
-                    <Text style={styles.achievementDescription}>
-                      {achievement.description}
-                    </Text>
-                    
-                    {!achievement.isUnlocked && (
-                      <View style={styles.achievementProgress}>
-                        <View style={styles.achievementProgressBar}>
-                          <View style={[
-                            styles.achievementProgressFill,
-                            { 
-                              width: `${achievement.progressPercentage}%`,
-                              backgroundColor: achievement.color
-                            }
-                          ]} />
-                        </View>
-                        <Text style={styles.achievementProgressText}>
-                          {achievement.progress}/{achievement.requirement}
+                      
+                      <View style={styles.achievementContent}>
+                        <Text style={[
+                          styles.achievementTitle,
+                          { color: achievement.isUnlocked ? theme.colors.onSurface : theme.colors.onSurfaceVariant }
+                        ]}>
+                          {achievement.title}
                         </Text>
+                        <Text style={styles.achievementDescription}>
+                          {achievement.description}
+                        </Text>
+                        
+                        {!achievement.isUnlocked && (
+                          <View style={styles.achievementProgress}>
+                            <View style={styles.achievementProgressBar}>
+                              <View style={[
+                                styles.achievementProgressFill,
+                                { 
+                                  width: `${achievement.progressPercentage}%`,
+                                  backgroundColor: achievement.color
+                                }
+                              ]} />
+                            </View>
+                            <Text style={styles.achievementProgressText}>
+                              {achievement.progress}/{achievement.requirement}
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-            
-            <View style={styles.achievementsFooter}>
-              <Text style={styles.achievementsFooterText}>
-                Keep engaging to unlock more achievements! 🏆
-              </Text>
-            </View>
+                
+                <View style={styles.achievementsFooter}>
+                  <Text style={styles.achievementsFooterText}>
+                    Keep engaging to unlock more achievements! 🏆
+                  </Text>
+                </View>
+              </>
+            )}
         </Animated.View>
         )}
 
@@ -1506,128 +1624,131 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               { transform: [{ translateY: slideAnim }] }
             ]}
           >
-            <View style={styles.activityHeader}>
-              <Icon name="time-outline" size={20} color={theme.colors.primary} />
-              <Text style={styles.activityTitle}>Recent Activity</Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.activityHeader}
+              onPress={() => setIsActivityExpanded(!isActivityExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.activityHeaderContent}>
+                <Icon name="time-outline" size={20} color={theme.colors.primary} />
+                <Text style={styles.activityTitle}>Recent Activity</Text>
+              </View>
+              <Icon 
+                name={isActivityExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.colors.onSurfaceVariant} 
+              />
+            </TouchableOpacity>
             
-            <View style={styles.activityList}>
-              {recentActivity.map((activity, index) => (
-                <TouchableOpacity
-                  key={activity.id}
-                  style={[
-                    styles.activityItem,
-                    index === recentActivity.length - 1 && styles.lastActivityItem
-                  ]}
-                  onPress={() => handleActivityPress(activity)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.activityContent}>
-                    <View style={[
-                      styles.activityIconContainer,
-                      { backgroundColor: activity.color + '15' }
-                    ]}>
-                      <Text style={styles.activityIcon}>{activity.icon}</Text>
-                    </View>
-                    
-                    <View style={styles.activityTextContainer}>
-                      <Text style={styles.activityItemTitle}>{activity.title}</Text>
-                      <Text style={styles.activityItemDescription}>{activity.description}</Text>
-                      <Text style={styles.activityItemTime}>
-                        {formatActivityTime(activity.timestamp)}
-                      </Text>
-                    </View>
-                    
-                    <Icon 
-                      name="chevron-forward" 
-                      size={16} 
-                      color={theme.colors.onSurfaceVariant} 
-                    />
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
-            <View style={styles.activityFooter}>
-              <Text style={styles.activityFooterText}>
-                Keep engaging to see more activity! 📱
-              </Text>
-            </View>
+            {isActivityExpanded && (
+              <>
+                <View style={styles.activityList}>
+                  {recentActivity.map((activity, index) => (
+                    <TouchableOpacity
+                      key={activity.id}
+                      style={[
+                        styles.activityItem,
+                        index === recentActivity.length - 1 && styles.lastActivityItem
+                      ]}
+                      onPress={() => handleActivityPress(activity)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.activityContent}>
+                        <View style={[
+                          styles.activityIconContainer,
+                          { backgroundColor: activity.color + '15' }
+                        ]}>
+                          <Text style={styles.activityIcon}>{activity.icon}</Text>
+                        </View>
+                        
+                        <View style={styles.activityTextContainer}>
+                          <Text style={styles.activityItemTitle}>{activity.title}</Text>
+                          <Text style={styles.activityItemDescription}>{activity.description}</Text>
+                          <Text style={styles.activityItemTime}>
+                            {formatActivityTime(activity.timestamp)}
+                          </Text>
+                        </View>
+                        
+                        <Icon 
+                          name="chevron-forward" 
+                          size={16} 
+                          color={theme.colors.onSurfaceVariant} 
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                
+                <View style={styles.activityFooter}>
+                  <Text style={styles.activityFooterText}>
+                    Keep engaging to see more activity! 📱
+                  </Text>
+                </View>
+              </>
+            )}
           </Animated.View>
         )}
 
-        {/* Profile Options */}
+        {/* Delete Account Section - Separated at bottom */}
         <Animated.View 
           style={[
-            styles.optionsContainer,
+            styles.deleteAccountSection,
             { transform: [{ translateY: slideAnim }] }
           ]}
         >
-          {profileOptions.map((option, index) => (
-            <View key={option.id}>
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  index === profileOptions.length - 1 && styles.lastOptionCard
-                ]}
-                onPress={option.onPress}
-                activeOpacity={0.7}
-              >
-                <View style={styles.optionContent}>
-                  <View style={[styles.iconContainer, { backgroundColor: `${option.color}15` }]}>
-                    <Icon 
-                      name={option.icon} 
-                      size={24} 
-                      color={option.color} 
-                    />
-                  </View>
-                  <View style={styles.optionText}>
-                    <Text style={styles.optionTitle}>{option.title}</Text>
-                    <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-                  </View>
-                  <Icon 
-                    name="chevron-forward" 
-                    size={20} 
-                    color={theme.colors.onSurfaceVariant} 
-                  />
-                </View>
-              </TouchableOpacity>
-              
-              {/* Delete Account Confirmation Dropdown */}
-              {option.id === 'delete' && showDeleteDropdown && (
-                <View style={styles.deleteDropdown}>
-                  <View style={styles.deleteDropdownContent}>
-                    <View style={styles.deleteWarningHeader}>
-                      <Icon name="warning" size={24} color="#ef4444" />
-                      <Text style={styles.deleteWarningTitle}>Confirm Account Deletion</Text>
-                    </View>
-                    <Text style={styles.deleteWarningText}>
-                      This action cannot be undone. All your data, messages, and connections will be permanently deleted.
-                    </Text>
-                    <View style={styles.deleteDropdownActions}>
-                      <TouchableOpacity 
-                        style={styles.deleteCancelButton}
-                        onPress={() => setShowDeleteDropdown(false)}
-                      >
-                        <Text style={styles.deleteCancelButtonText}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.deleteConfirmButton}
-                        onPress={confirmDeleteAccount}
-                        disabled={isLoading}
-                      >
-                        <Text style={styles.deleteConfirmButtonText}>
-                          {isLoading ? 'Deleting...' : 'Delete Account'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              )}
+          <TouchableOpacity
+            style={styles.deleteAccountButton}
+            onPress={handleDeleteAccount}
+            activeOpacity={0.7}
+          >
+            <View style={styles.deleteAccountContent}>
+              <View style={styles.deleteAccountIconContainer}>
+                <Icon name="trash-outline" size={24} color="#ef4444" />
+              </View>
+              <View style={styles.deleteAccountText}>
+                <Text style={styles.deleteAccountTitle}>Delete Account</Text>
+                <Text style={styles.deleteAccountSubtitle}>Permanently delete your account and all data</Text>
+              </View>
+              <Icon 
+                name="chevron-forward" 
+                size={20} 
+                color={theme.colors.onSurfaceVariant} 
+              />
             </View>
-          ))}
+          </TouchableOpacity>
+          
+          {/* Delete Account Confirmation Dropdown */}
+          {showDeleteDropdown && (
+            <View style={styles.deleteDropdown}>
+              <View style={styles.deleteDropdownContent}>
+                <View style={styles.deleteWarningHeader}>
+                  <Icon name="warning" size={24} color="#ef4444" />
+                  <Text style={styles.deleteWarningTitle}>Confirm Account Deletion</Text>
+                </View>
+                <Text style={styles.deleteWarningText}>
+                  This action cannot be undone. All your data, messages, and connections will be permanently deleted.
+                </Text>
+                <View style={styles.deleteDropdownActions}>
+                  <TouchableOpacity 
+                    style={styles.deleteCancelButton}
+                    onPress={() => setShowDeleteDropdown(false)}
+                  >
+                    <Text style={styles.deleteCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.deleteConfirmButton}
+                    onPress={confirmDeleteAccount}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.deleteConfirmButtonText}>
+                      {isLoading ? 'Deleting...' : 'Delete Account'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
         </Animated.View>
-
 
       </ScrollView>
 
@@ -2419,11 +2540,16 @@ const createStyles = (theme: any) => StyleSheet.create({
   achievementsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  achievementsHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   achievementsTitle: {
     ...theme.typography.titleMedium,
@@ -2526,11 +2652,16 @@ const createStyles = (theme: any) => StyleSheet.create({
   activityHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  activityHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   activityTitle: {
     ...theme.typography.titleMedium,
@@ -2755,6 +2886,44 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   lastOptionCard: {
     marginBottom: 0,
+  },
+  deleteAccountSection: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  deleteAccountButton: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    ...theme.shadows.sm,
+  },
+  deleteAccountContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  deleteAccountIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.lg,
+    backgroundColor: '#ef444415',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  deleteAccountText: {
+    flex: 1,
+  },
+  deleteAccountTitle: {
+    ...theme.typography.titleMedium,
+    color: '#ef4444',
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  deleteAccountSubtitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
   },
   deleteDropdown: {
     backgroundColor: theme.colors.surface,

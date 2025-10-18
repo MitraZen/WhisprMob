@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { BuddiesService } from '@/services/buddiesService';
+import UserProfileDataService from '@/services/userProfileDataService';
 
 interface UserProfileViewProps {
   visible: boolean;
@@ -19,6 +20,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [profileData, setProfileData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   useEffect(() => {
     if (visible && userId) {
@@ -64,6 +67,36 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         });
         setError(null); // Clear error to show fallback profile
       }
+
+      // Load real achievements and activity data
+      const profileDataService = UserProfileDataService.getInstance();
+      
+      // Get real achievements
+      const realAchievements = await profileDataService.getRealAchievements(userId);
+      setAchievements(realAchievements.map(achievement => ({
+        id: achievement.id,
+        title: achievement.achievement_name,
+        description: achievement.achievement_description,
+        icon: achievement.icon,
+        color: '#f59e0b',
+        isUnlocked: true,
+        points: achievement.points,
+        unlockedAt: achievement.unlocked_at
+      })));
+      
+      // Get real activity
+      const realActivity = await profileDataService.getRealActivity(userId);
+      setRecentActivity(realActivity.map(activity => ({
+        id: activity.id,
+        type: activity.activity_type,
+        title: activity.activity_description,
+        description: `Activity on ${new Date(activity.timestamp).toLocaleDateString()}`,
+        icon: activity.icon,
+        color: activity.color,
+        timestamp: new Date(activity.timestamp),
+        action: activity.activity_type
+      })));
+      
     } catch (err) {
       console.error('Error loading user profile:', err);
       setError('Failed to load profile');
@@ -195,6 +228,46 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <Text style={styles.detailValue}>{formatJoinDate(profileData.joinDate)}</Text>
                 </View>
               </View>
+
+              {/* Recent Achievements */}
+              {achievements.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Recent Achievements</Text>
+                  <View style={styles.achievementsGrid}>
+                    {achievements.slice(0, 4).map((achievement) => (
+                      <View key={achievement.id} style={styles.achievementCard}>
+                        <View style={styles.achievementIconContainer}>
+                          <Text style={styles.achievementIcon}>{achievement.icon}</Text>
+                        </View>
+                        <View style={styles.achievementContent}>
+                          <Text style={styles.achievementTitle}>{achievement.title}</Text>
+                          <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Recent Activity */}
+              {recentActivity.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Recent Activity</Text>
+                  <View style={styles.activityList}>
+                    {recentActivity.slice(0, 5).map((activity) => (
+                      <View key={activity.id} style={styles.activityItem}>
+                        <View style={styles.activityIconContainer}>
+                          <Text style={styles.activityIcon}>{activity.icon}</Text>
+                        </View>
+                        <View style={styles.activityContent}>
+                          <Text style={styles.activityTitle}>{activity.title}</Text>
+                          <Text style={styles.activityDescription}>{activity.description}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </ScrollView>
           ) : null}
         </View>
@@ -385,5 +458,80 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: spacing.md,
+  },
+  achievementsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  achievementCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    flex: 1,
+    minWidth: '45%',
+    marginBottom: spacing.sm,
+  },
+  achievementIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    backgroundColor: '#f59e0b15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  achievementIcon: {
+    fontSize: 16,
+  },
+  achievementContent: {
+    flex: 1,
+  },
+  achievementTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    marginBottom: 2,
+  },
+  achievementDescription: {
+    fontSize: 10,
+    color: '#64748b',
+  },
+  activityList: {
+    gap: spacing.sm,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+  },
+  activityIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    backgroundColor: '#e2e8f015',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  activityIcon: {
+    fontSize: 16,
+  },
+  activityContent: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    marginBottom: 2,
+  },
+  activityDescription: {
+    fontSize: 10,
+    color: '#64748b',
   },
 });

@@ -304,7 +304,7 @@ const AppNavigator = () => {
       navigate('signin');
       return null;
     case 'liveWhisprs':
-      if (isAuthenticated) return <LiveWhisprsScreen />;
+      if (isAuthenticated) return <LiveWhisprsScreen onNavigate={navigate} />;
       navigate('signin');
       return null;
     case 'websocketTest':

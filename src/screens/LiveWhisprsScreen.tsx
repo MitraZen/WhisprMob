@@ -10,12 +10,17 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
+import { spacing, borderRadius } from '@/utils/themes';
 import WhisprFeed from '@/components/liveWhispers/WhisperFeed';
 import RecordTextWhisper from '@/components/liveWhispers/RecordTextWhisper';
 
 type DistanceFilter = '50km' | '100km' | 'beyond';
 
-const LiveWhisprsScreen: React.FC = () => {
+interface LiveWhisprsScreenProps {
+  onNavigate: (screen: string) => void;
+}
+
+const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => {
   const { theme } = useTheme();
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState<DistanceFilter>('50km');
@@ -52,6 +57,21 @@ const LiveWhisprsScreen: React.FC = () => {
         barStyle={theme.dark ? 'light-content' : 'dark-content'}
         backgroundColor={theme.colors.surface}
       />
+      
+      {/* Header with Back Button */}
+      <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => onNavigate('buddies')}
+          activeOpacity={0.7}
+        >
+          <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
+          Live Whisprs
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
       
       {/* Distance Filter Header */}
       <View style={[styles.filterContainer, { backgroundColor: theme.colors.surface }]}>
@@ -114,6 +134,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: Platform.OS === 'android' ? 0 : 0, // StatusBar height handled by StatusBar component
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#f3f4f6',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  headerSpacer: {
+    width: 40, // Same width as back button for centering
   },
   filterContainer: {
     paddingHorizontal: 16,

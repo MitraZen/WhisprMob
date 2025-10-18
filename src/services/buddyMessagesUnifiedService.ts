@@ -122,20 +122,44 @@ export class BuddyMessagesUnifiedService {
     onMessageUpdate: (message: BuddyMessage) => void,
     onNotification: (notification: MessageNotification) => void
   ): () => void {
-    const messageChannel = `buddy_messages_${userId}`;
-    const notificationChannel = `notifications_${userId}`;
+    const messageChannel = `buddy_messages_${userId}_${buddyId}`;
+    const notificationChannel = `notifications_${userId}_${buddyId}`;
 
-    // Subscribe to message updates
+    console.log('🔔 Setting up real-time subscription for:', {
+      userId,
+      buddyId,
+      messageChannel,
+      notificationChannel
+    });
+
+    // Subscribe to message updates with proper filtering
     const messageSubscription = supabase
       .channel(messageChannel)
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
-        table: 'buddy_messages'
-      }, (payload) => {
+        table: 'buddy_messages',
+        filter: `buddy_id=eq.${buddyId}`
+      }, async (payload) => {
+        console.log('📨 Real-time message received:', payload);
         const message = payload.new as BuddyMessage;
-        if (message.buddy_id === buddyId) {
-          console.log('Buddy message update received:', message);
+        
+        // Double-check this message is for the current user's buddy relationship
+        try {
+          const { data: isForUser } = await supabase.rpc('is_message_for_user', {
+            message_buddy_id: message.buddy_id,
+            user_id_param: userId
+          });
+          
+          if (isForUser) {
+            console.log('✅ Message confirmed for current user, updating chat');
+            onMessageUpdate(message);
+          } else {
+            console.log('❌ Message not for current user, ignoring');
+          }
+        } catch (error) {
+          console.error('Error checking message ownership:', error);
+          // Fallback: if we can't check, assume it's for the user
           onMessageUpdate(message);
         }
       })
@@ -145,28 +169,35 @@ export class BuddyMessagesUnifiedService {
     const notificationSubscription = supabase
       .channel(notificationChannel)
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
-        table: 'buddy_messages'
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`
       }, (payload) => {
-        const notification = payload.new as MessageNotification;
-        if (notification.buddy_id === buddyId) {
-          console.log('Buddy notification received:', notification);
-          onNotification(notification);
+        console.log('🔔 Real-time notification received:', payload);
+        const notification = payload.new as any;
+        
+        // Check if this notification is for the current buddy
+        if (notification.data && notification.data.buddy_id === buddyId) {
+          console.log('✅ Notification confirmed for current buddy');
+          onNotification(notification as MessageNotification);
+        } else {
+          console.log('❌ Notification not for current buddy, ignoring');
         }
       })
       .subscribe();
 
     // Store subscriptions for cleanup
-    this.subscriptions.set(`${messageChannel}_${buddyId}`, messageSubscription);
-    this.subscriptions.set(`${notificationChannel}_${buddyId}`, notificationSubscription);
+    this.subscriptions.set(messageChannel, messageSubscription);
+    this.subscriptions.set(notificationChannel, notificationSubscription);
 
     // Return cleanup function
     return () => {
+      console.log('🔕 Cleaning up real-time subscriptions');
       messageSubscription.unsubscribe();
       notificationSubscription.unsubscribe();
-      this.subscriptions.delete(`${messageChannel}_${buddyId}`);
-      this.subscriptions.delete(`${notificationChannel}_${buddyId}`);
+      this.subscriptions.delete(messageChannel);
+      this.subscriptions.delete(notificationChannel);
     };
   }
 

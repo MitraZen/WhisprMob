@@ -1,4 +1,5 @@
 import { SUPABASE_CONFIG } from '@/config/env';
+import { supabase } from '@/config/supabase';
 import { MoodType } from '@/types';
 
 const SUPABASE_URL = SUPABASE_CONFIG.url;
@@ -139,7 +140,7 @@ export class BuddiesService {
     
     try {
       const data = await this.rpcRequest('get_user_buddies', {
-        user_id: userId,
+        p_user_id: userId,
         limit_count: 20  // Add LIMIT parameter to prevent unlimited retrieval
       });
 
@@ -270,89 +271,288 @@ export class BuddiesService {
         throw new Error('User ID is required');
       }
       
-      const result = await this.rpcRequest('send_buddy_message', {
-        buddy_id_param: buddyId,
-        content,
-        message_type: messageType,
-        user_id_param: userId
-      });
-
-      // Check if the result indicates success
-      if (result && typeof result === 'object' && result.success === false) {
-        throw new Error(result.error || 'Failed to send message');
+      console.log('🔍 DIRECT APPROACH: Sending message directly to buddy_messages table');
+      console.log('🔍 Parameters:', { buddyId, content: content.substring(0, 50), messageType, userId });
+      
+      // DIRECT APPROACH: Insert message directly into buddy_messages table
+      const { data: messageData, error: insertError } = await supabase
+        .from('buddy_messages')
+        .insert({
+          buddy_id: buddyId,
+          sender_id: userId,
+          content: content,
+          message_type: messageType,
+          is_read: false
+        })
+        .select('id')
+        .single();
+      
+      if (insertError) {
+        console.error('❌ Direct insert error:', insertError);
+        throw new Error(`Failed to send message: ${insertError.message}`);
       }
       
-      return result?.message_id || result?.id || 'success';
+      console.log('✅ DIRECT APPROACH: Message inserted successfully:', messageData.id);
+      
+      // Update the buddies table with last message info
+      const { error: buddyUpdateError } = await supabase
+        .from('buddies')
+        .update({
+          last_message: content,
+          last_message_time: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', buddyId);
+      
+      if (buddyUpdateError) {
+        console.warn('⚠️ Failed to update buddy last message:', buddyUpdateError);
+        // Don't throw error here, as the main operation succeeded
+      }
+      
+      // Also update the recipient's buddy record (if it exists)
+      // First, find the recipient's buddy record
+      const { data: buddyData } = await supabase
+        .from('buddies')
+        .select('buddy_user_id')
+        .eq('id', buddyId)
+        .single();
+      
+      if (buddyData?.buddy_user_id) {
+        const { data: recipientBuddy } = await supabase
+          .from('buddies')
+          .select('id')
+          .eq('user_id', buddyData.buddy_user_id)
+          .eq('buddy_user_id', userId)
+          .single();
+        
+          if (recipientBuddy) {
+            // First get the current unread count
+            const { data: currentBuddy } = await supabase
+              .from('buddies')
+              .select('unread_count')
+              .eq('id', recipientBuddy.id)
+              .single();
+            
+            const newUnreadCount = (currentBuddy?.unread_count || 0) + 1;
+            
+            const { error: recipientUpdateError } = await supabase
+              .from('buddies')
+              .update({
+                last_message: content,
+                last_message_time: new Date().toISOString(),
+                unread_count: newUnreadCount,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', recipientBuddy.id);
+          
+          if (recipientUpdateError) {
+            console.warn('⚠️ Failed to update recipient buddy:', recipientUpdateError);
+          }
+        }
+      }
+      
+      return messageData.id;
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('❌ Error sending message (direct approach):', error);
       throw new Error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  // Get messages for a specific buddy
+  // Get messages for a specific buddy - DIRECT TABLE ACCESS APPROACH
   static async getMessages(buddyId: string, userId?: string): Promise<BuddyMessage[]> {
     try {
       if (!userId) {
         throw new Error('User ID is required to get messages');
       }
       
-      const result = await this.rpcRequest('get_buddy_messages', {
-        buddy_id_param: buddyId,
-        user_id_param: userId
-      });
+      console.log('🔍 DIRECT APPROACH: Fetching messages directly from buddy_messages table');
+      console.log('🔍 Parameters:', { buddyId, userId });
       
-      // Check if the result indicates success
-      if (result && typeof result === 'object' && result.success === false) {
-        throw new Error(result.error || 'Failed to get messages');
+      // CRITICAL FIX: Handle bidirectional buddy relationships
+      // First, get the buddy relationship to understand the user pair
+      const { data: buddyData, error: buddyError } = await supabase
+        .from('buddies')
+        .select('user_id, buddy_user_id')
+        .eq('id', buddyId)
+        .single();
+      
+      if (buddyError) {
+        console.error('❌ Error getting buddy relationship:', buddyError);
+        throw new Error(`Failed to get buddy relationship: ${buddyError.message}`);
       }
       
-      const messages = result?.messages || [];
+      if (!buddyData) {
+        console.log('📭 No buddy relationship found for buddy ID:', buddyId);
+        return [];
+      }
       
-      // Convert the messages to BuddyMessage format
-      const buddyMessages: BuddyMessage[] = messages.map((msg: any) => ({
-        id: msg.id,
-        buddyId: buddyId,
-        senderId: msg.sender_id,
-        receiverId: msg.receiver_id || '', // Use receiver_id from database or empty string
-        content: msg.content,
-        messageType: msg.message_type || 'text',
-        timestamp: new Date(msg.created_at),
-        isRead: msg.is_read || false,
-        createdAt: new Date(msg.created_at),
-        updatedAt: new Date(msg.updated_at || msg.created_at)
-      }));
+      console.log('🔍 Buddy relationship:', buddyData);
+      
+      // Get the other user's buddy ID (the reciprocal relationship)
+      const { data: reciprocalBuddy, error: reciprocalError } = await supabase
+        .from('buddies')
+        .select('id')
+        .eq('user_id', buddyData.buddy_user_id)
+        .eq('buddy_user_id', buddyData.user_id)
+        .single();
+      
+      if (reciprocalError) {
+        console.warn('⚠️ No reciprocal buddy relationship found:', reciprocalError);
+      }
+      
+      console.log('🔍 Reciprocal buddy ID:', reciprocalBuddy?.id);
+      
+      // Query messages for BOTH buddy relationships
+      const buddyIds = [buddyId];
+      if (reciprocalBuddy?.id) {
+        buddyIds.push(reciprocalBuddy.id);
+      }
+      
+      console.log('🔍 Querying messages for buddy IDs:', buddyIds);
+      
+      const { data: messages, error } = await supabase
+        .from('buddy_messages')
+        .select(`
+          id,
+          buddy_id,
+          sender_id,
+          content,
+          message_type,
+          is_read,
+          created_at,
+          updated_at
+        `)
+        .in('buddy_id', buddyIds)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('❌ Direct table query error:', error);
+        throw new Error(`Failed to fetch messages: ${error.message}`);
+      }
+      
+      console.log(`✅ DIRECT APPROACH: Found ${messages?.length || 0} messages in database`);
+      
+      if (!messages || messages.length === 0) {
+        console.log('📭 No messages found for buddy relationships:', buddyIds);
+        return [];
+      }
+      
+      // Convert the messages to BuddyMessage format and deduplicate by message ID
+      const messageMap = new Map<string, BuddyMessage>();
+      
+      messages.forEach((msg: any) => {
+        const buddyMessage: BuddyMessage = {
+          id: msg.id,
+          buddyId: msg.buddy_id,
+          senderId: msg.sender_id,
+          receiverId: '', // We'll determine this from buddy relationship
+          content: msg.content,
+          messageType: msg.message_type || 'text',
+          timestamp: new Date(msg.created_at),
+          isRead: msg.is_read || false,
+          createdAt: new Date(msg.created_at),
+          updatedAt: new Date(msg.updated_at || msg.created_at)
+        };
+        
+        // Use message ID as key to prevent duplicates
+        messageMap.set(msg.id, buddyMessage);
+      });
+      
+      const buddyMessages = Array.from(messageMap.values());
+      
+      console.log(`✅ DIRECT APPROACH: Converted ${buddyMessages.length} unique messages to BuddyMessage format`);
+      
+      if (messages.length !== buddyMessages.length) {
+        console.log(`⚠️ Duplicate messages removed: ${messages.length} -> ${buddyMessages.length}`);
+      }
       
       return buddyMessages;
     } catch (error) {
-      console.error('Error getting messages:', error);
+      console.error('❌ Error getting messages (direct approach):', error);
       throw error;
     }
   }
 
-  // Mark messages as read for a buddy
+  // Mark messages as read for a buddy - DIRECT TABLE ACCESS APPROACH
   static async markMessagesAsRead(buddyId: string, userId?: string): Promise<boolean> {
     try {
-      console.log('Marking messages as read for buddy:', buddyId, 'user:', userId);
+      console.log('🔍 DIRECT APPROACH: Marking messages as read directly');
+      console.log('🔍 Parameters:', { buddyId, userId });
       
       if (!userId) {
         throw new Error('User ID is required to mark messages as read');
       }
       
-      const result = await this.rpcRequest('mark_buddy_messages_read', {
-        buddy_id: buddyId,
-        user_id: userId
-      });
+      // CRITICAL FIX: Handle bidirectional buddy relationships
+      // First, get the buddy relationship to understand the user pair
+      const { data: buddyData, error: buddyError } = await supabase
+        .from('buddies')
+        .select('user_id, buddy_user_id')
+        .eq('id', buddyId)
+        .single();
       
-      console.log('mark_buddy_messages_read result:', result);
-      
-      // Check if the result indicates success
-      if (result && typeof result === 'object' && result.success === false) {
-        throw new Error(result.error || 'Failed to mark messages as read');
+      if (buddyError) {
+        console.error('❌ Error getting buddy relationship:', buddyError);
+        throw new Error(`Failed to get buddy relationship: ${buddyError.message}`);
       }
       
+      if (!buddyData) {
+        console.log('📭 No buddy relationship found for buddy ID:', buddyId);
+        return false;
+      }
+      
+      console.log('🔍 Buddy relationship:', buddyData);
+      
+      // Get the other user's buddy ID (the reciprocal relationship)
+      const { data: reciprocalBuddy, error: reciprocalError } = await supabase
+        .from('buddies')
+        .select('id')
+        .eq('user_id', buddyData.buddy_user_id)
+        .eq('buddy_user_id', buddyData.user_id)
+        .single();
+      
+      if (reciprocalError) {
+        console.warn('⚠️ No reciprocal buddy relationship found:', reciprocalError);
+      }
+      
+      console.log('🔍 Reciprocal buddy ID:', reciprocalBuddy?.id);
+      
+      // Mark messages as read for BOTH buddy relationships
+      const buddyIds = [buddyId];
+      if (reciprocalBuddy?.id) {
+        buddyIds.push(reciprocalBuddy.id);
+      }
+      
+      console.log('🔍 Marking messages as read for buddy IDs:', buddyIds);
+      
+      // DIRECT APPROACH: Update buddy_messages table directly for both relationships
+      const { error: updateError } = await supabase
+        .from('buddy_messages')
+        .update({ is_read: true })
+        .in('buddy_id', buddyIds)
+        .neq('sender_id', userId); // Don't mark own messages as read
+      
+      if (updateError) {
+        console.error('❌ Direct update error:', updateError);
+        throw new Error(`Failed to mark messages as read: ${updateError.message}`);
+      }
+      
+      // Also update the buddies table unread count for the current user's buddy record
+      const { error: buddyUpdateError } = await supabase
+        .from('buddies')
+        .update({ unread_count: 0 })
+        .eq('id', buddyId)
+        .eq('user_id', userId);
+      
+      if (buddyUpdateError) {
+        console.warn('⚠️ Failed to update buddy unread count:', buddyUpdateError);
+        // Don't throw error here, as the main operation succeeded
+      }
+      
+      console.log('✅ DIRECT APPROACH: Messages marked as read successfully for buddy:', buddyId);
       return true;
     } catch (error) {
-      console.error('Error marking messages as read:', error);
+      console.error('❌ Error marking messages as read (direct approach):', error);
       throw error;
     }
   }
@@ -370,27 +570,39 @@ export class BuddiesService {
     }
   }
 
-  // Clear chat history with a buddy
+  // Clear chat history with a buddy - Diagnostic approach (shows what's happening)
   static async clearChatHistory(buddyId: string, userId?: string): Promise<boolean> {
     try {
-      console.log('Clearing chat history for buddy:', buddyId);
+      console.log('🧹 DIAGNOSTIC clearing chat history for buddy:', buddyId);
+      console.log('🔍 User ID:', userId);
       
-      // Use the database function to safely clear messages
-      const result = await this.rpcRequest('clear_buddy_chat', {
-        p_buddy_id: buddyId,
-        p_user_id: userId
+      const { supabase } = await import('@/config/supabase');
+      
+      // Use the diagnostic RPC function to see what's happening
+      const { data, error } = await supabase.rpc('diagnostic_clear_chat', {
+        p_buddy_id: buddyId
       });
       
-      console.log('Chat clear result:', result);
-      
-      if (result && result.success) {
-        console.log(`Successfully cleared ${result.deleted_messages} messages`);
-        return true;
-      } else {
-        throw new Error(result?.message || 'Failed to clear chat history');
+      if (error) {
+        console.error('❌ Diagnostic clear failed:', error);
+        throw new Error(`Failed to clear chat: ${error.message}`);
       }
+      
+      console.log(`✅ DIAGNOSTIC: Clear chat result:`, data);
+      console.log(`📊 Buddy exists:`, data?.buddy_exists);
+      console.log(`📊 Messages before:`, data?.messages_before);
+      console.log(`📊 Deleted count:`, data?.deleted_count);
+      
+      // NO notifications - we want complete silence
+      console.log('🔇 No notifications sent - complete silence mode');
+      
+      return true;
     } catch (error) {
-      console.error('Error clearing chat history:', error);
+      console.error('❌ Error clearing chat history:', error);
+      console.error('❌ Error type:', typeof error);
+      console.error('❌ Error message:', error instanceof Error ? error.message : String(error));
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : undefined);
+      console.error('❌ Full error object:', JSON.stringify(error, null, 2));
       throw error;
     }
   }
@@ -1365,28 +1577,36 @@ export class BuddiesService {
 
   /**
    * Delete a buddy relationship (remove from buddies list)
-   * Uses database function to handle foreign key constraints properly
+   * Uses enhanced database function to handle bidirectional deletion and cascade scenarios
    */
   static async deleteBuddy(buddyId: string, userId: string): Promise<any> {
     try {
-      console.log('Deleting buddy relationship:', buddyId);
+      console.log('🗑️ Deleting buddy relationship:', buddyId);
+      console.log('🔍 User ID:', userId);
       
-      // Use the database function to safely delete buddy and messages
+      // Use the enhanced database function to safely delete buddy and messages
       const result = await this.rpcRequest('delete_buddy_safely', {
         p_buddy_id: buddyId,
         p_user_id: userId
       });
       
-      console.log('Buddy deletion result:', result);
+      console.log('✅ Buddy deletion result:', result);
       
       if (result && result.success) {
-        console.log(`Successfully deleted buddy and ${result.deleted_messages} messages`);
-        return result; // Return the full result object including buddy_user_id
+        console.log(`✅ Successfully deleted buddy relationship`);
+        console.log(`📊 Deleted ${result.deleted_messages} messages`);
+        console.log(`👥 Deleted ${result.deleted_buddies} buddy relationships`);
+        console.log(`🔔 Notified ${result.notified_users} users`);
+        console.log(`👤 Buddy user ID: ${result.buddy_user_id}`);
+        console.log(`📝 Buddy name: ${result.buddy_name}`);
+        
+        return result; // Return the full result object including all details
       } else {
-        throw new Error(result?.message || 'Failed to delete buddy');
+        console.error('❌ Buddy deletion failed:', result?.error || result?.message);
+        throw new Error(result?.error || result?.message || 'Failed to delete buddy');
       }
     } catch (error) {
-      console.error('Error deleting buddy:', error);
+      console.error('❌ Error deleting buddy:', error);
       throw error;
     }
   }
