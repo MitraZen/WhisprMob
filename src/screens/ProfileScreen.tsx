@@ -6,6 +6,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
+import { ThemedModal } from '@/components/themed';
 import { BuddiesService } from '@/services/buddiesService';
 import { useAuth } from '@/store/AuthContext';
 import UserProfileDataService from '@/services/userProfileDataService';
@@ -80,6 +81,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
   const [trustMarkers, setTrustMarkers] = useState<any[]>([]);
   const [showTrustMarkersModal, setShowTrustMarkersModal] = useState(false);
   const [trustScore, setTrustScore] = useState(0);
+
+  // Section visibility states for fold/unfold functionality
+  const [isAchievementsExpanded, setIsAchievementsExpanded] = useState(true);
+  const [isActivityExpanded, setIsActivityExpanded] = useState(true);
 
   const trustMarkerConfig = {
     // Activity Markers
@@ -1147,6 +1152,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       icon: 'happy-outline',
       onPress: () => setShowMoodModal(true),
       color: '#059669'
+=======
+      id: 'delete',
+      title: 'Delete Account',
+      subtitle: 'Permanently delete your account',
+      icon: 'trash-outline',
+      onPress: handleDeleteAccount,
+      color: '#ef4444'
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
     }
   ];
 
@@ -1254,6 +1267,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
           </View>
         </Animated.View>
 
+<<<<<<< HEAD
         {/* Profile Options - Positioned below public profile and above achievements */}
         <Animated.View 
           style={[
@@ -1292,6 +1306,45 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               </TouchableOpacity>
             </View>
           ))}
+=======
+        {/* Quick Actions Section - Edit Profile & Change Mood */}
+        <Animated.View 
+          style={[
+            styles.quickActionsSection,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
+          <View style={styles.quickActionsHeader}>
+            <Icon name="settings-outline" size={20} color={theme.colors.primary} />
+            <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+          </View>
+          
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={handleEditProfile}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickActionIconContainer, { backgroundColor: '#7c3aed15' }]}>
+                <Icon name="create-outline" size={24} color="#7c3aed" />
+              </View>
+              <Text style={styles.quickActionTitle}>Edit Profile</Text>
+              <Text style={styles.quickActionSubtitle}>Update your info</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={() => setShowMoodModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickActionIconContainer, { backgroundColor: '#05966915' }]}>
+                <Icon name="happy-outline" size={24} color="#059669" />
+              </View>
+              <Text style={styles.quickActionTitle}>Change Mood</Text>
+              <Text style={styles.quickActionSubtitle}>{getMoodConfig(profileData.mood).description}</Text>
+            </TouchableOpacity>
+          </View>
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
         </Animated.View>
 
         {/* Achievements Section */}
@@ -1332,7 +1385,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                           { opacity: achievement.isUnlocked ? 1 : 0.5 }
                         ]}>
                           {achievement.icon}
-            </Text>
+                        </Text>
                         {achievement.isUnlocked && (
                           <View style={styles.achievementBadge}>
                             <Icon name="checkmark" size={10} color="#fff" />
@@ -1378,6 +1431,64 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                   </Text>
                 </View>
               </>
+=======
+                        </Text>
+                        {achievement.isUnlocked && (
+                          <View style={styles.achievementBadge}>
+                            <Icon name="checkmark" size={10} color="#fff" />
+                          </View>
+                        )}
+                      </View>
+                      
+                      <View style={styles.achievementContent}>
+                        <Text style={[
+                          styles.achievementTitle,
+                          { color: achievement.isUnlocked ? theme.colors.onSurface : theme.colors.onSurfaceVariant }
+                        ]}>
+                          {achievement.title}
+                        </Text>
+                        <Text style={styles.achievementDescription}>
+                          {achievement.description}
+                        </Text>
+                        
+                        {!achievement.isUnlocked && (
+                          <View style={styles.achievementProgress}>
+                            <View style={styles.achievementProgressBar}>
+                              <View style={[
+                                styles.achievementProgressFill,
+                                { 
+                                  width: `${achievement.progressPercentage}%`,
+                                  backgroundColor: achievement.color
+                                }
+                              ]} />
+                            </View>
+                            <Text style={styles.achievementProgressText}>
+                              {achievement.progress}/{achievement.requirement}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            
+            {isAchievementsExpanded && (
+              <View style={styles.achievementsFooter}>
+                <Text style={styles.achievementsFooterText}>
+                  Keep engaging to unlock more achievements! 🏆
+                </Text>
+                <TouchableOpacity
+                  style={styles.viewAllButton}
+                  onPress={() => onNavigate('achievements')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewAllButtonText}>View All Achievements</Text>
+                  <Icon name="chevron-forward" size={16} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
             )}
         </Animated.View>
         )}
@@ -1685,6 +1796,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                   </Text>
                 </View>
               </>
+=======
+              <View style={styles.activityFooter}>
+                <Text style={styles.activityFooterText}>
+                  Keep engaging to see more activity! 📱
+                </Text>
+                <TouchableOpacity
+                  style={styles.viewAllButton}
+                  onPress={() => onNavigate('activity')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewAllButtonText}>View All Activity</Text>
+                  <Icon name="chevron-forward" size={16} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
             )}
           </Animated.View>
         )}
@@ -1756,62 +1882,49 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       <NavigationMenu currentScreen="profile" onNavigate={onNavigate} />
 
       {/* Mood Selection Modal */}
-      <Modal
+      <ThemedModal
         visible={showMoodModal}
-        transparent={true}
+        onClose={() => setShowMoodModal(false)}
+        title="How are you feeling?"
+        size="medium"
+        slideFrom="bottom"
         animationType="slide"
-        onRequestClose={() => setShowMoodModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.moodModalContainer}>
-            <View style={styles.moodModalHeader}>
-              <Icon name="happy-outline" size={24} color={theme.colors.primary} />
-              <Text style={styles.moodModalTitle}>How are you feeling?</Text>
-              <TouchableOpacity 
-                style={styles.moodModalCloseButton}
-                onPress={() => setShowMoodModal(false)}
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <Text style={styles.moodModalDescription}>
+            Select your current mood to express how you're feeling right now.
+          </Text>
+          
+          <View style={styles.moodGrid}>
+            {Object.entries(moodConfig).map(([moodType, config]) => (
+              <TouchableOpacity
+                key={moodType}
+                style={[
+                  styles.moodOption,
+                  profileData.mood === moodType && styles.selectedMoodOption
+                ]}
+                onPress={() => {
+                  setProfileData(prev => ({ ...prev, mood: moodType }));
+                  setShowMoodModal(false);
+                  Alert.alert(
+                    'Mood Updated',
+                    `You're now feeling ${config.description.toLowerCase()}!`
+                  );
+                }}
+                activeOpacity={0.7}
               >
-                <Icon name="close" size={24} color={theme.colors.onSurface} />
+                <Text style={styles.moodOptionEmoji}>{config.emoji}</Text>
+                <Text style={[
+                  styles.moodOptionText,
+                  profileData.mood === moodType && styles.selectedMoodOptionText
+                ]}>
+                  {config.description}
+                </Text>
               </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.moodModalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.moodModalDescription}>
-                Select your current mood to express how you're feeling right now.
-              </Text>
-              
-              <View style={styles.moodGrid}>
-                {Object.entries(moodConfig).map(([moodType, config]) => (
-                <TouchableOpacity
-                    key={moodType}
-                  style={[
-                    styles.moodOption,
-                      profileData.mood === moodType && styles.selectedMoodOption
-                  ]}
-                  onPress={() => {
-                      setProfileData(prev => ({ ...prev, mood: moodType }));
-                    setShowMoodModal(false);
-                      Alert.alert(
-                        'Mood Updated',
-                        `You're now feeling ${config.description.toLowerCase()}!`
-                      );
-                  }}
-                    activeOpacity={0.7}
-                >
-                  <Text style={styles.moodOptionEmoji}>{config.emoji}</Text>
-                    <Text style={[
-                      styles.moodOptionText,
-                      profileData.mood === moodType && styles.selectedMoodOptionText
-                    ]}>
-                      {config.description}
-                    </Text>
-                </TouchableOpacity>
-              ))}
-              </View>
-            </ScrollView>
+            ))}
           </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </ThemedModal>
 
       {/* Conversation State Modal */}
       <Modal
@@ -2424,6 +2537,66 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
+  quickActionsSection: {
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
+  },
+  quickActionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  quickActionsTitle: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+    marginLeft: spacing.sm,
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    gap: spacing.md,
+  },
+  quickActionCard: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  quickActionIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  quickActionTitle: {
+    ...theme.typography.titleSmall,
+    color: theme.colors.onSurface,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  quickActionSubtitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+    fontSize: 11,
+  },
   avatarContainer: {
     position: 'relative',
     marginBottom: spacing.md,
@@ -2537,6 +2710,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderColor: theme.colors.border,
     ...theme.shadows.md,
   },
+  achievementsContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
   achievementsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2558,8 +2735,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginLeft: spacing.sm,
   },
   achievementsGrid: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
     gap: spacing.md,
   },
   achievementCard: {
@@ -2639,6 +2814,24 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
     fontStyle: 'italic',
+    marginBottom: spacing.md,
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  viewAllButtonText: {
+    ...theme.typography.titleSmall,
+    color: theme.colors.primary,
+    fontWeight: '600',
+    marginRight: spacing.xs,
   },
   activitySection: {
     backgroundColor: theme.colors.surface,
@@ -2648,6 +2841,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...theme.shadows.md,
+  },
+  activityContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
   },
   activityHeader: {
     flexDirection: 'row',
@@ -2670,8 +2867,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginLeft: spacing.sm,
   },
   activityList: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    // Padding now handled by activityContent
   },
   activityItem: {
     backgroundColor: theme.colors.surfaceVariant,
@@ -2730,6 +2926,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
     fontStyle: 'italic',
+    marginBottom: spacing.md,
   },
   bioSection: {
     backgroundColor: theme.colors.surface,

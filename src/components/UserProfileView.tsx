@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { BuddiesService } from '@/services/buddiesService';
 import UserProfileDataService from '@/services/userProfileDataService';
+import { ThemedModal } from '@/components/themed';
 
 interface UserProfileViewProps {
   visible: boolean;
@@ -50,6 +51,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           joinDate: new Date(profile.created_at),
           isOnline: profile.is_online || false,
           lastSeen: profile.last_seen ? new Date(profile.last_seen) : null,
+          // Conversation mode data
+          conversationMode: profile.conversation_mode || 'open',
+          conversationAvailability: profile.conversation_availability || 'high',
         });
       } else {
         // Show a fallback profile instead of error
@@ -64,6 +68,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           joinDate: new Date(),
           isOnline: false,
           lastSeen: null,
+          // Default conversation mode
+          conversationMode: 'open',
+          conversationAvailability: 'high',
         });
         setError(null); // Clear error to show fallback profile
       }
@@ -127,77 +134,186 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     return date.toLocaleDateString();
   };
 
+  // Conversation mode helper functions
+  const getConversationModeConfig = (mode: string) => {
+    const conversationStates = [
+      {
+        id: 'open',
+        emoji: '💬',
+        label: 'Open to Chat',
+        description: 'Ready for any conversation',
+        color: '#10b981',
+        availability: 'high'
+      },
+      {
+        id: 'reflective',
+        emoji: '🤔',
+        label: 'Reflective',
+        description: 'Prefer deep, thoughtful conversations',
+        color: '#6366f1',
+        availability: 'medium'
+      },
+      {
+        id: 'playful',
+        emoji: '😄',
+        label: 'Playful',
+        description: 'Fun and light-hearted mood',
+        color: '#f59e0b',
+        availability: 'high'
+      },
+      {
+        id: 'busy',
+        emoji: '⏰',
+        label: 'Busy',
+        description: 'Limited availability',
+        color: '#ef4444',
+        availability: 'low'
+      },
+      {
+        id: 'listening',
+        emoji: '👂',
+        label: 'Listening',
+        description: 'Available to listen and support',
+        color: '#8b5cf6',
+        availability: 'medium'
+      },
+      {
+        id: 'creative',
+        emoji: '✨',
+        label: 'Creative',
+        description: 'Inspired and sharing ideas',
+        color: '#ec4899',
+        availability: 'high'
+      }
+    ];
+    
+    return conversationStates.find(state => state.id === mode) || conversationStates[0];
+  };
+
+  const getAvailabilityColor = (availability: string) => {
+    switch (availability) {
+      case 'high': return '#10b981';
+      case 'medium': return '#f59e0b';
+      case 'low': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
+  const getAvailabilityText = (availability: string) => {
+    switch (availability) {
+      case 'high': return 'Highly Available';
+      case 'medium': return 'Moderately Available';
+      case 'low': return 'Limited Availability';
+      default: return 'Unknown';
+    }
+  };
+
   if (!visible) return null;
 
   return (
-    <Modal
+    <ThemedModal
       visible={visible}
-      transparent={true}
+      onClose={onClose}
+      title={buddyName ? `${buddyName}'s Profile` : 'User Profile'}
+      size="large"
+      slideFrom="bottom"
       animationType="slide"
-      onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {buddyName ? `${buddyName}'s Profile` : 'User Profile'}
-            </Text>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>❌ {error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadUserProfile}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : profileData ? (
+        <ScrollView style={styles.profileContent} showsVerticalScrollIndicator={false}>
+          {/* Profile Header */}
+          <View style={styles.profileHeader}>
+            <View style={styles.avatarContainer}>
+              <Text style={styles.avatarText}>
+                {profileData.displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.displayName}>{profileData.displayName}</Text>
+              <Text style={styles.username}>{profileData.username}</Text>
+              <View style={styles.statusContainer}>
+                <View style={[
+                  styles.statusIndicator,
+                  profileData.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
+                ]} />
+                <Text style={styles.statusText}>
+                  {profileData.isOnline ? 'Online' : 
+                   profileData.lastSeen ? `Last seen ${formatLastSeen(profileData.lastSeen)}` : 
+                   'Offline'}
+                </Text>
+              </View>
+            </View>
           </View>
 
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.loadingText}>Loading profile...</Text>
+          {/* Mood */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Current Mood</Text>
+            <View style={styles.moodContainer}>
+              <Text style={styles.moodEmoji}>
+                {getMoodConfig(profileData.mood).emoji}
+              </Text>
+              <Text style={styles.moodText}>
+                {getMoodConfig(profileData.mood).description}
+              </Text>
             </View>
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>❌ {error}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={loadUserProfile}>
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : profileData ? (
-            <ScrollView style={styles.profileContent} showsVerticalScrollIndicator={false}>
-              {/* Profile Header */}
-              <View style={styles.profileHeader}>
-                <View style={styles.avatarContainer}>
-                  <Text style={styles.avatarText}>
-                    {profileData.displayName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.profileInfo}>
-                  <Text style={styles.displayName}>{profileData.displayName}</Text>
-                  <Text style={styles.username}>{profileData.username}</Text>
-                  <View style={styles.statusContainer}>
-                    <View style={[
-                      styles.statusIndicator,
-                      profileData.isOnline ? styles.onlineIndicator : styles.offlineIndicator,
-                    ]} />
-                    <Text style={styles.statusText}>
-                      {profileData.isOnline ? 'Online' : 
-                       profileData.lastSeen ? `Last seen ${formatLastSeen(profileData.lastSeen)}` : 
-                       'Offline'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
+          </View>
 
-              {/* Mood */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Current Mood</Text>
-                <View style={styles.moodContainer}>
-                  <Text style={styles.moodEmoji}>
-                    {getMoodConfig(profileData.mood).emoji}
+          {/* Conversation Mode */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Conversation Mode</Text>
+            <View style={styles.conversationModeContainer}>
+              <View style={styles.conversationModeHeader}>
+                <View style={[
+                  styles.conversationModeEmojiContainer,
+                  { backgroundColor: getConversationModeConfig(profileData.conversationMode).color + '20' }
+                ]}>
+                  <Text style={styles.conversationModeEmoji}>
+                    {getConversationModeConfig(profileData.conversationMode).emoji}
                   </Text>
-                  <Text style={styles.moodText}>
-                    {getMoodConfig(profileData.mood).description}
+                </View>
+                <View style={styles.conversationModeInfo}>
+                  <Text style={styles.conversationModeLabel}>
+                    {getConversationModeConfig(profileData.conversationMode).label}
+                  </Text>
+                  <Text style={styles.conversationModeDescription}>
+                    {getConversationModeConfig(profileData.conversationMode).description}
                   </Text>
                 </View>
               </View>
+              <View style={styles.availabilityContainer}>
+                <View style={[
+                  styles.availabilityIndicator,
+                  { backgroundColor: getAvailabilityColor(profileData.conversationAvailability) }
+                ]} />
+                <Text style={[
+                  styles.availabilityText,
+                  { color: getAvailabilityColor(profileData.conversationAvailability) }
+                ]}>
+                  {getAvailabilityText(profileData.conversationAvailability)}
+                </Text>
+              </View>
+            </View>
+          </View>
 
+          {/* Bio */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>About</Text>
+            <Text style={styles.bioText}>{profileData.bio}</Text>
+          </View>
+
+<<<<<<< HEAD
               {/* Bio */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>About</Text>
@@ -273,6 +389,35 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </View>
       </View>
     </Modal>
+=======
+          {/* Profile Details */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Profile Details</Text>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Age</Text>
+              <Text style={styles.detailValue}>{profileData.age}</Text>
+            </View>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Location</Text>
+              <Text style={styles.detailValue}>{profileData.location}</Text>
+            </View>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Gender</Text>
+              <Text style={styles.detailValue}>{profileData.gender}</Text>
+            </View>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Joined</Text>
+              <Text style={styles.detailValue}>{formatJoinDate(profileData.joinDate)}</Text>
+            </View>
+          </View>
+        </ScrollView>
+      ) : null}
+    </ThemedModal>
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
   );
 };
 
@@ -459,6 +604,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: spacing.md,
   },
+<<<<<<< HEAD
   achievementsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -491,10 +637,42 @@ const styles = StyleSheet.create({
   },
   achievementTitle: {
     fontSize: 12,
+=======
+  // Conversation Mode Styles
+  conversationModeContainer: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  conversationModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  conversationModeEmojiContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  conversationModeEmoji: {
+    fontSize: 20,
+  },
+  conversationModeInfo: {
+    flex: 1,
+  },
+  conversationModeLabel: {
+    fontSize: 16,
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
     fontWeight: '600',
     color: theme.colors.onSurface,
     marginBottom: 2,
   },
+<<<<<<< HEAD
   achievementDescription: {
     fontSize: 10,
     color: '#64748b',
@@ -533,5 +711,28 @@ const styles = StyleSheet.create({
   activityDescription: {
     fontSize: 10,
     color: '#64748b',
+=======
+  conversationModeDescription: {
+    fontSize: 14,
+    color: theme.colors.onSurfaceVariant,
+  },
+  availabilityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  availabilityIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: borderRadius.full,
+    marginRight: spacing.xs,
+  },
+  availabilityText: {
+    fontSize: 12,
+    fontWeight: '500',
+>>>>>>> defe00e347c1aa12c62d7cfee89f3bd52bb87184
   },
 });

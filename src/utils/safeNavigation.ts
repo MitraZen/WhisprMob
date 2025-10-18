@@ -7,34 +7,70 @@ import { BackHandler, Alert } from 'react-native';
 export class SafeNavigation {
   
   /**
-   * Handle Android back button with safe navigation
+   * Handle Android back button with custom navigation flow
+   * @param currentScreen - Current screen name
    * @param navigationHistory - Array of screen names in navigation history
    * @param isAuthenticated - Whether user is currently authenticated
    * @param onGoBack - Callback to handle safe back navigation
    * @param fallbackScreen - Screen to navigate to if no safe back option
    */
   static handleBackButton(
+    currentScreen: string,
     navigationHistory: string[],
     isAuthenticated: boolean,
     onGoBack: (screen: string) => void,
     fallbackScreen: string = 'notes'
   ): boolean {
     
-    // If user is authenticated, prevent going back to auth screens
-    if (isAuthenticated && navigationHistory.length > 1) {
-      const safeHistory = navigationHistory.filter(screen => 
-        !['signin', 'signup', 'welcome'].includes(screen)
-      );
-      
-      if (safeHistory.length > 1) {
-        // Go back to the last safe screen
-        const previousSafeScreen = safeHistory[safeHistory.length - 2];
-        onGoBack(previousSafeScreen);
-        return true;
-      } else {
-        // No safe screens in history, go to fallback
-        onGoBack(fallbackScreen);
-        return true;
+    // Custom back button behavior based on current screen
+    if (isAuthenticated) {
+      switch (currentScreen) {
+        case 'buddies':
+          // Buddies screen -> Notes screen
+          onGoBack('notes');
+          return true;
+          
+        case 'liveWhisprs':
+          // Live Whispers screen -> Buddies screen
+          onGoBack('buddies');
+          return true;
+          
+        case 'settingsHub':
+          // Settings Hub screen -> Notes screen
+          onGoBack('notes');
+          return true;
+          
+        case 'notes':
+          // Notes screen -> Show exit confirmation
+          Alert.alert(
+            'Exit App',
+            'Are you sure you want to exit Whispr?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
+            ]
+          );
+          return true;
+          
+        default:
+          // For other screens, use the original safe navigation logic
+          if (navigationHistory.length > 1) {
+            const safeHistory = navigationHistory.filter(screen => 
+              !['signin', 'signup', 'welcome'].includes(screen)
+            );
+            
+            if (safeHistory.length > 1) {
+              // Go back to the last safe screen
+              const previousSafeScreen = safeHistory[safeHistory.length - 2];
+              onGoBack(previousSafeScreen);
+              return true;
+            } else {
+              // No safe screens in history, go to fallback
+              onGoBack(fallbackScreen);
+              return true;
+            }
+          }
+          break;
       }
     }
     

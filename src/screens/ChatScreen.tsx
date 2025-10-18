@@ -6,6 +6,7 @@ import { useTheme } from '@/store/ThemeContext';
 import { CachedBuddiesService, BuddyMessage } from '@/services/cachedBuddiesService';
 import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView';
 import { activeChatService } from '@/services/activeChatService';
+import { ThemedBottomSheet } from '@/components/themed';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -740,49 +741,37 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       )}
 
       {/* More Options Bottom Sheet */}
-      <Modal
+      <ThemedBottomSheet
         visible={showMoreOptions}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowMoreOptions(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowMoreOptions(false)}
-          />
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHandle} />
-            
-            <View style={styles.bottomSheetContent}>
-              <Text style={styles.bottomSheetTitle}>Chat Options</Text>
-              
-              <TouchableOpacity style={styles.bottomSheetItem} onPress={handleClearChat}>
-                <Icon name="trash-outline" size={24} color={theme.colors.onSurface} />
-                <Text style={styles.bottomSheetItemText}>🗑️ Clear Chat</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.bottomSheetItem} onPress={handleBlockBuddy}>
-                <Icon name="ban" size={24} color={theme.colors.error} />
-                <Text style={[styles.bottomSheetItemText, { color: theme.colors.error }]}>Block</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.bottomSheetItem} onPress={handleDeleteBuddy}>
-                <Icon name="trash" size={24} color={theme.colors.error} />
-                <Text style={[styles.bottomSheetItemText, { color: theme.colors.error }]}>Delete</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.bottomSheetCancelButton} 
-                onPress={() => setShowMoreOptions(false)}
-              >
-                <Text style={styles.bottomSheetCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowMoreOptions(false)}
+        title="Chat Options"
+        items={[
+          {
+            id: 'clear',
+            title: 'Clear Chat',
+            icon: 'trash-outline',
+            onPress: handleClearChat,
+          },
+          {
+            id: 'block',
+            title: 'Block',
+            icon: 'ban',
+            iconColor: theme.colors.error,
+            destructive: true,
+            onPress: handleBlockBuddy,
+          },
+          {
+            id: 'delete',
+            title: 'Delete',
+            icon: 'trash',
+            iconColor: theme.colors.error,
+            destructive: true,
+            onPress: handleDeleteBuddy,
+          },
+        ]}
+        showCancelButton={true}
+        cancelButtonText="Cancel"
+      />
     </KeyboardAvoidingView>
   );
 });
