@@ -1160,14 +1160,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       icon: 'happy-outline',
       onPress: () => setShowMoodModal(true),
       color: '#059669'
-    },
-    {
-      id: 'delete',
-      title: 'Delete Account',
-      subtitle: 'Permanently delete your account',
-      icon: 'trash-outline',
-      onPress: handleDeleteAccount,
-      color: '#ef4444'
     }
   ];
 
@@ -1313,37 +1305,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                 </View>
               </TouchableOpacity>
               
-              {/* Delete Account Confirmation Dropdown */}
-              {option.id === 'delete' && showDeleteDropdown && (
-                <View style={styles.deleteDropdown}>
-                  <View style={styles.deleteDropdownContent}>
-                    <View style={styles.deleteWarningHeader}>
-                      <Icon name="warning" size={24} color="#ef4444" />
-                      <Text style={styles.deleteWarningTitle}>Confirm Account Deletion</Text>
-                    </View>
-                    <Text style={styles.deleteWarningText}>
-                      This action cannot be undone. All your data, messages, and connections will be permanently deleted.
-                    </Text>
-                    <View style={styles.deleteDropdownActions}>
-                      <TouchableOpacity 
-                        style={styles.deleteCancelButton}
-                        onPress={() => setShowDeleteDropdown(false)}
-                      >
-                        <Text style={styles.deleteCancelButtonText}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.deleteConfirmButton}
-                        onPress={confirmDeleteAccount}
-                        disabled={isLoading}
-                      >
-                        <Text style={styles.deleteConfirmButtonText}>
-                          {isLoading ? 'Deleting...' : 'Delete Account'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              )}
             </View>
           ))}
         </Animated.View>
@@ -1788,6 +1749,71 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
         )}
 
 
+
+        {/* Delete Account Section - Moved to Bottom */}
+        <Animated.View 
+          style={[
+            styles.deleteAccountSection,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.deleteAccountCard}
+            onPress={handleDeleteAccount}
+            activeOpacity={0.7}
+          >
+            <View style={styles.deleteAccountContent}>
+              <View style={[styles.deleteAccountIconContainer, { backgroundColor: '#ef444415' }]}>
+                <Icon 
+                  name="trash-outline" 
+                  size={24} 
+                  color="#ef4444" 
+                />
+              </View>
+              <View style={styles.deleteAccountText}>
+                <Text style={styles.deleteAccountTitle}>Delete Account</Text>
+                <Text style={styles.deleteAccountSubtitle}>Permanently delete your account</Text>
+              </View>
+              <Icon 
+                name="chevron-forward" 
+                size={20} 
+                color={theme.colors.onSurfaceVariant} 
+              />
+            </View>
+          </TouchableOpacity>
+          
+          {/* Delete Account Confirmation Dropdown */}
+          {showDeleteDropdown && (
+            <View style={styles.deleteDropdown}>
+              <View style={styles.deleteDropdownContent}>
+                <View style={styles.deleteWarningHeader}>
+                  <Icon name="warning" size={24} color="#ef4444" />
+                  <Text style={styles.deleteWarningTitle}>Confirm Account Deletion</Text>
+                </View>
+                <Text style={styles.deleteWarningText}>
+                  This action cannot be undone. All your data, messages, and connections will be permanently deleted.
+                </Text>
+                <View style={styles.deleteDropdownActions}>
+                  <TouchableOpacity 
+                    style={styles.deleteCancelButton}
+                    onPress={() => setShowDeleteDropdown(false)}
+                  >
+                    <Text style={styles.deleteCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.deleteConfirmButton}
+                    onPress={confirmDeleteAccount}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.deleteConfirmButtonText}>
+                      {isLoading ? 'Deleting...' : 'Delete Account'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+        </Animated.View>
 
       </ScrollView>
 
@@ -4421,6 +4447,53 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.primary,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+
+  // Delete Account Section Styles
+  deleteAccountSection: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  deleteAccountCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: '#ef444420',
+    shadowColor: '#ef4444',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  deleteAccountContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deleteAccountIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  deleteAccountText: {
+    flex: 1,
+  },
+  deleteAccountTitle: {
+    ...theme.typography.titleMedium,
+    color: '#ef4444',
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  deleteAccountSubtitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
   },
 
 });
