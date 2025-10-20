@@ -224,8 +224,6 @@ export class QueryCache {
         
         // Remove processed message
         queue.messages.shift();
-        
-        console.log(`📦 Message processed in order for buddy ${buddyId}, delivery order: ${nextMessage.deliveryOrder}`);
       } else {
         // Skip out-of-order messages for now
         break;
@@ -368,7 +366,6 @@ export class QueryCache {
   static setOperationLock(buddyId: string, userId: string, operation: string): void {
     const lockKey = `lock_${operation}_${buddyId}_${userId}`;
     this.set(lockKey, true, 5000); // 5 second lock
-    console.log(`🔒 Operation lock set: ${operation} for buddy ${buddyId}`);
   }
 
   /**

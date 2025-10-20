@@ -62,14 +62,52 @@ export const BuddyRequestsScreen: React.FC<BuddyRequestsScreenProps> = ({ onNavi
       setProcessingRequest(request.id);
       
       console.log('✅ Accepting buddy request:', request.id);
+      console.log('🔍 Request details:', {
+        requesterId: request.requester_id,
+        receiverId: request.receiver_id,
+        currentUserId: user.id
+      });
+      
       await AnonymousChatService.respondToBuddyRequest(request.id, 'accepted');
       
       // Remove the request from the list
       setBuddyRequests(prev => prev.filter(req => req.id !== request.id));
       
-      // Invalidate buddies cache to ensure the new buddy appears immediately
+      // ENHANCED: Invalidate buddies cache for BOTH users to ensure immediate updates
       const { QueryCache } = await import('@/services/queryCache');
+      const { DeviceEventEmitter } = await import('react-native');
+      
+      // Invalidate cache for current user (receiver)
       QueryCache.invalidateBuddies(user.id);
+      console.log('🔄 Invalidated cache for receiver:', user.id);
+      
+      // Invalidate cache for requester (sender) as well
+      QueryCache.invalidateBuddies(request.requester_id);
+      console.log('🔄 Invalidated cache for requester:', request.requester_id);
+      
+      // Dispatch real-time events to notify both users immediately
+      const buddyCreatedEvent = {
+        type: 'buddy-created',
+        buddyId: 'new-buddy-relationship', // Generic ID since we don't have the specific buddy ID yet
+        userId: user.id,
+        buddyUserId: request.requester_id,
+        source: 'buddyRequestAcceptance',
+        timestamp: new Date().toISOString()
+      };
+      
+      // Notify both users via DeviceEventEmitter
+      DeviceEventEmitter.emit('buddy-created', buddyCreatedEvent);
+      console.log('📢 Dispatched buddy-created event for both users');
+      
+      // Also dispatch a buddies-updated event for immediate UI refresh
+      DeviceEventEmitter.emit('buddies-updated', {
+        type: 'buddies-updated',
+        userId: user.id,
+        buddyUserId: request.requester_id,
+        source: 'buddyRequestAcceptance',
+        timestamp: new Date().toISOString()
+      });
+      console.log('📢 Dispatched buddies-updated event for immediate refresh');
       
       Alert.alert(
         'Request Accepted!',

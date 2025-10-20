@@ -21,6 +21,8 @@ class RealtimeService {
   private maxRetryDelay = 30000; // Max 30 seconds
   private circuitBreakerOpen = false;
   private circuitBreakerTimeout = 300000; // 5 minutes before trying again
+  private recentNotificationSenders?: Set<string>;
+  private userProfileCache = new Map<string, { name: string; timestamp: number }>();
   private lastCircuitBreakerReset = 0;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private initializationPromise: Promise<boolean> | null = null; // Prevent multiple simultaneous initializations
@@ -150,6 +152,10 @@ class RealtimeService {
         )
         .subscribe((status) => {
           console.log('📡 Buddy messages subscription status:', status);
+          if (status === 'CHANNEL_ERROR') {
+            console.error('❌ Buddy messages subscription error - switching to polling');
+            this.handleConnectionError(userId);
+          }
         });
 
       this.subscriptions.push({
@@ -174,6 +180,10 @@ class RealtimeService {
         )
         .subscribe((status) => {
           console.log('📡 Whispr notes subscription status:', status);
+          if (status === 'CHANNEL_ERROR') {
+            console.error('❌ Whispr notes subscription error');
+            this.handleConnectionError(userId);
+          }
         });
 
       this.subscriptions.push({
@@ -199,6 +209,10 @@ class RealtimeService {
         )
         .subscribe((status) => {
           console.log('Database notification subscription status:', status);
+          if (status === 'CHANNEL_ERROR') {
+            console.error('❌ Database notification subscription error');
+            this.handleConnectionError(userId);
+          }
         });
 
       // Subscribe to buddy deletion notifications
@@ -224,6 +238,10 @@ class RealtimeService {
         )
         .subscribe((status) => {
           console.log('Buddy deletion subscription status:', status);
+          if (status === 'CHANNEL_ERROR') {
+            console.error('❌ Buddy deletion subscription error');
+            this.handleConnectionError(userId);
+          }
         });
 
       this.subscriptions.push({
@@ -283,7 +301,7 @@ class RealtimeService {
         console.log('Message sent by current user, applying real-time update for UI consistency:', payload.new.sender_id);
         
         // Apply real-time update for self-message UI consistency
-        CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
+        await CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
         
         this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
         console.log('Self-message real-time update completed');
@@ -318,42 +336,84 @@ class RealtimeService {
         
         if (!this.recentNotifications.has(notificationKey)) {
           // Check if the user is currently viewing this chat (handles reciprocal buddy relationships)
-          console.log('🔍 DEBUG: About to check active chat for buddy:', payload.new.buddy_id);
-          console.log('🔍 DEBUG: Active chat service debug state:', activeChatService.getDebugState());
-          
           const isChatActive = await activeChatService.isMessageForActiveChat(payload.new.buddy_id);
           
           if (isChatActive) {
             console.log('🔕 Skipping notification - user is actively viewing this chat');
-            console.log('🔍 DEBUG: Active chat check details:', {
-              messageBuddyId: payload.new.buddy_id,
-              activeChatId: activeChatService.getActiveChat(),
-              isActive: isChatActive
-            });
           } else {
             console.log('🔔 Showing notification for message from other user');
-            console.log('🔍 DEBUG: Notification will be shown because:', {
-              messageBuddyId: payload.new.buddy_id,
-              activeChatId: activeChatService.getActiveChat(),
-              isActive: isChatActive
-            });
             try {
               // OPTION 1 FIX: Force immediate cache update and UI refresh BEFORE notification
               console.log('⚡ Forcing immediate cache update and UI refresh');
-              CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
+              await CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
               this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
+              
+              // SIMPLE FIX: Get buddy name directly from the message sender
+              let buddyDisplayName = 'Buddy';
+              
+              // Add rate limiting to prevent excessive database queries
+              const notificationKey = `notification-${payload.new.sender_id}-${Date.now()}`;
+              const recentNotificationKey = `recent-${payload.new.sender_id}`;
+              
+              // Check if we've already processed a notification for this sender recently
+              if (this.recentNotificationSenders?.has(recentNotificationKey)) {
+                console.log('🔔 Skipping notification - already processed for this sender recently');
+                return;
+              }
+              
+              // Mark this sender as recently processed
+              if (!this.recentNotificationSenders) {
+                this.recentNotificationSenders = new Set();
+              }
+              this.recentNotificationSenders.add(recentNotificationKey);
+              
+              // Clean up after 10 seconds
+              setTimeout(() => {
+                this.recentNotificationSenders?.delete(recentNotificationKey);
+              }, 10000);
+              
+              // Get buddy name for notification
+              
+              // The sender is the buddy (not the current user)
+              const buddyUserId = payload.new.sender_id;
+              
+              // Check cache first
+              const cachedProfile = this.userProfileCache.get(buddyUserId);
+              if (cachedProfile && (Date.now() - cachedProfile.timestamp) < 300000) { // 5 minutes cache
+                buddyDisplayName = cachedProfile.name;
+                console.log('✅ Using cached sender name:', buddyDisplayName);
+              } else {
+                try {
+                  const { data: userProfile } = await supabase
+                    .from('user_profiles')
+                    .select('display_name, username')
+                    .eq('id', buddyUserId)
+                    .single();
+                  
+                  if (userProfile?.display_name) {
+                    buddyDisplayName = userProfile.display_name;
+                    console.log('✅ Using sender display_name:', buddyDisplayName);
+                  } else if (userProfile?.username) {
+                    buddyDisplayName = userProfile.username;
+                    console.log('✅ Using sender username:', buddyDisplayName);
+                  } else {
+                    console.log('⚠️ No name found for sender, using default');
+                  }
+                  
+                  // Cache the result
+                  this.userProfileCache.set(buddyUserId, { name: buddyDisplayName, timestamp: Date.now() });
+                } catch (error) {
+                  console.log('⚠️ Error getting sender name:', error);
+                }
+              }
+              
+              console.log('🔔 Final buddy display name for notification:', buddyDisplayName);
               
               await notificationService.showMessageNotification(
                 'New Message',
                 payload.new.content ? payload.new.content.substring(0, 100) : 'New message',
-                'Buddy' // We'll get the actual name from the database trigger
+                buddyDisplayName
               );
-              
-              // Add to recent notifications and clean up after 5 seconds
-              this.recentNotifications.add(notificationKey);
-              setTimeout(() => {
-                this.recentNotifications.delete(notificationKey);
-              }, 5000);
             } catch (error) {
               console.error('❌ Error showing notification:', error);
             }
@@ -384,7 +444,7 @@ class RealtimeService {
       
       // Apply real-time update using the new centralized method
       console.log('🔄 Applying real-time buddy update for message change');
-      CachedBuddiesService.applyRealtimeUpdate('buddy', payload.new, this.userId!);
+      await CachedBuddiesService.applyRealtimeUpdate('buddy', payload.new, this.userId!);
       
       // Dispatch custom event to trigger UI refresh
       console.log('🔄 Dispatching message-updated event for UI refresh');
@@ -580,12 +640,12 @@ class RealtimeService {
       
       // Apply real-time update using the new centralized method
       console.log('🔄 Applying real-time delete update');
-      CachedBuddiesService.applyRealtimeUpdate('delete', payload.old, this.userId!);
+      await CachedBuddiesService.applyRealtimeUpdate('delete', payload.old, this.userId!);
       
-      // Dispatch UI refresh events
+      // Dispatch UI refresh events with buddy data
       console.log('📢 Dispatching buddy deletion events');
-      this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddy-deleted');
-      this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddies-updated');
+      this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddy-deleted', deletedBuddy);
+      this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddies-updated', deletedBuddy);
       
       // Show notification about buddy deletion
       console.log('🔔 Showing buddy deletion notification');
@@ -624,7 +684,7 @@ class RealtimeService {
     }, 30000); // Check every 30 seconds
   }
 
-  private handleConnectionError(): void {
+  private handleConnectionError(userId?: string): void {
     console.error('❌ Realtime connection error occurred');
     this.connectionRetryCount++;
     
@@ -636,6 +696,16 @@ class RealtimeService {
     
     this.isConnected = false;
     this.cleanup();
+    
+    // Switch to polling fallback if userId is provided
+    if (userId) {
+      try {
+        const { RealtimeErrorHandler } = require('./realtimeErrorHandler');
+        RealtimeErrorHandler.handleConnectionError(userId);
+      } catch (error) {
+        console.error('❌ Failed to start polling fallback:', error);
+      }
+    }
   }
 
   private cleanup(): void {

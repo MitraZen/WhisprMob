@@ -17,6 +17,7 @@ import { useTheme } from '@/store/ThemeContext';
 import { useAuth } from '@/store/AuthContext';
 import AnonymousChatService, { ChatRoom, ChatParticipant, ChatMessage, BuddyRequest } from '@/services/anonymousChatService';
 import { testAnonymousChatTables } from '@/utils/testAnonymousChatTables';
+import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView';
 
 interface AnonymousChatModalProps {
   visible: boolean;
@@ -40,13 +41,30 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
   const [currentParticipant, setCurrentParticipant] = useState<ChatParticipant | null>(null);
   const [buddyStatuses, setBuddyStatuses] = useState<Map<string, 'none' | 'pending' | 'buddies'>>(new Map());
   const [buddyRequests, setBuddyRequests] = useState<BuddyRequest[]>([]);
+  const [showProfileView, setShowProfileView] = useState(false);
+  const [selectedParticipant, setSelectedParticipant] = useState<ChatParticipant | null>(null);
 
-  // Check buddy status for participants when they change
+  // Check buddy status for participants when they actually change
   useEffect(() => {
     const checkBuddyStatuses = async () => {
       if (!user || participants.length === 0) return;
 
+      // Create a hash of participant IDs to detect actual changes
+      const participantIds = participants
+        .filter(p => p.user_id !== user.id)
+        .map(p => p.user_id)
+        .sort()
+        .join(',');
+
+      // Only check if participant IDs have actually changed
+      if (participantIds === lastCheckedParticipantIds.current) {
+        console.log('Participant IDs unchanged, skipping buddy status check');
+        return;
+      }
+
       console.log('Checking buddy statuses for participants:', participants.length);
+      console.log('Participant IDs:', participantIds);
+      
       const statusMap = new Map<string, 'none' | 'pending' | 'buddies'>();
       
       for (const participant of participants) {
@@ -76,10 +94,13 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
 
       console.log('Final buddy statuses:', Array.from(statusMap.entries()));
       setBuddyStatuses(statusMap);
+      
+      // Update the last checked participant IDs
+      lastCheckedParticipantIds.current = participantIds;
     };
 
     checkBuddyStatuses();
-  }, [participants, user]);
+  }, [participants, user?.id]); // Keep participants dependency but add smart checking
   const [lastMessageCount, setLastMessageCount] = useState(0);
   const [lastParticipantCount, setLastParticipantCount] = useState(0);
   const [knownParticipantIds, setKnownParticipantIds] = useState<Set<string>>(new Set());
@@ -88,6 +109,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
   // Use refs to track state for polling to avoid stale closure issues
   const knownParticipantIdsRef = useRef<Set<string>>(new Set());
   const lastMessageIdsRef = useRef<Set<string>>(new Set());
+  const lastCheckedParticipantIds = useRef<string>('');
   
   const flatListRef = useRef<FlatList>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,6 +133,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
       // Also reset refs
       knownParticipantIdsRef.current = new Set();
       lastMessageIdsRef.current = new Set();
+      lastCheckedParticipantIds.current = '';
     }
   }, [visible, whisprId, user]);
 
@@ -438,7 +461,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
         )}
         <Text style={[
           styles.messageText,
-          { color: isCurrentUser ? theme.colors.surface : theme.colors.text }
+          isCurrentUser ? styles.currentUserMessageText : styles.otherUserMessageText
         ]}>
           {item.message_text}
         </Text>
@@ -466,9 +489,28 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
             size={24} 
             color={theme.colors.primary} 
           />
-          <Text style={[styles.participantName, { color: theme.colors.text }]}>
-            {item.anonymous_name}
-          </Text>
+          <TouchableOpacity 
+            style={styles.participantNameButton}
+            onPress={() => {
+              if (!isCurrentUser) {
+                console.log('Opening profile for participant:', item.user_id);
+                setSelectedParticipant(item);
+                setShowProfileView(true);
+              }
+            }}
+            disabled={isCurrentUser}
+          >
+            <Text style={[
+              styles.participantName, 
+              { color: theme.colors.text },
+              isCurrentUser && styles.currentUserParticipantName
+            ]}>
+              {item.anonymous_name}
+            </Text>
+            {!isCurrentUser && (
+              <Icon name="chevron-down" size={14} color={theme.colors.textSecondary} style={styles.participantChevron} />
+            )}
+          </TouchableOpacity>
           {isCurrentUser && (
             <Text style={[styles.youLabel, { color: theme.colors.primary }]}>
               (You)
@@ -527,7 +569,8 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
     >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Header */}
         <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
@@ -658,6 +701,19 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
           </>
         )}
       </KeyboardAvoidingView>
+      
+      {/* Profile Modal */}
+      {selectedParticipant && (
+        <EnhancedBuddyProfileView
+          visible={showProfileView}
+          onClose={() => {
+            setShowProfileView(false);
+            setSelectedParticipant(null);
+          }}
+          userId={selectedParticipant.user_id}
+          buddyName={selectedParticipant.anonymous_name}
+        />
+      )}
     </Modal>
   );
 };
@@ -739,10 +795,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  participantNameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+  },
   participantName: {
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 8,
+  },
+  currentUserParticipantName: {
+    opacity: 0.7,
+  },
+  participantChevron: {
+    marginLeft: 4,
   },
   youLabel: {
     fontSize: 12,
@@ -809,8 +878,9 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   messageContainer: {
-    marginBottom: 12,
-    maxWidth: '80%',
+    marginBottom: 6,
+    maxWidth: '75%',
+    paddingHorizontal: 8,
   },
   currentUserMessage: {
     alignSelf: 'flex-end',
@@ -819,14 +889,32 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 16,
     borderBottomRightRadius: 4,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   otherUserMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#F8F9FA',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
     borderBottomLeftRadius: 4,
+    borderWidth: 0.5,
+    borderColor: '#E9ECEF',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   senderName: {
     fontSize: 12,
@@ -834,8 +922,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 20,
+    fontWeight: '400',
+  },
+  currentUserMessageText: {
+    color: 'white',
+  },
+  otherUserMessageText: {
+    color: '#2C3E50',
   },
   messageTime: {
     fontSize: 11,
@@ -847,18 +942,32 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    paddingBottom: Platform.OS === 'ios' ? 12 : 12,
+    borderTopWidth: 0.5,
+    borderTopColor: '#E9ECEF',
+    minHeight: 60,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   messageInput: {
     flex: 1,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginRight: 12,
     maxHeight: 100,
-    fontSize: 16,
+    minHeight: 40,
+    fontSize: 15,
+    textAlignVertical: 'top',
+    backgroundColor: '#F8F9FA',
+    borderColor: '#E9ECEF',
   },
   sendButton: {
     width: 40,

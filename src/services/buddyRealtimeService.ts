@@ -3,6 +3,7 @@
 
 import { supabase } from '@/config/supabase';
 import { QueryCache } from './queryCache';
+import { DeviceEventEmitter } from 'react-native';
 
 export class BuddyRealtimeService {
   private static subscriptions: Map<string, any> = new Map();
@@ -214,6 +215,76 @@ export class BuddyRealtimeService {
       deletions: this.subscriptions.has(`buddy_deletions_${userId}`),
       creations: this.subscriptions.has(`buddy_creations_${userId}`),
       updates: this.subscriptions.has(`buddy_updates_${userId}`)
+    };
+  }
+
+  /**
+   * Subscribe to DeviceEventEmitter buddy deletion events
+   * This handles buddy deletions triggered by other users
+   */
+  static subscribeToDeviceBuddyEvents(
+    userId: string, 
+    onBuddyDeleted: (data: any) => void,
+    onBuddyCreated?: (data: any) => void,
+    onBuddyUpdated?: (data: any) => void
+  ): () => void {
+    console.log('🔔 Subscribing to DeviceEventEmitter buddy events for user:', userId);
+    
+    const handleBuddyDeleted = (eventData: any) => {
+      console.log('🗑️ DeviceEventEmitter buddy deletion received:', eventData);
+      
+      // Extract buddy data from the event
+      const buddyData = eventData?.message || eventData;
+      
+      // Check if this deletion affects the current user
+      // A buddy deletion affects the current user if:
+      // 1. The current user was the one who had the buddy relationship (user_id)
+      // 2. The current user was the buddy being deleted (buddy_user_id)
+      if (buddyData?.user_id === userId || buddyData?.buddy_user_id === userId) {
+        console.log('✅ Buddy deletion affects current user, processing...');
+        console.log('🔍 Deleted buddy details:', {
+          buddyId: buddyData.id,
+          userId: buddyData.user_id,
+          buddyUserId: buddyData.buddy_user_id,
+          currentUserId: userId
+        });
+        onBuddyDeleted(buddyData);
+      } else {
+        console.log('❌ Buddy deletion does not affect current user, ignoring');
+        console.log('🔍 Buddy deletion details:', {
+          buddyId: buddyData?.id,
+          userId: buddyData?.user_id,
+          buddyUserId: buddyData?.buddy_user_id,
+          currentUserId: userId
+        });
+      }
+    };
+
+    const handleBuddyCreated = (eventData: any) => {
+      console.log('➕ DeviceEventEmitter buddy creation received:', eventData);
+      if (onBuddyCreated) {
+        onBuddyCreated(eventData);
+      }
+    };
+
+    const handleBuddyUpdated = (eventData: any) => {
+      console.log('🔄 DeviceEventEmitter buddy update received:', eventData);
+      if (onBuddyUpdated) {
+        onBuddyUpdated(eventData);
+      }
+    };
+
+    // Add event listeners
+    const buddyDeletedSubscription = DeviceEventEmitter.addListener('buddy-deleted', handleBuddyDeleted);
+    const buddyCreatedSubscription = onBuddyCreated ? DeviceEventEmitter.addListener('buddy-created', handleBuddyCreated) : null;
+    const buddyUpdatedSubscription = onBuddyUpdated ? DeviceEventEmitter.addListener('buddy-updated', handleBuddyUpdated) : null;
+
+    // Return cleanup function
+    return () => {
+      console.log('🔕 Cleaning up DeviceEventEmitter buddy event listeners');
+      buddyDeletedSubscription.remove();
+      buddyCreatedSubscription?.remove();
+      buddyUpdatedSubscription?.remove();
     };
   }
 }

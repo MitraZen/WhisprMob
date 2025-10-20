@@ -4,7 +4,6 @@ import { theme, spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils
 import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
-import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
 
 interface WhisprComposeScreenProps {
@@ -175,9 +174,6 @@ export const WhisprComposeScreen: React.FC<WhisprComposeScreenProps> = ({ onNavi
       
       {/* Bottom Navigation Menu */}
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
-      
-      {/* Debug Overlay */}
-      <DebugOverlay onToggleAdmin={enableAdminMode} />
     </KeyboardAvoidingView>
   );
 };

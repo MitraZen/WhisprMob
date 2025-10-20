@@ -253,7 +253,7 @@ class UserProfileDataService {
   }
 
   /**
-   * Create achievement for user
+   * Create achievement for user (with duplicate check)
    */
   async createAchievement(userId: string, achievementData: {
     achievement_type: string;
@@ -265,6 +265,25 @@ class UserProfileDataService {
     try {
       console.log('🏆 Creating achievement for user:', userId, achievementData);
 
+      // First, check if user already has this achievement type
+      const { data: existingAchievement, error: checkError } = await supabase
+        .from('user_achievements')
+        .select('id, achievement_type')
+        .eq('user_id', userId)
+        .eq('achievement_type', achievementData.achievement_type)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('❌ Error checking existing achievement:', checkError);
+        return false;
+      }
+
+      if (existingAchievement) {
+        console.log(`ℹ️ User already has ${achievementData.achievement_type} achievement, skipping creation`);
+        return true; // Return true since the achievement already exists
+      }
+
+      // Create new achievement only if it doesn't exist
       const { error } = await supabase
         .from('user_achievements')
         .insert({

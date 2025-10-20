@@ -8,7 +8,6 @@ import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import { CachedBuddiesService } from '@/services/cachedBuddiesService';
-import DebugOverlay from '@/components/DebugOverlay';
 import { useAdmin } from '@/store/AdminContext';
 import { WalkthroughManager } from '@/components/WalkthroughManager';
 
@@ -508,7 +507,6 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
       </TouchableOpacity>
 
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
-      <DebugOverlay onToggleAdmin={enableAdminMode} />
       
       {/* Walkthrough for new users */}
       <WalkthroughManager 

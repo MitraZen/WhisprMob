@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform, AppState } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform, AppState, DeviceEventEmitter } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
@@ -86,8 +86,9 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
 
     const handleBuddyCreated = (newBuddy: any) => {
       console.log('➕ Real-time buddy creation received:', newBuddy);
-      // Refresh buddies to get the latest data
-      loadBuddies(false);
+      // IMMEDIATE REFRESH: Force immediate buddy list refresh for instant updates
+      console.log('🔄 Forcing immediate buddy list refresh due to new buddy creation');
+      loadBuddies(false); // Silent refresh to get latest data
     };
 
     const handleBuddyUpdated = (updatedBuddy: any) => {
@@ -100,6 +101,13 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
       );
     };
 
+    const handleBuddiesUpdated = (eventData: any) => {
+      console.log('🔄 Buddies-updated event received:', eventData);
+      // Force immediate refresh when buddies are updated
+      console.log('🔄 Forcing immediate buddy list refresh due to buddies-updated event');
+      loadBuddies(false); // Silent refresh to get latest data
+    };
+
     // Subscribe to real-time notifications
     BuddyRealtimeService.subscribeToAllBuddyNotifications(
       user.id,
@@ -108,10 +116,24 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
       handleBuddyUpdated
     );
 
+    // Also subscribe to DeviceEventEmitter events for cross-user notifications
+    const deviceEventCleanup = BuddyRealtimeService.subscribeToDeviceBuddyEvents(
+      user.id,
+      handleBuddyDeleted,
+      handleBuddyCreated,
+      handleBuddyUpdated
+    );
+
+    // Subscribe to buddies-updated events for immediate refresh
+    const buddiesUpdatedSubscription = DeviceEventEmitter.addListener('buddies-updated', handleBuddiesUpdated);
+    console.log('🔔 Subscribed to buddies-updated events for immediate refresh');
+
     // Cleanup on unmount
     return () => {
       console.log('🔕 Cleaning up real-time buddy notifications');
       BuddyRealtimeService.unsubscribeFromBuddyNotifications(user.id);
+      deviceEventCleanup();
+      buddiesUpdatedSubscription.remove();
     };
   }, [user?.id]);
 

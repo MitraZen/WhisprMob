@@ -7,6 +7,7 @@ import WhisprNotesScreen from '@/screens/WhisprNotesScreen';
 import BuddiesScreen from '@/screens/BuddiesScreen';
 import { BuddyRequestsScreen } from '@/screens/BuddyRequestsScreen';
 import ChatScreen from '@/screens/ChatScreen';
+import { UnifiedChatScreen } from '@/screens/UnifiedChatScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import SettingsHubScreen from '@/screens/SettingsHubScreen';
@@ -268,11 +269,11 @@ const AppNavigator = () => {
       return null;
     case 'chat':
       if (isAuthenticated) return (
-        <ChatScreen
+        <UnifiedChatScreen
           onNavigate={navigate}
           user={user}
           buddy={currentParams?.buddy}
-          onGoBack={goBack}
+          onBack={goBack}
         />
       );
       // Redirect to sign-in instead of welcome

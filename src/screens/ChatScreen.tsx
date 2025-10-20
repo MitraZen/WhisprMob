@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, RefreshControl, Animated, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, RefreshControl, Animated, Modal, DeviceEventEmitter } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
@@ -21,7 +21,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const [messages, setMessages] = useState<BuddyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,13 +55,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   // Set active chat when component mounts and clear when unmounts
   useEffect(() => {
     if (buddy?.id) {
-      console.log('📱 ChatScreen: Setting active chat to:', buddy.id);
       activeChatService.setActiveChat(buddy.id);
     }
 
     // Cleanup: Clear active chat when component unmounts
     return () => {
-      console.log('📱 ChatScreen: Clearing active chat');
       activeChatService.clearActiveChat();
     };
   }, [buddy?.id]);
@@ -125,6 +122,86 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
 
     return () => clearInterval(interval);
   }, [buddy?.id]);
+
+  // Listen for real-time message updates
+  useEffect(() => {
+    if (!buddy?.id || !user?.id) return;
+
+    console.log('🔔 Setting up real-time message listener for buddy:', buddy.id);
+
+    const handleRealtimeMessageUpdate = async (event: any) => {
+      console.log('📨 Real-time message update received:', event.detail);
+      
+      // Check if this update is for the current buddy or its reciprocal
+      const messageBuddyId = event.detail?.buddyId;
+      if (messageBuddyId === buddy.id) {
+        console.log('✅ Message update is for current buddy, refreshing messages');
+        loadMessages(false, true); // Silent refresh to get latest messages
+        return;
+      }
+
+      // Check if this is a reciprocal buddy relationship
+      try {
+        const { supabase } = await import('@/config/supabase');
+        
+        // Get the current buddy's relationship
+        const { data: currentBuddyData, error: currentError } = await supabase
+          .from('buddies')
+          .select('user_id, buddy_user_id')
+          .eq('id', buddy.id)
+          .single();
+        
+        if (currentError || !currentBuddyData) {
+          console.log('📱 Could not get current buddy data:', currentError);
+          return;
+        }
+
+        // Get the message buddy's relationship
+        const { data: messageBuddyData, error: messageError } = await supabase
+          .from('buddies')
+          .select('user_id, buddy_user_id')
+          .eq('id', messageBuddyId)
+          .single();
+        
+        if (messageError || !messageBuddyData) {
+          console.log('📱 Could not get message buddy data:', messageError);
+          return;
+        }
+
+        // Check if they represent the same user pair (bidirectional relationship)
+        const isSamePair = (
+          (currentBuddyData.user_id === messageBuddyData.user_id && 
+           currentBuddyData.buddy_user_id === messageBuddyData.buddy_user_id) ||
+          (currentBuddyData.user_id === messageBuddyData.buddy_user_id && 
+           currentBuddyData.buddy_user_id === messageBuddyData.user_id)
+        );
+
+        if (isSamePair) {
+          console.log('✅ Message update is for reciprocal buddy, refreshing messages');
+          loadMessages(false, true); // Silent refresh to get latest messages
+        } else {
+          console.log('❌ Message update is not for current buddy or its reciprocal');
+        }
+      } catch (error) {
+        console.error('📱 Error checking reciprocal buddy relationship:', error);
+      }
+    };
+
+    // Listen for custom events from realtime service using DeviceEventEmitter
+    const eventListener = (eventData: any) => {
+      console.log('🔔 ChatScreen: Event listener triggered:', eventData);
+      if (eventData?.type === 'message-updated') {
+        handleRealtimeMessageUpdate({ detail: eventData });
+      }
+    };
+
+    // Add event listener for real-time updates using DeviceEventEmitter
+    const subscription = DeviceEventEmitter.addListener('message-updated', eventListener);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [buddy?.id, user?.id]);
 
   const loadMessages = async (isRefresh = false, isSilent = false) => {
     if (!buddy?.id) return;
@@ -269,7 +346,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !buddy?.id) return;
 
-    setIsSending(true);
     const messageContent = newMessage.trim();
     setNewMessage(''); // Clear input immediately for better UX
 
@@ -305,12 +381,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
         ));
         setLastUpdated(new Date());
         
-        // Force a reload after a short delay to ensure the real message is properly loaded
-        // This handles cases where real-time updates might interfere
-        setTimeout(async () => {
-          console.log('🔄 Force reloading messages to ensure consistency');
-          await loadMessages(false, true);
-        }, 1500);
+        // No need for forced reload - optimistic update + real-time updates handle this
+        // The setTimeout with loadMessages was causing unnecessary UI refresh
       } else {
         console.warn('⚠️ No message ID returned from server');
         // Remove optimistic message if no ID returned
@@ -326,8 +398,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       
       // Restore the message content if sending failed
       setNewMessage(messageContent);
-    } finally {
-      setIsSending(false);
     }
   };
 
@@ -710,21 +780,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
             onChangeText={setNewMessage}
             multiline
             maxLength={1000}
-            editable={!isSending}
+            editable={true}
           />
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!newMessage.trim() || isSending) && styles.sendButtonDisabled,
+              !newMessage.trim() && styles.sendButtonDisabled,
             ]}
             onPress={handleSendMessage}
-            disabled={!newMessage.trim() || isSending}
+            disabled={!newMessage.trim()}
             activeOpacity={0.7}
           >
             <Icon 
-              name={isSending ? "hourglass" : "send"} 
+              name="send" 
               size={20} 
-              color={(!newMessage.trim() || isSending) ? theme.colors.onSurfaceVariant : theme.colors.onPrimary} 
+              color={!newMessage.trim() ? theme.colors.onSurfaceVariant : theme.colors.onPrimary} 
             />
           </TouchableOpacity>
         </View>

@@ -10,7 +10,6 @@ class ActiveChatService {
    * Set the currently active chat
    */
   setActiveChat(chatId: string | null): void {
-    console.log('📱 Active chat changed from:', this.activeChatId, 'to:', chatId);
     this.activeChatId = chatId;
   }
 
@@ -26,18 +25,7 @@ class ActiveChatService {
    * This method checks both the direct buddy ID and reciprocal buddy ID
    */
   isChatActive(chatId: string): boolean {
-    const isActive = this.activeChatId === chatId;
-    console.log('📱 Checking if chat is active:', {
-      chatId: chatId,
-      activeChatId: this.activeChatId,
-      isActive: isActive
-    });
-    console.log('📱 Active chat service state:', {
-      currentActiveChat: this.activeChatId,
-      requestedChatId: chatId,
-      match: this.activeChatId === chatId
-    });
-    return isActive;
+    return this.activeChatId === chatId;
   }
 
   /**
@@ -66,7 +54,6 @@ class ActiveChatService {
         .single();
       
       if (activeError || !activeBuddyData) {
-        console.log('📱 Could not get active buddy data:', activeError);
         return false;
       }
 
@@ -78,7 +65,6 @@ class ActiveChatService {
         .single();
       
       if (messageError || !messageBuddyData) {
-        console.log('📱 Could not get message buddy data:', messageError);
         return false;
       }
 
@@ -89,12 +75,6 @@ class ActiveChatService {
         (activeBuddyData.user_id === messageBuddyData.buddy_user_id && 
          activeBuddyData.buddy_user_id === messageBuddyData.user_id)
       );
-
-      console.log('📱 Reciprocal buddy check:', {
-        activeBuddy: activeBuddyData,
-        messageBuddy: messageBuddyData,
-        isSamePair: isSamePair
-      });
 
       return isSamePair;
     } catch (error) {
@@ -107,7 +87,6 @@ class ActiveChatService {
    * Clear the active chat (when navigating away)
    */
   clearActiveChat(): void {
-    console.log('📱 Active chat cleared from:', this.activeChatId);
     this.activeChatId = null;
   }
 
@@ -115,7 +94,6 @@ class ActiveChatService {
    * Force set active chat (for debugging)
    */
   forceSetActiveChat(chatId: string): void {
-    console.log('📱 FORCE setting active chat to:', chatId);
     this.activeChatId = chatId;
   }
 
@@ -135,18 +113,11 @@ class ActiveChatService {
    * Test method - expose to global for console testing
    */
   testActiveChat(): void {
-    console.log('🧪 ACTIVE CHAT SERVICE TEST:');
-    console.log('Current active chat:', this.activeChatId);
-    console.log('Debug state:', this.getDebugState());
-    
     // Test setting and checking
     this.setActiveChat('test-chat-id');
-    console.log('After setting test chat:', this.getActiveChat());
-    console.log('Is test chat active?', this.isChatActive('test-chat-id'));
-    console.log('Is other chat active?', this.isChatActive('other-chat-id'));
-    
+    this.isChatActive('test-chat-id');
+    this.isChatActive('other-chat-id');
     this.clearActiveChat();
-    console.log('After clearing:', this.getActiveChat());
   }
 }
 

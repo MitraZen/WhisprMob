@@ -383,19 +383,26 @@ class AnonymousChatService {
       console.log(`🔍 Checking if users are buddies: ${userId1} <-> ${userId2}`);
       
       // Check the actual buddies table for existing relationship
-      const { data: buddyRelationship, error } = await supabase
+      // Use limit(1) instead of maybeSingle() to handle duplicate relationships gracefully
+      const { data: buddyRelationships, error } = await supabase
         .from('buddies')
         .select('id')
         .or(`and(user_id.eq.${userId1},buddy_user_id.eq.${userId2}),and(user_id.eq.${userId2},buddy_user_id.eq.${userId1})`)
-        .maybeSingle(); // Use maybeSingle() to handle 0 rows gracefully
+        .limit(1); // Limit to 1 row to avoid PGRST116 error
 
       if (error) {
         console.error('❌ Error checking buddy relationship:', error);
         return false;
       }
 
-      const areBuddies = !!buddyRelationship;
+      const areBuddies = buddyRelationships && buddyRelationships.length > 0;
       console.log(`✅ Buddy relationship check result: ${areBuddies}`);
+      
+      // If we found relationships, log if there are duplicates
+      if (areBuddies && buddyRelationships.length > 1) {
+        console.log(`⚠️ Found ${buddyRelationships.length} buddy relationships between users (duplicates detected)`);
+      }
+      
       return areBuddies;
     } catch (error) {
       console.error('❌ Error checking buddy status:', error);
@@ -408,19 +415,26 @@ class AnonymousChatService {
    */
   async hasPendingBuddyRequest(userId1: string, userId2: string): Promise<boolean> {
     try {
-      const { data: buddyRequest, error } = await supabase
+      const { data: buddyRequests, error } = await supabase
         .from('buddy_requests')
         .select('status')
         .or(`and(requester_id.eq.${userId1},receiver_id.eq.${userId2}),and(requester_id.eq.${userId2},receiver_id.eq.${userId1})`)
         .eq('status', 'pending')
-        .single();
+        .limit(1); // Limit to 1 row to avoid PGRST116 error
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+      if (error) {
         console.error('Error checking pending buddy request:', error);
         return false;
       }
 
-      return !!buddyRequest;
+      const hasPending = buddyRequests && buddyRequests.length > 0;
+      
+      // If we found requests, log if there are duplicates
+      if (hasPending && buddyRequests.length > 1) {
+        console.log(`⚠️ Found ${buddyRequests.length} pending buddy requests between users (duplicates detected)`);
+      }
+      
+      return hasPending;
     } catch (error) {
       console.error('Error checking pending buddy request:', error);
       return false;
@@ -548,6 +562,55 @@ class AnonymousChatService {
       }
 
       console.log('✅ Buddy relationships created successfully:', data);
+      
+      // ENHANCED: Dispatch real-time events immediately after buddy creation
+      try {
+        const { DeviceEventEmitter } = require('react-native');
+        
+        // Dispatch buddy-created events for both users
+        const buddyCreatedEvent1 = {
+          type: 'buddy-created',
+          buddyId: data.buddy_id_1,
+          userId: userId1,
+          buddyUserId: userId2,
+          source: 'anonymousChatService',
+          timestamp: new Date().toISOString()
+        };
+        
+        const buddyCreatedEvent2 = {
+          type: 'buddy-created',
+          buddyId: data.buddy_id_2,
+          userId: userId2,
+          buddyUserId: userId1,
+          source: 'anonymousChatService',
+          timestamp: new Date().toISOString()
+        };
+        
+        // Notify both users immediately
+        DeviceEventEmitter.emit('buddy-created', buddyCreatedEvent1);
+        DeviceEventEmitter.emit('buddy-created', buddyCreatedEvent2);
+        
+        // Also dispatch buddies-updated events for immediate UI refresh
+        DeviceEventEmitter.emit('buddies-updated', {
+          type: 'buddies-updated',
+          userId: userId1,
+          buddyUserId: userId2,
+          source: 'anonymousChatService',
+          timestamp: new Date().toISOString()
+        });
+        
+        DeviceEventEmitter.emit('buddies-updated', {
+          type: 'buddies-updated',
+          userId: userId2,
+          buddyUserId: userId1,
+          source: 'anonymousChatService',
+          timestamp: new Date().toISOString()
+        });
+        
+        console.log('📢 Dispatched real-time events for both users after buddy creation');
+      } catch (eventError) {
+        console.log('⚠️ Could not dispatch real-time events (not in React Native context):', eventError);
+      }
     } catch (error) {
       console.error('❌ Error creating buddy relationship:', error);
       throw error;

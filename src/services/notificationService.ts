@@ -7,13 +7,22 @@ export interface NotificationService {
   showGeneralNotification: (title: string, content: string) => Promise<string>;
   cancelAllNotifications: () => Promise<string>;
   testNotification: () => Promise<string>;
+  setChatActive: (isActive: boolean) => void;
 }
 
 class NotificationServiceClass implements NotificationService {
+  private recentNotifications = new Set<string>();
+  private isChatActive = false;
   
   constructor() {
     this.configurePushNotifications();
     this.initializePermissions();
+  }
+  
+  // Method to set chat active state
+  setChatActive(isActive: boolean) {
+    this.isChatActive = isActive;
+    console.log('🔔 Chat active state set to:', isActive);
   }
 
   private async initializePermissions() {
@@ -147,6 +156,27 @@ class NotificationServiceClass implements NotificationService {
   async showMessageNotification(title: string, message: string, buddyName: string): Promise<string> {
     try {
       console.log('🔔 showMessageNotification called:', { title, message, buddyName });
+      
+      // Create a unique key for this notification to prevent duplicates
+      const notificationKey = `${title}-${buddyName}-${message.substring(0, 50)}`;
+      
+      // Check if we've already shown this notification recently (within last 5 seconds)
+      if (this.recentNotifications.has(notificationKey)) {
+        console.log('🔔 Duplicate notification prevented:', notificationKey);
+        return 'Duplicate notification prevented';
+      }
+      
+      // Add to recent notifications and clean up after 5 seconds
+      this.recentNotifications.add(notificationKey);
+      setTimeout(() => {
+        this.recentNotifications.delete(notificationKey);
+      }, 5000);
+      
+      // Check if chat is currently active - suppress notifications if user is actively chatting
+      if (this.isChatActive) {
+        console.log('🔔 Notification suppressed - chat is currently active');
+        return 'Notification suppressed - chat active';
+      }
       
       // Check if notifications are enabled
       const hasPermission = await this.checkNotificationPermission();

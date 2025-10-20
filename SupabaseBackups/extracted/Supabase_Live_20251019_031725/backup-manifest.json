@@ -1,0 +1,30 @@
+﻿{
+    "UsageMethods":  [
+                         "PowerShell script (automated)",
+                         "Manual SQL execution",
+                         "Supabase SQL Editor"
+                     ],
+    "BackupLocation":  ".\\SupabaseBackups\\Supabase_Live_20251019_031725",
+    "ExtractedObjects":  {
+                             "Policies":  "Row Level Security policies",
+                             "Functions":  "All custom functions with definitions",
+                             "Sequences":  "All sequences and their properties",
+                             "Views":  "All views and their definitions",
+                             "Tables":  "Table structures and schemas",
+                             "Indexes":  "All indexes and their definitions",
+                             "Triggers":  "All triggers with complete definitions"
+                         },
+    "Requirements":  {
+                         "DatabaseAccess":  "Connection to live Supabase database",
+                         "Permissions":  "Read access to public schema",
+                         "PostgreSQLClient":  "psql command line tool"
+                     },
+    "BackupDate":  "2025-10-19 03:17:26",
+    "BackupType":  "Live Supabase Database Extraction",
+    "IncludedScripts":  {
+                            "Instructions":  "README.md",
+                            "PowerShellExtraction":  "extract_live_database.ps1",
+                            "IndividualQueries":  "extraction_queries/",
+                            "SQLComprehensive":  "comprehensive_extraction.sql"
+                        }
+}

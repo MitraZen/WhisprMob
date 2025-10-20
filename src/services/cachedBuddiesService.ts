@@ -1,6 +1,7 @@
 import { BuddiesService, Buddy, BuddyMessage, WhisprNote } from './buddiesService';
 import { QueryCache } from './enhancedQueryCache';
 import { MoodType } from '@/types';
+import { supabase } from '@/config/supabase';
 // Temporarily commented out MMKV to resolve build issues
 // import { MMKV } from 'react-native-mmkv';
 
@@ -23,11 +24,8 @@ export class CachedBuddiesService {
     // Check cache first
     const cached = QueryCache.getBuddies(userId);
     if (cached) {
-      console.log('📦 Cache HIT: Buddies for user', userId);
       return cached;
     }
-
-    console.log('🔄 Cache MISS: Fetching buddies for user', userId);
     
     // Fetch from database
     const buddies = await BuddiesService.getBuddies(userId);
@@ -44,30 +42,60 @@ export class CachedBuddiesService {
   static async getMessages(buddyId: string, userId?: string): Promise<BuddyMessage[]> {
     // ULTRA DIRECT: If chat was cleared, return empty array immediately
     if (this.clearedChats.has(buddyId)) {
-      console.log('🚫 ULTRA DIRECT: Chat was cleared, returning empty messages');
       return [];
     }
     
     // OPTIMIZATION: Check cache first with user context
-    const cached = QueryCache.getMessages(buddyId, userId);
+    let cached = QueryCache.getMessages(buddyId, userId);
+    let cacheBuddyId = buddyId;
+    
+    // If no cached messages found, try to find them under the reciprocal buddy ID
+    if (!cached || cached.length === 0) {
+      try {
+        const { supabase } = require('@/config/supabase');
+        
+        const { data: buddyData, error: buddyError } = supabase
+          .from('buddies')
+          .select('user_id, buddy_user_id')
+          .eq('id', buddyId)
+          .single();
+        
+        if (!buddyError && buddyData) {
+          // Find the reciprocal buddy relationship
+          const { data: reciprocalBuddy, error: reciprocalError } = supabase
+            .from('buddies')
+            .select('id')
+            .eq('user_id', buddyData.buddy_user_id)
+            .eq('buddy_user_id', buddyData.user_id)
+            .single();
+          
+          if (!reciprocalError && reciprocalBuddy?.id) {
+            const reciprocalCached = QueryCache.getMessages(reciprocalBuddy.id, userId);
+            if (reciprocalCached && reciprocalCached.length > 0) {
+              cached = reciprocalCached;
+              cacheBuddyId = reciprocalBuddy.id;
+              console.log('🔄 Found cached messages under reciprocal buddy ID:', reciprocalBuddy.id);
+            }
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ Could not check for reciprocal buddy cache, using original buddy ID');
+      }
+    }
+    
     if (cached) {
       // Check for duplicates and clean them up
       const uniqueMessages = this.deduplicateMessages(cached);
       if (uniqueMessages.length !== cached.length) {
-        console.log(`🧹 Cache cleanup: Removed ${cached.length - uniqueMessages.length} duplicate messages`);
         // Update cache with cleaned messages
-        QueryCache.setMessages(buddyId, uniqueMessages, userId);
-        console.log('📦 Cache HIT (cleaned): Messages for buddy', buddyId, `(${uniqueMessages.length} messages)`);
+        QueryCache.setMessages(cacheBuddyId, uniqueMessages, userId);
         return uniqueMessages;
       }
       
-      console.log('📦 Cache HIT: Messages for buddy', buddyId, `(${cached.length} messages)`);
       return cached;
     }
 
-    console.log('🔄 Cache MISS: Fetching messages for buddy', buddyId, 'from database');
-    
-    // OPTIMIZATION: Use Promise.race for timeout protection
+    // Fetch from database
     const fetchPromise = BuddiesService.getMessages(buddyId, userId);
     const timeoutPromise = new Promise<BuddyMessage[]>((_, reject) => 
       setTimeout(() => reject(new Error('Message fetch timeout')), 5000)
@@ -78,13 +106,9 @@ export class CachedBuddiesService {
       
       // Deduplicate messages before caching
       const uniqueMessages = this.deduplicateMessages(messages);
-      if (uniqueMessages.length !== messages.length) {
-        console.log(`🧹 Database cleanup: Removed ${messages.length - uniqueMessages.length} duplicate messages`);
-      }
       
-      // OPTIMIZATION: Cache the result immediately
+      // Cache the result immediately
       QueryCache.setMessages(buddyId, uniqueMessages, userId);
-      console.log('💾 Cache SET: Messages cached for buddy', buddyId, `(${uniqueMessages.length} messages)`);
       
       return uniqueMessages;
     } catch (error) {
@@ -389,38 +413,27 @@ export class CachedBuddiesService {
    */
   static async deleteBuddy(buddyId: string, userId?: string): Promise<boolean> {
     try {
-      console.log('🗑️ CachedBuddiesService: Deleting buddy:', buddyId);
-      console.log('🔍 User ID:', userId);
-      
       const result = await BuddiesService.deleteBuddy(buddyId, userId || '');
       
       if (result && result.success) {
-        console.log('✅ CachedBuddiesService: Buddy deletion successful');
-        
         // Invalidate buddies cache for the deleting user
         if (userId) {
-          console.log('🔄 Invalidating buddies cache for deleting user:', userId);
           QueryCache.invalidateBuddies(userId);
         }
         
         // If we have the buddy_user_id from the result, also invalidate their cache
         if (result.buddy_user_id) {
-          console.log('🔄 Invalidating buddies cache for buddy user:', result.buddy_user_id);
           QueryCache.invalidateBuddies(result.buddy_user_id);
         }
         
         // Invalidate message caches for both users
         if (userId) {
-          console.log('🔄 Invalidating message cache for deleting user');
           QueryCache.invalidateMessages(buddyId, userId);
         }
         
         if (result.buddy_user_id) {
-          console.log('🔄 Invalidating message cache for buddy user');
           QueryCache.invalidateMessages(buddyId, result.buddy_user_id);
         }
-        
-        console.log('✅ CachedBuddiesService: All caches invalidated successfully');
         return true;
       } else {
         console.error('❌ CachedBuddiesService: Buddy deletion failed');
@@ -466,7 +479,6 @@ export class CachedBuddiesService {
   static async clearChatHistory(buddyId: string, userId?: string): Promise<boolean> {
     // Add to cleared chats immediately
     this.clearedChats.add(buddyId);
-    console.log('🚫 Added to cleared chats:', buddyId);
     
     const result = await BuddiesService.clearChatHistory(buddyId, userId);
     
@@ -475,8 +487,6 @@ export class CachedBuddiesService {
     
     // Also clear the cache directly to ensure immediate effect
     QueryCache.atomicClearMessages(buddyId, userId || '');
-    
-    console.log('🗑️ Cache CLEARED: Messages for buddy', buddyId, 'after clear chat');
     
     return result;
   }
@@ -522,7 +532,6 @@ export class CachedBuddiesService {
    */
   static forceRefreshMessages(buddyId: string, userId?: string): void {
     QueryCache.forceRefreshMessages(buddyId, userId);
-    console.log('🔄 Force refresh: Messages cache cleared for buddy', buddyId);
   }
 
   /**
@@ -530,7 +539,6 @@ export class CachedBuddiesService {
    */
   static forceRefreshAllMessages(): void {
     QueryCache.forceRefreshAllMessages();
-    console.log('🔄 Force refresh: All message caches cleared');
   }
 
   /**
@@ -710,7 +718,7 @@ export class CachedBuddiesService {
   /**
    * Apply real-time updates to cache with intelligent handling
    */
-  static applyRealtimeUpdate(type: 'message' | 'buddy' | 'delete', payload: any, userId: string): void {
+  static async applyRealtimeUpdate(type: 'message' | 'buddy' | 'delete', payload: any, userId: string): Promise<void> {
     try {
       console.log(`🔄 Applying real-time ${type} update:`, payload);
 
@@ -722,33 +730,92 @@ export class CachedBuddiesService {
 
       switch (type) {
         case 'message':
-          const existing = QueryCache.getMessages(payload.buddy_id, userId) || [];
-          const alreadyExists = existing.some(m => m.id === payload.id);
-
-          if (!alreadyExists) {
-            const newMessage: BuddyMessage = {
-              id: payload.id,
-              buddyId: payload.buddy_id,
-              senderId: payload.sender_id,
-              receiverId: payload.receiver_id || userId,
-              content: payload.content,
-              messageType: payload.message_type || 'text',
-              isRead: false,
-              timestamp: new Date(payload.created_at),
-              createdAt: new Date(payload.created_at),
-              updatedAt: new Date(payload.created_at),
-            };
+          // SIMPLIFIED: Always add message to cache without duplicate checking
+          const messageBuddyId = payload.buddy_id;
+          const senderId = payload.sender_id;
+          const receiverId = payload.receiver_id || userId;
+          
+          console.log('🔄 CachedBuddiesService: Processing message for caching:', {
+            messageId: payload.id,
+            messageBuddyId,
+            senderId,
+            receiverId,
+            currentUserId: userId
+          });
+          
+          // Get existing messages for this buddy (for current user)
+          const existingMessages = QueryCache.getMessages(messageBuddyId, userId) || [];
+          
+          // Create new message
+          const newMessage: BuddyMessage = {
+            id: payload.id,
+            buddyId: payload.buddy_id,
+            senderId: payload.sender_id,
+            receiverId: payload.receiver_id || userId,
+            content: payload.content,
+            messageType: payload.message_type || 'text',
+            isRead: false,
+            timestamp: new Date(payload.created_at),
+            createdAt: new Date(payload.created_at),
+            updatedAt: new Date(payload.created_at),
+          };
+          
+          // Add message to existing messages
+          const updatedMessages = [...existingMessages, newMessage];
+          
+          // Store in cache under the message's buddy ID for current user
+          QueryCache.setMessages(messageBuddyId, updatedMessages, userId);
+          console.log('✅ CachedBuddiesService: Cached message for current user:', userId);
+          
+          // CRITICAL FIX: Also cache for the OTHER user in the conversation
+          try {
+            const { data: buddyData } = await supabase
+              .from('buddies')
+              .select('*')
+              .eq('id', messageBuddyId)
+              .single();
             
-            const updated = [...existing, newMessage];
-            
-            // Deduplicate before setting cache to prevent future duplicates
-            const uniqueMessages = this.deduplicateMessages(updated);
-            QueryCache.setMessages(payload.buddy_id, uniqueMessages, userId);
-            
-            console.log('✅ Message added directly to cache (deduplicated)');
-          } else {
-            console.log('⚠️ Duplicate message ignored:', payload.id);
+            if (buddyData) {
+              // Determine who the other user is
+              const otherUserId = buddyData.user_id === userId ? buddyData.buddy_user_id : buddyData.user_id;
+              console.log('🔄 CachedBuddiesService: Found other user in conversation:', otherUserId);
+              
+              // Get existing messages for the other user
+              const otherUserMessages = QueryCache.getMessages(messageBuddyId, otherUserId) || [];
+              const otherUserUpdatedMessages = [...otherUserMessages, newMessage];
+              
+              // Cache for the other user too
+              QueryCache.setMessages(messageBuddyId, otherUserUpdatedMessages, otherUserId);
+              console.log('✅ CachedBuddiesService: Cached message for other user:', otherUserId);
+              
+              // Also try to find and cache under the reciprocal buddy ID for both users
+              const { data: reciprocalBuddy } = await supabase
+                .from('buddies')
+                .select('*')
+                .eq('user_id', buddyData.buddy_user_id)
+                .eq('buddy_user_id', buddyData.user_id)
+                .single();
+              
+              if (reciprocalBuddy) {
+                console.log('🔄 CachedBuddiesService: Found reciprocal buddy ID:', reciprocalBuddy.id);
+                
+                // Cache under reciprocal buddy ID for current user
+                QueryCache.setMessages(reciprocalBuddy.id, updatedMessages, userId);
+                console.log('✅ CachedBuddiesService: Cached under reciprocal buddy ID for current user');
+                
+                // Cache under reciprocal buddy ID for other user
+                QueryCache.setMessages(reciprocalBuddy.id, otherUserUpdatedMessages, otherUserId);
+                console.log('✅ CachedBuddiesService: Cached under reciprocal buddy ID for other user');
+              }
+            }
+          } catch (error) {
+            console.log('⚠️ CachedBuddiesService: Error caching for other user:', error);
           }
+          
+          // Dispatch UI update event
+          CachedBuddiesService.dispatchUIUpdateEvent(messageBuddyId, 'message-updated', payload);
+          
+          console.log('✅ Message added to cache:', payload.id, 'Total messages:', updatedMessages.length);
           break;
 
         case 'buddy':
@@ -775,6 +842,28 @@ export class CachedBuddiesService {
       }
     } catch (error) {
       console.error('❌ Failed to apply real-time update:', error);
+    }
+  }
+
+  /**
+   * Dispatch UI update event using DeviceEventEmitter
+   */
+  private static dispatchUIUpdateEvent(buddyId: string, eventType: string, messageData?: any): void {
+    try {
+      console.log(`📢 CachedBuddiesService: Dispatching UI event: ${eventType} for buddy: ${buddyId}`);
+      
+      // Use React Native's DeviceEventEmitter
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit(eventType, { 
+        type: eventType,
+        buddyId: buddyId,
+        source: 'cachedBuddiesService',
+        message: messageData
+      });
+      
+      console.log(`✅ CachedBuddiesService: UI event dispatched successfully: ${eventType}`);
+    } catch (error) {
+      console.error(`❌ CachedBuddiesService: Error dispatching UI event ${eventType}:`, error);
     }
   }
 
