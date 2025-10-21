@@ -1,5 +1,7 @@
 import { Platform, Alert } from 'react-native';
 import PushNotification from 'react-native-push-notification';
+import messaging from '@react-native-firebase/messaging';
+import { supabase } from '@/config/supabase';
 
 export interface NotificationService {
   showMessageNotification: (title: string, message: string, buddyName: string) => Promise<string>;
@@ -8,14 +10,20 @@ export interface NotificationService {
   cancelAllNotifications: () => Promise<string>;
   testNotification: () => Promise<string>;
   setChatActive: (isActive: boolean) => void;
+  getFCMToken: () => Promise<string | null>;
+  requestNotificationPermission: () => Promise<boolean>;
+  initializeFCMAfterLogin: () => Promise<void>;
+  saveFCMTokenWhenAuthenticated: (userId?: string) => Promise<void>;
 }
 
 class NotificationServiceClass implements NotificationService {
   private recentNotifications = new Set<string>();
   private isChatActive = false;
+  private fcmToken: string | null = null;
   
   constructor() {
     this.configurePushNotifications();
+    this.initializeFCM();
     this.initializePermissions();
   }
   
@@ -25,42 +33,253 @@ class NotificationServiceClass implements NotificationService {
     console.log('🔔 Chat active state set to:', isActive);
   }
 
+  private async initializeFCM() {
+    try {
+      console.log('🔥 Initializing FCM...');
+      
+      // Request permission for FCM
+      const authStatus = await messaging().requestPermission();
+      const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+                     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      
+      if (enabled) {
+        console.log('🔥 FCM Authorization status:', authStatus);
+        
+        // Get FCM token
+        const token = await messaging().getToken();
+        this.fcmToken = token;
+        console.log('🔥 FCM Token:', token);
+        
+        // Save token to database for server-side notifications
+        await this.saveFCMTokenToDatabase(token);
+        
+        // Listen for token refresh
+        messaging().onTokenRefresh(async (newToken) => {
+          console.log('🔥 FCM Token refreshed:', newToken);
+          this.fcmToken = newToken;
+          await this.saveFCMTokenToDatabase(newToken);
+        });
+        
+        // Handle background messages
+        messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+          console.log('🔥 Background message received:', remoteMessage);
+          // Handle background notification here
+        });
+        
+        // Handle foreground messages
+        const unsubscribe = messaging().onMessage(async (remoteMessage) => {
+          console.log('🔥 Foreground message received:', remoteMessage);
+          
+          // Show local notification when app is in foreground
+          if (remoteMessage.notification) {
+            PushNotification.localNotification({
+              channelId: 'whispr-messages',
+              title: remoteMessage.notification.title || 'New Message',
+              message: remoteMessage.notification.body || 'You have a new message',
+              playSound: true,
+              soundName: 'default',
+              vibrate: true,
+              vibration: 300,
+              priority: 'high',
+              importance: 'high',
+              smallIcon: 'ic_notification',
+              largeIcon: 'ic_launcher',
+            });
+          }
+        });
+        
+        console.log('🔥 FCM initialized successfully');
+      } else {
+        console.warn('🔥 FCM permission not granted');
+      }
+    } catch (error) {
+      console.error('🔥 Error initializing FCM:', error);
+      console.log('🔥 FCM disabled - using local notifications only');
+      // FCM is not available, continue with local notifications only
+    }
+  }
+
+  private async saveFCMTokenToDatabase(token: string) {
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn('🔥 No user found, cannot save FCM token');
+        return;
+      }
+
+      console.log('🔥 Saving FCM token for user:', user.id);
+
+      // Save FCM token to user_fcm_tokens table
+      // First try to update existing record, then insert if not found
+      const { error: updateError } = await supabase
+        .from('user_fcm_tokens')
+        .update({
+          fcm_token: token,
+          platform: Platform.OS,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id);
+
+      // If update failed or no rows were updated, try to insert
+      if (updateError) {
+        console.log('🔥 Update failed, trying to insert new record');
+        const { error: insertError } = await supabase
+          .from('user_fcm_tokens')
+          .insert({
+            user_id: user.id,
+            fcm_token: token,
+            platform: Platform.OS,
+            updated_at: new Date().toISOString()
+          });
+        
+        if (insertError) {
+          console.error('🔥 Error inserting FCM token:', insertError);
+          throw insertError;
+        } else {
+          console.log('🔥 FCM token inserted successfully');
+        }
+      } else {
+        console.log('🔥 FCM token updated successfully');
+      }
+    } catch (error) {
+      console.error('🔥 Error saving FCM token to database:', error);
+    }
+  }
+
+  private async saveFCMTokenToDatabaseWithUserId(token: string, userId: string) {
+    try {
+      console.log('🔥 Saving FCM token for user:', userId);
+
+      // Save FCM token to user_fcm_tokens table
+      // First try to update existing record, then insert if not found
+      const { error: updateError } = await supabase
+        .from('user_fcm_tokens')
+        .update({
+          fcm_token: token,
+          platform: Platform.OS,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId);
+
+      // If update failed or no rows were updated, try to insert
+      if (updateError) {
+        console.log('🔥 Update failed, trying to insert new record');
+        const { error: insertError } = await supabase
+          .from('user_fcm_tokens')
+          .insert({
+            user_id: userId,
+            fcm_token: token,
+            platform: Platform.OS,
+            updated_at: new Date().toISOString()
+          });
+        
+        if (insertError) {
+          console.error('🔥 Error inserting FCM token:', insertError);
+          throw insertError;
+        } else {
+          console.log('🔥 FCM token inserted successfully');
+        }
+      } else {
+        console.log('🔥 FCM token updated successfully');
+      }
+    } catch (error) {
+      console.error('🔥 Error saving FCM token to database:', error);
+    }
+  }
+
+  async getFCMToken(): Promise<string | null> {
+    try {
+      if (!this.fcmToken) {
+        this.fcmToken = await messaging().getToken();
+      }
+      return this.fcmToken;
+    } catch (error) {
+      console.error('🔥 Error getting FCM token:', error);
+      return null;
+    }
+  }
+
+  async requestNotificationPermission(): Promise<boolean> {
+    try {
+      const authStatus = await messaging().requestPermission();
+      const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+                     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      
+      if (enabled && !this.fcmToken) {
+        const token = await messaging().getToken();
+        this.fcmToken = token;
+        await this.saveFCMTokenToDatabase(token);
+      }
+      
+      return enabled;
+    } catch (error) {
+      console.error('🔥 Error requesting notification permission:', error);
+      console.log('🔥 FCM not available - using local notifications only');
+      // Fallback to local notification permission
+      try {
+        await PushNotification.requestPermissions();
+        return true; // Assume local permissions work
+      } catch (localError) {
+        console.error('Local notification permission also failed:', localError);
+        return false;
+      }
+    }
+  }
+
+  // Method to initialize FCM after user login
+  async initializeFCMAfterLogin(): Promise<void> {
+    try {
+      console.log('🔥 Initializing FCM after login...');
+      
+      // Get FCM token
+      const token = await messaging().getToken();
+      this.fcmToken = token;
+      console.log('🔥 FCM Token:', token);
+      
+      // Wait a bit for user authentication to complete, then save token
+      setTimeout(async () => {
+        console.log('🔥 Attempting to save FCM token after authentication delay...');
+        await this.saveFCMTokenToDatabase(token);
+      }, 3000); // Wait 3 seconds for authentication to complete
+      
+      console.log('🔥 FCM initialized successfully after login');
+    } catch (error) {
+      console.error('🔥 Error initializing FCM after login:', error);
+      console.log('🔥 FCM disabled - using local notifications only');
+    }
+  }
+
+  // Method to explicitly save FCM token when user is authenticated
+  async saveFCMTokenWhenAuthenticated(userId?: string): Promise<void> {
+    if (this.fcmToken) {
+      console.log('🔥 Saving FCM token now that user is authenticated...');
+      if (userId) {
+        await this.saveFCMTokenToDatabaseWithUserId(this.fcmToken, userId);
+      } else {
+        await this.saveFCMTokenToDatabase(this.fcmToken);
+      }
+    } else {
+      console.log('🔥 No FCM token available to save');
+    }
+  }
+  
   private async initializePermissions() {
     try {
       console.log('Initializing notification permissions...');
       
-      // For Android, try multiple permission request approaches
+      // Request FCM permission first
+      const fcmPermission = await this.requestNotificationPermission();
+      console.log('FCM permission granted:', fcmPermission);
+      
+      // Also request local notification permissions as fallback
       if (Platform.OS === 'android') {
-        // First, try the standard request
         try {
           await PushNotification.requestPermissions();
-          console.log('Standard notification permissions requested');
+          console.log('Local notification permissions requested');
         } catch (error) {
-          console.warn('Standard permission request failed:', error);
+          console.warn('Local permission request failed:', error);
         }
-        
-        // Try alternative Android permission approach
-        try {
-          // Some Android versions need this approach
-          const { PermissionsAndroid } = require('react-native');
-          const granted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-            {
-              title: 'Whispr Notifications',
-              message: 'Whispr needs notification permission to alert you about new messages and notes.',
-              buttonNeutral: 'Ask Me Later',
-              buttonNegative: 'Cancel',
-              buttonPositive: 'OK',
-            }
-          );
-          console.log('Android notification permission result:', granted);
-        } catch (androidError) {
-          console.warn('Android permission request failed:', androidError);
-        }
-      } else {
-        // iOS approach
-        await PushNotification.requestPermissions();
-        console.log('iOS notification permissions requested');
       }
       
       // Check current permission status
@@ -76,12 +295,12 @@ class NotificationServiceClass implements NotificationService {
     PushNotification.configure({
       // Called when token is generated
       onRegister: function (token: any) {
-        console.log('TOKEN:', token);
+        console.log('LOCAL TOKEN:', token);
       },
       
       // Called when a remote or local notification is opened or received
       onNotification: function (notification: any) {
-        console.log('NOTIFICATION:', notification);
+        console.log('LOCAL NOTIFICATION:', notification);
       },
       
       // Should the initial notification be popped automatically
@@ -123,8 +342,19 @@ class NotificationServiceClass implements NotificationService {
 
   private async checkNotificationPermission(): Promise<boolean> {
     try {
+      // Check FCM permission first
+      const authStatus = await messaging().hasPermission();
+      const fcmEnabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+                        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      
+      if (fcmEnabled) {
+        console.log('FCM permission granted');
+        return true;
+      }
+      
+      // Fallback to local notification permission check
       const permissions = await PushNotification.checkPermissions();
-      console.log('Notification permissions check result:', permissions);
+      console.log('Local notification permissions check result:', permissions);
       
       // Handle different permission response formats
       if (permissions && typeof permissions === 'object') {
@@ -186,46 +416,14 @@ class NotificationServiceClass implements NotificationService {
         console.warn('Notification permission not granted - attempting to request permissions');
         
         // Try to request permissions
-        try {
-          await PushNotification.requestPermissions();
-          console.log('Notification permissions requested');
-        } catch (requestError) {
-          console.warn('Failed to request notification permissions:', requestError);
-        }
-        
-        // Check again after requesting
-        const newPermission = await this.checkNotificationPermission();
-        if (!newPermission) {
-          console.warn('Notification permission still not granted - attempting direct send for Android');
-          
-          // For Android, try sending notification directly (some versions work without explicit permission check)
-          if (Platform.OS === 'android') {
-            try {
-              PushNotification.localNotification({
-                channelId: 'whispr-messages',
-                title: title,
-                message: `${buddyName}: ${message}`,
-                playSound: true,
-                soundName: 'default',
-                vibrate: true,
-                vibration: 300,
-                priority: 'high',
-                importance: 'high',
-                smallIcon: 'ic_notification',
-                largeIcon: 'ic_launcher',
-              });
-              console.log('Android direct notification sent successfully');
-              return 'Message notification sent successfully (Android direct)';
-            } catch (directError) {
-              console.warn('Android direct notification failed:', directError);
-            }
-          }
-          
+        const permissionGranted = await this.requestNotificationPermission();
+        if (!permissionGranted) {
           console.warn('Notification permission still not granted - skipping message notification');
           return 'Notification permission not granted';
         }
       }
 
+      // Send local notification (works when app is in foreground)
       PushNotification.localNotification({
         channelId: 'whispr-messages',
         title: title,
@@ -256,41 +454,8 @@ class NotificationServiceClass implements NotificationService {
         console.warn('Notification permission not granted - attempting to request permissions');
         
         // Try to request permissions
-        try {
-          await PushNotification.requestPermissions();
-          console.log('Notification permissions requested');
-        } catch (requestError) {
-          console.warn('Failed to request notification permissions:', requestError);
-        }
-        
-        // Check again after requesting
-        const newPermission = await this.checkNotificationPermission();
-        if (!newPermission) {
-          console.warn('Notification permission still not granted - attempting direct send for Android');
-          
-          // For Android, try sending notification directly (some versions work without explicit permission check)
-          if (Platform.OS === 'android') {
-            try {
-              PushNotification.localNotification({
-                channelId: 'whispr-notes',
-                title: title,
-                message: content,
-                playSound: true,
-                soundName: 'default',
-                vibrate: true,
-                vibration: 300,
-                priority: 'high',
-                importance: 'high',
-                smallIcon: 'ic_notification',
-                largeIcon: 'ic_launcher',
-              });
-              console.log('Android direct note notification sent successfully');
-              return 'Note notification sent successfully (Android direct)';
-            } catch (directError) {
-              console.warn('Android direct note notification failed:', directError);
-            }
-          }
-          
+        const permissionGranted = await this.requestNotificationPermission();
+        if (!permissionGranted) {
           console.warn('Notification permission still not granted - skipping note notification');
           return 'Notification permission not granted';
         }
@@ -355,10 +520,19 @@ class NotificationServiceClass implements NotificationService {
   
   async testNotification(): Promise<string> {
     try {
+      // Test FCM token
+      let token = null;
+      try {
+        token = await this.getFCMToken();
+        console.log('🔥 Test notification - FCM Token:', token);
+      } catch (fcmError) {
+        console.log('🔥 FCM not available for test:', fcmError);
+      }
+      
       PushNotification.localNotification({
         channelId: 'whispr-messages',
         title: 'Whispr Test',
-        message: 'This is a test notification from Whispr!',
+        message: `FCM Token: ${token ? 'Available' : 'Not Available (Local Only)'}`,
         playSound: true,
         soundName: 'default',
         vibrate: true,
@@ -370,7 +544,7 @@ class NotificationServiceClass implements NotificationService {
       });
       
       console.log('Test notification sent');
-      Alert.alert('Test Notification', 'Test notification sent successfully!');
+      Alert.alert('Test Notification', `Test notification sent! FCM Token: ${token ? 'Available' : 'Not Available (Local Only)'}`);
       return 'Test notification sent successfully';
     } catch (error) {
       console.error('Error sending test notification:', error);

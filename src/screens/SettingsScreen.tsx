@@ -7,10 +7,9 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { notificationService } from '@/services/notificationService';
 import PermissionService from '../services/permissionService';
 import PermissionInitializer from '../services/permissionInitializer';
-import { testRealtimeSubscription, testNotificationDirectly } from '@/utils/realtimeDebug';
 import { AdminService } from '@/services/adminService'; // Import admin service
 import BiometricService from '@/services/biometricService';
-import AuthDebugger from '@/components/AuthDebugger';
+import { ThemedAlertLegacy } from '@/components/ThemedAlert';
 
 interface SettingsOption {
   id: string;
@@ -227,37 +226,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       const currentUserId = user?.id || 'anonymous';
       await PermissionInitializer.initializePermissions(currentUserId);
       await loadPermissionStatus();
-      Alert.alert('Success', 'Permissions updated successfully');
+      ThemedAlertLegacy.alert('Success', 'Permissions updated successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to request permissions');
+      ThemedAlertLegacy.alert('Error', 'Failed to request permissions');
     }
   };
 
   const handleExportData = () => {
-    Alert.alert('Export Data', 'Your data export will be sent to your email address.');
+    ThemedAlertLegacy.alert('Export Data', 'Your data export will be sent to your email address.');
   };
 
-  const handleTestNotification = async () => {
-    try {
-      console.log('🧪 Testing notification directly...');
-      const result = await testNotificationDirectly();
-      Alert.alert('Test Result', `Notification test: ${result}`);
-    } catch (error) {
-      console.error('🧪 Notification test failed:', error);
-      Alert.alert('Test Failed', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-  const handleTestRealtime = async () => {
-    try {
-      console.log('🧪 Testing realtime subscription...');
-      const result = await testRealtimeSubscription(user.id);
-      Alert.alert('Test Result', `Realtime test: ${JSON.stringify(result)}`);
-    } catch (error) {
-      console.error('🧪 Realtime test failed:', error);
-      Alert.alert('Test Failed', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
 
   // Base settings options (available to all users)
   const baseSettingsOptions: SettingsOption[] = [
@@ -271,11 +249,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         <Switch
           value={notificationsEnabled}
           onValueChange={handleNotificationToggle}
-          trackColor={{ false: '#e5e7eb', true: '#7c3aed' }}
-          thumbColor={notificationsEnabled ? '#fff' : '#f3f4f6'}
+          trackColor={{ false: theme.colors.border, true: theme.colors.primary + '40' }}
+          thumbColor={notificationsEnabled ? theme.colors.onPrimary : theme.colors.onSurfaceVariant}
         />
       ),
-      color: '#7c3aed'
+      color: theme.colors.primary
     },
     {
       id: 'theme',
@@ -287,11 +265,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         <Switch
           value={isDark}
           onValueChange={toggleTheme}
-          trackColor={{ false: '#e5e7eb', true: '#7c3aed' }}
-          thumbColor={isDark ? '#fff' : '#f3f4f6'}
+          trackColor={{ false: theme.colors.border, true: theme.colors.primary + '40' }}
+          thumbColor={isDark ? theme.colors.onPrimary : theme.colors.onSurfaceVariant}
         />
       ),
-      color: '#059669'
+      color: theme.colors.success
     },
     {
       id: 'permissions',
@@ -299,7 +277,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       subtitle: 'Camera, location, storage permissions',
       icon: 'shield-checkmark-outline',
       onPress: handleRequestPermissions,
-      color: '#dc2626'
+      color: theme.colors.error
     },
     {
       id: 'location',
@@ -311,11 +289,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         <Switch
           value={locationEnabled}
           onValueChange={handleLocationToggle}
-          trackColor={{ false: '#e5e7eb', true: '#7c3aed' }}
-          thumbColor={locationEnabled ? '#fff' : '#f3f4f6'}
+          trackColor={{ false: theme.colors.border, true: theme.colors.primary + '40' }}
+          thumbColor={locationEnabled ? theme.colors.onPrimary : theme.colors.onSurfaceVariant}
         />
       ),
-      color: '#0891b2'
+      color: theme.colors.info
     },
     {
       id: 'biometric',
@@ -327,11 +305,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
         <Switch
           value={biometricEnabled}
           onValueChange={handleBiometricToggle}
-          trackColor={{ false: '#e5e7eb', true: '#7c3aed' }}
-          thumbColor={biometricEnabled ? '#fff' : '#f3f4f6'}
+          trackColor={{ false: theme.colors.border, true: theme.colors.primary + '40' }}
+          thumbColor={biometricEnabled ? theme.colors.onPrimary : theme.colors.onSurfaceVariant}
         />
       ),
-      color: '#7c2d12'
+      color: theme.colors.warning
     },
     {
       id: 'export',
@@ -339,7 +317,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       subtitle: 'Download your data and messages',
       icon: 'download-outline',
       onPress: handleExportData,
-      color: '#16a34a'
+      color: theme.colors.success
     }
   ];
 
@@ -351,23 +329,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       subtitle: 'Debug authentication and network issues',
       icon: 'bug-outline',
       onPress: () => onNavigate('authDebugger'),
-      color: '#f59e0b'
-    },
-    {
-      id: 'debug-notification',
-      title: '🧪 Test Notification',
-      subtitle: 'Test notification system directly',
-      icon: 'bug-outline',
-      onPress: handleTestNotification,
-      color: '#dc2626'
-    },
-    {
-      id: 'debug-realtime',
-      title: '🧪 Test Realtime',
-      subtitle: 'Test realtime subscription',
-      icon: 'bug-outline',
-      onPress: handleTestRealtime,
-      color: '#dc2626'
+      color: theme.colors.warning
     },
     {
       id: 'debug-websocket',
@@ -375,7 +337,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       subtitle: 'Test WebSocket connectivity and real-time functionality',
       icon: 'bug-outline',
       onPress: () => onNavigate('websocketTest'),
-      color: '#dc2626'
+      color: theme.colors.error
     }
   ];
 

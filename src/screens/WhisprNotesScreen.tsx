@@ -4,7 +4,8 @@ import {
   ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, BackHandler, RefreshControl, AppState
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
+import { useTheme } from '@/store/ThemeContext';
+import { spacing, borderRadius, getMoodConfig } from '@/utils/themes';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import { CachedBuddiesService } from '@/services/cachedBuddiesService';
@@ -17,6 +18,8 @@ interface WhisprNotesScreenProps {
 }
 
 export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate, user }) => {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -327,7 +330,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         <View style={styles.alertsDropdown}>
           <View style={styles.alertsDropdownContent}>
             <View style={styles.alertsHeader}>
-              <Icon name="document-text" size={20} color="#7c3aed" />
+              <Icon name="document-text" size={20} color={theme.colors.primary} />
               <Text style={styles.alertsTitle}>Note Activity</Text>
             </View>
             
@@ -341,15 +344,15 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
             {/* Activity Breakdown */}
             <View style={styles.activityBreakdown}>
               <View style={styles.activityItem}>
-                <Icon name="eye" size={16} color="#10b981" />
+                <Icon name="eye" size={16} color={theme.colors.success} />
                 <Text style={styles.activityText}>Received by others</Text>
               </View>
               <View style={styles.activityItem}>
-                <Icon name="play" size={16} color="#3b82f6" />
+                <Icon name="play" size={16} color={theme.colors.info} />
                 <Text style={styles.activityText}>Listened to</Text>
               </View>
               <View style={styles.activityItem}>
-                <Icon name="close" size={16} color="#ef4444" />
+                <Icon name="close" size={16} color={theme.colors.error} />
                 <Text style={styles.activityText}>Rejected</Text>
               </View>
             </View>
@@ -388,7 +391,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         >
           <View style={styles.sentNotesContent}>
             <View style={styles.sentNotesIcon}>
-              <Icon name="send" size={24} color="#7c3aed" />
+              <Icon name="send" size={24} color={theme.colors.primary} />
             </View>
             <View style={styles.sentNotesText}>
               <Text style={styles.sentNotesTitle}>Sent Notes</Text>
@@ -462,7 +465,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                     disabled={actionLoading.has(note.id)}
                   >
                     {actionLoading.has(note.id) ? (
-                      <ActivityIndicator color="#fff" size="small" />
+                      <ActivityIndicator color={theme.colors.onSurface} size="small" />
                     ) : (
                       <Text style={styles.actionButtonText}>👂 Listen</Text>
                     )}
@@ -473,7 +476,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                     disabled={actionLoading.has(note.id)}
                   >
                     {actionLoading.has(note.id) ? (
-                      <ActivityIndicator color="#fff" size="small" />
+                      <ActivityIndicator color={theme.colors.onSurface} size="small" />
                     ) : (
                       <Text style={styles.actionButtonText}>❌ Reject</Text>
                     )}
@@ -500,9 +503,9 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         activeOpacity={0.8}
       >
         <View style={styles.startWhisperingButtonGradient}>
-          <Icon name="add" size={18} color="#fff" style={styles.startIcon} />
+          <Icon name="add" size={18} color={theme.colors.onPrimary} style={styles.startIcon} />
           <Text style={styles.startWhisperingButtonText}>Start Whispr-ing</Text>
-          <Icon name="chevron-forward" size={18} color="#fff" style={styles.endIcon} />
+          <Icon name="chevron-forward" size={18} color={theme.colors.onPrimary} style={styles.endIcon} />
         </View>
       </TouchableOpacity>
 
@@ -519,7 +522,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: 'row',
@@ -562,7 +565,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -2,
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     borderRadius: borderRadius.full,
     minWidth: 18,
     height: 18,
@@ -570,7 +573,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   alertBadgeText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -624,21 +627,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   clearAlertsButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
   clearAlertsButtonTextDisabled: {
-    color: '#9ca3af',
+    color: theme.colors.onSurfaceVariant,
   },
   welcomeBanner: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    backgroundColor: '#7c3aed15',
+    backgroundColor: theme.colors.primary + '15',
     borderLeftWidth: 4,
-    borderLeftColor: '#7c3aed',
+    borderLeftColor: theme.colors.primary,
   },
   welcomeBannerText: {
     color: theme.colors.onSurface,
@@ -665,7 +668,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: borderRadius.md,
-    backgroundColor: '#7c3aed15',
+    backgroundColor: theme.colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,
@@ -697,14 +700,14 @@ const styles = StyleSheet.create({
   moodIndicator: { flexDirection: 'row', alignItems: 'center' },
   moodEmoji: { fontSize: 16, marginRight: spacing.xs },
   moodText: { fontSize: 12, fontWeight: '600', color: theme.colors.onSurface },
-  timestamp: { fontSize: 10, color: '#9ca3af' },
+  timestamp: { fontSize: 10, color: theme.colors.onSurfaceVariant },
   noteContent: { 
     fontSize: 14, 
     color: theme.colors.onSurface, 
     marginBottom: spacing.sm,
     lineHeight: 20,
   },
-  expandHint: { fontSize: 10, fontStyle: 'italic', color: '#9ca3af' },
+  expandHint: { fontSize: 10, fontStyle: 'italic', color: theme.colors.onSurfaceVariant },
   noteActions: { flexDirection: 'row', justifyContent: 'space-around' },
   actionButton: { 
     flex: 1, 
@@ -714,14 +717,14 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.xs,
   },
   listenButton: { 
-    backgroundColor: '#10b98115',
+    backgroundColor: theme.colors.success + '15',
     borderWidth: 1,
-    borderColor: '#10b981',
+    borderColor: theme.colors.success,
   },
   rejectButton: { 
-    backgroundColor: '#ef444415',
+    backgroundColor: theme.colors.error + '15',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: theme.colors.error,
   },
   actionButtonText: { 
     color: theme.colors.onSurface, 
@@ -731,7 +734,7 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: 'center', marginTop: spacing.xl },
   emptyIcon: { fontSize: 60 },
   emptyText: { fontSize: 18, fontWeight: '600', marginTop: spacing.md },
-  emptySubtext: { fontSize: 14, color: '#9ca3af' },
+  emptySubtext: { fontSize: 14, color: theme.colors.onSurfaceVariant },
   demarcationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -758,7 +761,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl 
   },
   errorText: { 
-    color: '#ef4444', 
+    color: theme.colors.error, 
     textAlign: 'center', 
     marginBottom: spacing.md 
   },
@@ -769,7 +772,7 @@ const styles = StyleSheet.create({
     alignItems: 'center' 
   },
   retryButtonText: { 
-    color: '#fff', 
+    color: theme.colors.onPrimary, 
     fontWeight: '600' 
   },
   actionButtonDisabled: { 
@@ -781,7 +784,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center', // Center the button
     borderRadius: 25,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -795,10 +798,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#7B68EE', // Purple background instead of gradient
+    backgroundColor: theme.colors.primary, // Use theme primary color instead of hard-coded purple
   },
   startWhisperingButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontSize: 16,
     fontWeight: '600',
     marginHorizontal: 8,

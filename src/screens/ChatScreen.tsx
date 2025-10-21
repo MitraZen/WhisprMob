@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, RefreshControl, Animated, Modal, DeviceEventEmitter } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, RefreshControl, Animated, Modal, DeviceEventEmitter, Pressable } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
@@ -7,6 +7,8 @@ import { CachedBuddiesService, BuddyMessage } from '@/services/cachedBuddiesServ
 import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView';
 import { activeChatService } from '@/services/activeChatService';
 import { ThemedBottomSheet } from '@/components/themed';
+import { getTextInputColor, getPlaceholderTextColor } from '@/utils/textColorUtils';
+import { messageReactionsService, Emoji } from '@/services/messageReactionsService';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -27,6 +29,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isChatCleared, setIsChatCleared] = useState(false);
   const clearedChatsRef = useRef<Set<string>>(new Set());
+  const [reactionsByMessageId, setReactionsByMessageId] = useState<Record<string, Record<string, number>>>({});
+  const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   
   const styles = createStyles(theme);
   const [showProfileView, setShowProfileView] = useState(false);
@@ -321,6 +326,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       });
       
       setLastUpdated(new Date());
+
+      // Fetch reaction counts for these messages (buddy chat only)
+      try {
+        const ids = messagesData.map(m => m.id);
+        const counts = await messageReactionsService.getCountsForMessageIds(ids);
+        setReactionsByMessageId(counts);
+      } catch (e) {
+        console.warn('⚠️ Failed to load reaction counts', e);
+      }
     } catch (err) {
       console.error('Error loading messages:', err);
       setError(err instanceof Error ? err.message : 'Failed to load messages');
@@ -722,23 +736,65 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
                 message.senderId === user.id ? styles.userMessage : styles.buddyMessage,
               ]}
             >
-              <View style={[
-                styles.messageBubble,
-                message.senderId === user.id ? styles.userBubble : styles.buddyBubble,
-              ]}>
-                <Text style={[
-                  styles.messageText,
-                  message.senderId === user.id ? styles.userMessageText : styles.buddyMessageText,
+              <Pressable
+                delayLongPress={300}
+                pressRetentionOffset={{ top: 20, left: 20, right: 20, bottom: 20 }}
+                onLongPress={() => {
+                  console.log('Long press detected for message:', message.id);
+                  setReactionPickerMessageId(message.id);
+                  setReactionPickerVisible(true);
+                }}
+                onPressIn={() => {
+                  // debug signal
+                  console.log('press-in on bubble', message.id);
+                }}
+                android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
+              >
+                <View style={[
+                  styles.messageBubble,
+                  message.senderId === user.id ? styles.userBubble : styles.buddyBubble,
                 ]}>
-                  {message.content}
-                </Text>
-                <Text style={[
-                  styles.messageTimestamp,
-                  message.senderId === user.id ? styles.userTimestamp : styles.buddyTimestamp,
-                ]}>
-                  {formatTimestamp(message.createdAt)}
-                </Text>
-              </View>
+                  {/* Reaction trigger button */}
+                  <TouchableOpacity
+                    style={[
+                      styles.reactionTrigger,
+                      message.senderId === user.id ? styles.reactionTriggerRight : styles.reactionTriggerLeft
+                    ]}
+                    onPress={() => {
+                      console.log('Reaction button pressed for message:', message.id);
+                      Alert.alert('Debug', `Button pressed for message: ${message.id}`);
+                      setReactionPickerMessageId(message.id);
+                      setReactionPickerVisible(true);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Icon name="happy-outline" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  <Text style={[
+                    styles.messageText,
+                    message.senderId === user.id ? styles.userMessageText : styles.buddyMessageText,
+                  ]}>
+                    {message.content}
+                  </Text>
+                  <Text style={[
+                    styles.messageTimestamp,
+                    message.senderId === user.id ? styles.userTimestamp : styles.buddyTimestamp,
+                  ]}>
+                    {formatTimestamp(message.createdAt)}
+                  </Text>
+                </View>
+              </Pressable>
+              {/* Reaction pills */}
+              {reactionsByMessageId[message.id] && (
+                <View style={styles.reactionPillsRow}>
+                  {Object.entries(reactionsByMessageId[message.id]).map(([emoji, count]) => (
+                    <View key={`${message.id}-${emoji}`} style={styles.reactionPill}>
+                      <Text style={styles.reactionPillText}>{`${emoji} ${count}`}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           ))
         )}
@@ -773,9 +829,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
       <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
           <TextInput
-            style={styles.messageInput}
+            style={[styles.messageInput, { color: getTextInputColor(theme) }]}
             placeholder="Type a message..."
-            placeholderTextColor={theme.colors.onSurfaceVariant}
+            placeholderTextColor={getPlaceholderTextColor(theme)}
             value={newMessage}
             onChangeText={setNewMessage}
             multiline
@@ -839,6 +895,36 @@ export const ChatScreen: React.FC<ChatScreenProps> = React.memo(({ onNavigate, b
             onPress: handleDeleteBuddy,
           },
         ]}
+        showCancelButton={true}
+        cancelButtonText="Cancel"
+      />
+
+      {/* Quick Reactions Picker */}
+      <ThemedBottomSheet
+        visible={reactionPickerVisible}
+        onClose={() => {
+          console.log('Closing reaction picker');
+          setReactionPickerVisible(false);
+        }}
+        title="React"
+        items={messageReactionsService.getQuickEmojis().map((e) => ({
+          id: `react-${e}`,
+          title: e,
+          onPress: async () => {
+            console.log('Reaction pressed:', e, 'for message:', reactionPickerMessageId);
+            if (!reactionPickerMessageId || !user?.id) return;
+            try {
+              await messageReactionsService.toggleReaction(reactionPickerMessageId, e as Emoji, user.id);
+              const updated = await messageReactionsService.getCountsForMessageIds([reactionPickerMessageId]);
+              setReactionsByMessageId(prev => ({ ...prev, ...updated }));
+            } catch (err) {
+              console.error('Reaction toggle failed', err);
+            } finally {
+              setReactionPickerVisible(false);
+              setReactionPickerMessageId(null);
+            }
+          }
+        }))}
         showCancelButton={true}
         cancelButtonText="Cancel"
       />
@@ -989,6 +1075,44 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginTop: spacing.xs,
     fontWeight: '500',
     letterSpacing: 0.2,
+  },
+  reactionPillsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  reactionPill: {
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    borderRadius: 12,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    alignSelf: 'flex-start',
+  },
+  reactionPillText: {
+    fontSize: 12,
+    color: '#111827',
+  },
+  reactionTrigger: {
+    position: 'absolute',
+    top: 8,
+    padding: 10,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 20,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  reactionTriggerRight: {
+    right: 8,
+  },
+  reactionTriggerLeft: {
+    left: 8,
   },
   userTimestamp: {
     color: 'rgba(255, 255, 255, 0.8)',

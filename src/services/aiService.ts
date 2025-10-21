@@ -7,7 +7,7 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 export interface AIEnhancementOptions {
   mood: MoodType;
   originalText: string;
-  enhancementType: 'improve' | 'shorten' | 'expand' | 'make_mysterious';
+  enhancementType: 'improve' | 'shorten' | 'expand' | 'make_mysterious' | 'generate_from_prompt';
 }
 
 export interface AIEnhancementResult {
@@ -62,7 +62,8 @@ class AIService {
         improve: "Improve the overall quality, clarity, and impact of this message.",
         shorten: "Make this message more concise and impactful while keeping the core meaning.",
         expand: "Expand this message with more detail and depth while maintaining its essence.",
-        make_mysterious: "Make this message more mysterious, intriguing, and enigmatic."
+        make_mysterious: "Make this message more mysterious, intriguing, and enigmatic.",
+        generate_from_prompt: "Generate creative content based on this prompt. Be surprising and creative!"
       };
 
       const moodPrompt = moodPrompts[mood] || moodPrompts.reflective;
@@ -136,6 +137,110 @@ Format your response as JSON:
       
       // Fallback to mock enhancement if AI fails
       return this.getMockEnhancement(options);
+    }
+  }
+
+  /**
+   * Generate creative text from prompts like "write a motivational quote" or "I am happy, enhance that"
+   */
+  async generateFromPrompt(prompt: string, mood: MoodType): Promise<AIEnhancementResult> {
+    try {
+      // Check if API key is configured
+      if (!this.isAvailable()) {
+        console.log('OpenAI API key not configured, using mock generation');
+        return this.getMockPromptGeneration(prompt, mood);
+      }
+
+      const moodContext = {
+        happy: "joyful, uplifting, and positive",
+        sad: "empathetic, comforting, and understanding",
+        anxious: "calming, reassuring, and supportive",
+        angry: "constructive, channeling frustration into something meaningful",
+        joyful: "joyful, uplifting, and positive",
+        reflective: "thoughtful, introspective, and contemplative",
+        excited: "energetic, enthusiastic, and exciting",
+        calm: "peaceful, serene, and calming",
+        curious: "intriguing, thought-provoking, and curiosity-inducing",
+        grateful: "appreciative, thankful, and warm",
+        hopeful: "optimistic, inspiring, and hopeful",
+        playful: "fun, lighthearted, and playful",
+        nostalgic: "wistful, sentimental, and nostalgic",
+        determined: "focused, resolute, and determined",
+        lonely: "connecting, understanding, and supportive"
+      };
+
+      const moodDescription = moodContext[mood] || moodContext.reflective;
+
+      const systemPrompt = `You are a creative AI writing assistant for an anonymous messaging app called Whispr. 
+Your job is to generate creative, engaging content based on user prompts while maintaining anonymity and mystery.
+
+Guidelines:
+- Keep content appropriate and respectful
+- Maintain anonymity (no personal details)
+- Make content engaging and mysterious
+- Be creative and surprising
+- Keep responses concise (under 200 characters)
+- Make them feel like genuine anonymous whispers
+- If the prompt asks for quotes, poems, or creative content, generate original content
+- If the prompt is a feeling or emotion, enhance and expand on it creatively`;
+
+      const userPrompt = `User prompt: "${prompt}"
+Mood context: Make this ${moodDescription} and mysterious.
+
+Generate creative content based on this prompt. Be surprising and creative!
+
+Please provide:
+1. A creative response to the prompt
+2. 2-3 alternative creative suggestions
+3. A confidence score (1-10) for how well it matches the mood and prompt
+
+Format your response as JSON:
+{
+  "enhanced": "creative response here",
+  "suggestions": ["alternative 1", "alternative 2", "alternative 3"],
+  "confidence": 8
+}`;
+
+      const response = await fetch(OPENAI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          max_tokens: 400,
+          temperature: 0.9, // Higher temperature for more creativity
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error('No response from AI');
+      }
+
+      // Parse JSON response
+      const parsedResponse = JSON.parse(content);
+      
+      return {
+        enhancedText: parsedResponse.enhanced || prompt,
+        suggestions: parsedResponse.suggestions || [],
+        confidence: parsedResponse.confidence || 7
+      };
+
+    } catch (error) {
+      console.error('AI Prompt Generation Error:', error);
+      return this.getMockPromptGeneration(prompt, mood);
     }
   }
 
@@ -231,6 +336,76 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
       enhancedText: mockEnhancements[enhancementType] || originalText,
       suggestions: mockSuggestions,
       confidence: 6
+    };
+  }
+
+  /**
+   * Mock prompt generation for when AI is unavailable
+   */
+  private getMockPromptGeneration(prompt: string, mood: MoodType): AIEnhancementResult {
+    const promptLower = prompt.toLowerCase();
+    
+    // Creative responses based on common prompts
+    let enhancedText = prompt;
+    let suggestions: string[] = [];
+    
+    if (promptLower.includes('motivational') || promptLower.includes('quote')) {
+      const motivationalQuotes = [
+        "🌟 Every whisper carries the power to inspire someone's day",
+        "💫 In the silence between words, magic happens",
+        "✨ Your thoughts have wings - let them fly",
+        "🌅 Tomorrow's possibilities are born from today's whispers",
+        "🎯 Dreams whispered become reality spoken"
+      ];
+      enhancedText = motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
+      suggestions = motivationalQuotes.filter(q => q !== enhancedText).slice(0, 3);
+    } else if (promptLower.includes('happy') || promptLower.includes('joy')) {
+      const happyResponses = [
+        "😊 Happiness is a whisper that echoes through hearts",
+        "🌈 Joy shared anonymously multiplies infinitely",
+        "✨ Your happiness is contagious - spread it quietly",
+        "🎉 Celebrate the small moments that make life magical",
+        "🌻 Like sunshine, happiness reaches everyone it touches"
+      ];
+      enhancedText = happyResponses[Math.floor(Math.random() * happyResponses.length)];
+      suggestions = happyResponses.filter(r => r !== enhancedText).slice(0, 3);
+    } else if (promptLower.includes('sad') || promptLower.includes('down')) {
+      const comfortingResponses = [
+        "💙 Even in darkness, whispers of hope find their way",
+        "🌧️ Rain washes away sadness, leaving room for growth",
+        "🤗 You're not alone in feeling this way",
+        "🌙 Night always gives way to dawn",
+        "💝 Sometimes the kindest whispers come from understanding hearts"
+      ];
+      enhancedText = comfortingResponses[Math.floor(Math.random() * comfortingResponses.length)];
+      suggestions = comfortingResponses.filter(r => r !== enhancedText).slice(0, 3);
+    } else if (promptLower.includes('love') || promptLower.includes('heart')) {
+      const loveResponses = [
+        "❤️ Love whispered anonymously touches souls deeply",
+        "💕 Hearts connect through invisible threads of understanding",
+        "🌹 Love grows in the spaces between words",
+        "💖 The most powerful love stories are written in whispers",
+        "🕊️ Love is the language that needs no translation"
+      ];
+      enhancedText = loveResponses[Math.floor(Math.random() * loveResponses.length)];
+      suggestions = loveResponses.filter(r => r !== enhancedText).slice(0, 3);
+    } else {
+      // Generic creative enhancement
+      const creativeEnhancements = [
+        `✨ ${prompt} ✨`,
+        `🌟 ${prompt} 🌟`,
+        `💭 ${prompt} 💭`,
+        `🎭 ${prompt} 🎭`,
+        `🔮 ${prompt} 🔮`
+      ];
+      enhancedText = creativeEnhancements[Math.floor(Math.random() * creativeEnhancements.length)];
+      suggestions = creativeEnhancements.filter(e => e !== enhancedText).slice(0, 3);
+    }
+
+    return {
+      enhancedText,
+      suggestions,
+      confidence: 7
     };
   }
 

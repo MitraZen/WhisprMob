@@ -194,6 +194,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Step 3: Start hybrid notification service (realtime + polling fallback)
       await notificationManager.startNotificationService(userId);
       
+      // Step 4: Save FCM token now that user is authenticated
+      const { notificationService } = await import('@/services/notificationService');
+      await notificationService.saveFCMTokenWhenAuthenticated(userId);
+      
       console.log('✅ AuthContext - All services initialized successfully (cache + realtime + notifications)');
     } catch (error) {
       console.error('❌ AuthContext - Error initializing services:', error);

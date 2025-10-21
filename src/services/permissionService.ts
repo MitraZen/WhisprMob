@@ -142,7 +142,7 @@ class PermissionService {
             const permissions = await PushNotification.requestPermissions();
             console.log('Android notification permissions result:', permissions);
             
-            if (permissions.alert) {
+            if (permissions?.alert) {
               return true;
             } else {
               // Permission denied - show instructions
@@ -166,7 +166,7 @@ class PermissionService {
         try {
           const permissions = await PushNotification.requestPermissions();
           console.log('iOS notification permissions result:', permissions);
-          return permissions.alert || false;
+          return permissions?.alert || false;
         } catch (error) {
           console.error('Error requesting iOS notification permissions:', error);
           return await this.checkNotificationPermissions();

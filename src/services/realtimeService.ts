@@ -4,6 +4,8 @@ import { supabase } from '@/config/supabase';
 import { QueryCache } from './enhancedQueryCache'; // Add this import
 import { CachedBuddiesService } from './cachedBuddiesService';
 import { activeChatService } from './activeChatService';
+import { fcmService } from './fcmService';
+import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
 
 interface RealtimeSubscription {
   channel: any;
@@ -27,6 +29,8 @@ class RealtimeService {
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private initializationPromise: Promise<boolean> | null = null; // Prevent multiple simultaneous initializations
   private recentNotifications: Set<string> = new Set(); // Track recent notifications to prevent duplicates
+  private connectionStateUnsubscribe: (() => void) | null = null;
+  private isConnectionRecoveryEnabled = true;
 
   async initialize(userId: string): Promise<boolean> {
     // Prevent multiple simultaneous initializations
@@ -42,6 +46,12 @@ class RealtimeService {
     }
 
     this.userId = userId;
+    
+    // Initialize connection recovery service if not already done
+    if (this.isConnectionRecoveryEnabled) {
+      await connectionRecoveryService.initialize();
+      this.setupConnectionRecovery();
+    }
     
     // Check circuit breaker
     if (this.circuitBreakerOpen) {
@@ -88,6 +98,86 @@ class RealtimeService {
     } catch (error) {
       console.error('❌ Failed to initialize realtime service:', error);
       this.handleConnectionError();
+      return false;
+    }
+  }
+
+  /**
+   * Setup connection recovery integration
+   */
+  private setupConnectionRecovery(): void {
+    if (!this.isConnectionRecoveryEnabled) {
+      return;
+    }
+
+    console.log('🔄 Setting up connection recovery integration');
+
+    // Register for connection state changes
+    this.connectionStateUnsubscribe = connectionRecoveryService.onConnectionStateChange((state: ConnectionState) => {
+      this.handleConnectionStateChange(state);
+    });
+
+    // Register reconnection callback
+    connectionRecoveryService.onReconnectionAttempt(async () => {
+      return await this.attemptReconnection();
+    });
+  }
+
+  /**
+   * Handle connection state changes from recovery service
+   */
+  private handleConnectionStateChange(state: ConnectionState): void {
+    console.log('📡 Connection state changed:', {
+      isConnected: state.isConnected,
+      isRealtimeConnected: state.isRealtimeConnected,
+      connectionQuality: state.connectionQuality,
+      retryCount: state.retryCount,
+    });
+
+    // Update our internal state
+    if (!state.isConnected && this.isConnected) {
+      console.log('🔴 Network disconnected - marking realtime as disconnected');
+      this.isConnected = false;
+    } else if (state.isConnected && !this.isConnected && state.isRealtimeConnected) {
+      console.log('🟢 Network reconnected and realtime restored');
+      this.isConnected = true;
+    }
+  }
+
+  /**
+   * Attempt reconnection (called by connection recovery service)
+   */
+  private async attemptReconnection(): Promise<boolean> {
+    if (!this.userId) {
+      console.log('❌ Cannot reconnect - no userId');
+      return false;
+    }
+
+    try {
+      console.log('🔄 Attempting realtime reconnection');
+      
+      // Clean up existing subscriptions
+      this.cleanup();
+      
+      // Test connection
+      await this.testConnection();
+      
+      // Set up new subscriptions
+      await this.setupSubscriptions(this.userId);
+      
+      // Start health monitoring
+      this.startHealthMonitoring();
+      
+      this.isConnected = true;
+      this.connectionRetryCount = 0;
+      this.circuitBreakerOpen = false;
+      
+      console.log('✅ Realtime reconnection successful');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Realtime reconnection failed:', error);
+      this.isConnected = false;
       return false;
     }
   }
@@ -409,11 +499,30 @@ class RealtimeService {
               
               console.log('🔔 Final buddy display name for notification:', buddyDisplayName);
               
+              // Send local notification (for foreground)
               await notificationService.showMessageNotification(
                 'New Message',
                 payload.new.content ? payload.new.content.substring(0, 100) : 'New message',
                 buddyDisplayName
               );
+              
+              // Send FCM notification (for background/closed app)
+              try {
+                const fcmResult = await fcmService.sendMessageNotification(
+                  payload.new.sender_id,
+                  this.userId!,
+                  payload.new.content ? payload.new.content.substring(0, 100) : 'New message',
+                  buddyDisplayName
+                );
+                if (fcmResult) {
+                  console.log('🔥 FCM message notification sent');
+                } else {
+                  console.log('🔥 FCM notification skipped - user has no FCM token yet');
+                }
+              } catch (fcmError) {
+                console.warn('🔥 FCM notification failed (using local only):', fcmError);
+                // FCM is not available, local notifications will work fine
+              }
             } catch (error) {
               console.error('❌ Error showing notification:', error);
             }
@@ -697,7 +806,13 @@ class RealtimeService {
     this.isConnected = false;
     this.cleanup();
     
-    // Switch to polling fallback if userId is provided
+    // If connection recovery is enabled, let it handle the reconnection
+    if (this.isConnectionRecoveryEnabled) {
+      console.log('🔄 Connection recovery service will handle reconnection');
+      return;
+    }
+    
+    // Fallback to old behavior if connection recovery is disabled
     if (userId) {
       try {
         const { RealtimeErrorHandler } = require('./realtimeErrorHandler');
@@ -732,6 +847,12 @@ class RealtimeService {
     this.cleanup();
     this.isConnected = false;
     this.userId = null;
+    
+    // Clean up connection recovery integration
+    if (this.connectionStateUnsubscribe) {
+      this.connectionStateUnsubscribe();
+      this.connectionStateUnsubscribe = null;
+    }
   }
 
   isConnectedToRealtime(): boolean {
@@ -743,6 +864,41 @@ class RealtimeService {
       connected: this.isConnected,
       userId: this.userId,
       retryCount: this.connectionRetryCount
+    };
+  }
+
+  /**
+   * Enable or disable connection recovery
+   */
+  setConnectionRecoveryEnabled(enabled: boolean): void {
+    this.isConnectionRecoveryEnabled = enabled;
+    console.log(`🔄 Connection recovery ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Force reconnection attempt
+   */
+  async forceReconnection(): Promise<boolean> {
+    if (!this.isConnectionRecoveryEnabled) {
+      console.log('❌ Connection recovery is disabled');
+      return false;
+    }
+
+    return await connectionRecoveryService.forceReconnection();
+  }
+
+  /**
+   * Get connection recovery status
+   */
+  getConnectionRecoveryStatus(): any {
+    if (!this.isConnectionRecoveryEnabled) {
+      return { enabled: false };
+    }
+
+    return {
+      enabled: true,
+      connectionState: connectionRecoveryService.getConnectionState(),
+      isHealthy: connectionRecoveryService.isConnectionHealthy(),
     };
   }
 }

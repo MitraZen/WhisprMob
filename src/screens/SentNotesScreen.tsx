@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { BuddiesService } from '../services/buddiesService';
-import { theme, spacing, borderRadius } from '@/utils/theme';
+import { useTheme } from '@/store/ThemeContext';
+import { spacing, borderRadius } from '@/utils/themes';
 
 interface SentNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -45,6 +46,8 @@ interface NoteRecipient {
 }
 
 const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onGoBack }) => {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [sentNotes, setSentNotes] = useState<SentNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -97,11 +100,11 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return '#4CAF50';
-      case 'listened': return '#2196F3';
-      case 'rejected': return '#F44336';
-      case 'expired': return '#9E9E9E';
-      default: return '#9E9E9E';
+      case 'active': return theme.colors.success;
+      case 'listened': return theme.colors.info;
+      case 'rejected': return theme.colors.error;
+      case 'expired': return theme.colors.onSurfaceVariant;
+      default: return theme.colors.onSurfaceVariant;
     }
   };
 
@@ -188,15 +191,15 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
       
       <View style={styles.noteStats}>
         <View style={styles.statItem}>
-          <Icon name="send" size={16} color="#6b7280" />
+          <Icon name="send" size={16} color={theme.colors.onSurfaceVariant} />
           <Text style={styles.statText}>{item.recipient_count} delivered</Text>
         </View>
         <View style={styles.statItem}>
-          <Icon name="play" size={16} color="#10b981" />
+          <Icon name="play" size={16} color={theme.colors.success} />
           <Text style={styles.statText}>{item.listened_count} listened</Text>
         </View>
         <View style={styles.statItem}>
-          <Icon name="close" size={16} color="#ef4444" />
+          <Icon name="close" size={16} color={theme.colors.error} />
           <Text style={styles.statText}>{item.rejected_count} rejected</Text>
         </View>
       </View>
@@ -243,7 +246,7 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
         activeOpacity={0.7}
       >
         <Text style={styles.recipientUserId}>ID: {item.user_id}</Text>
-        <Icon name="copy-outline" size={14} color="#7c3aed" />
+        <Icon name="copy-outline" size={14} color={theme.colors.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -251,7 +254,7 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading sent notes...</Text>
       </View>
     );
@@ -304,7 +307,7 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
 
           {loadingRecipients ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
+              <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.loadingText}>Loading recipients...</Text>
             </View>
           ) : (
@@ -329,7 +332,7 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
           }
           ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Icon name="document-text-outline" size={64} color="#ccc" />
+            <Icon name="document-text-outline" size={64} color={theme.colors.onSurfaceVariant} />
             <Text style={styles.emptyText}>No sent notes yet</Text>
             <Text style={styles.emptySubtext}>
               Create a note to see it here
@@ -342,7 +345,7 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -379,7 +382,7 @@ const styles = StyleSheet.create({
   clearButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#fff',
+    color: theme.colors.onPrimary,
   },
   noteCard: {
     backgroundColor: theme.colors.surface,
@@ -556,11 +559,11 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderRadius: borderRadius.sm,
     borderWidth: 1,
-    borderColor: '#7c3aed15',
+    borderColor: theme.colors.primary + '15',
   },
   recipientUserId: {
     fontSize: 12,
-    color: '#7c3aed',
+    color: theme.colors.primary,
     fontWeight: '500',
   },
   loadingContainer: {
@@ -571,18 +574,18 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#666',
+    color: theme.colors.onSurfaceVariant,
   },
   notesList: {
     flex: 1,
     padding: 16,
   },
   noteItem: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -600,12 +603,12 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 18,
-    color: '#666',
+    color: theme.colors.onSurfaceVariant,
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#999',
+    color: theme.colors.onSurfaceVariant,
     marginTop: 8,
   },
 });

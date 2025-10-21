@@ -484,29 +484,99 @@ export class TelegramStyleChatService {
   }
   
   /**
-   * 🗑️ CLEAR CHAT (Telegram's approach)
+   * 🗑️ CLEAR CHAT (Fixed for buddy_messages table)
    */
   static async clearChat(user1Id: string, user2Id: string): Promise<void> {
-    const chatId = this.getChatId(user1Id, user2Id);
-    
-    console.log('🗑️ Clearing chat:', chatId);
+      // console.log('🗑️ Clearing chat between users:', user1Id, 'and', user2Id);
     
     try {
-      // Delete all messages
-      const { error: messagesError } = await supabase
-        .from('messages')
+      // Find the buddy relationship between these two users
+      // Use limit(1) instead of single() to handle cases where no relationship exists
+      const { data: buddyRelationships, error: buddyError } = await supabase
+        .from('buddies')
+        .select('id')
+        .or(`and(user_id.eq.${user1Id},buddy_user_id.eq.${user2Id}),and(user_id.eq.${user2Id},buddy_user_id.eq.${user1Id})`)
+        .limit(1);
+      
+      if (buddyError) {
+        console.error('❌ Error finding buddy relationship:', buddyError);
+        throw buddyError;
+      }
+      
+      if (!buddyRelationships || buddyRelationships.length === 0) {
+        console.error('❌ No buddy relationship found between users');
+        
+        // Debug: Let's see what buddy relationships actually exist for these users
+        // const { data: user1Buddies, error: user1Error } = await supabase
+        //   .from('buddies')
+        //   .select('id, user_id, buddy_user_id')
+        //   .or(`user_id.eq.${user1Id},buddy_user_id.eq.${user1Id}`)
+        //   .limit(5);
+        
+        // const { data: user2Buddies, error: user2Error } = await supabase
+        //   .from('buddies')
+        //   .select('id, user_id, buddy_user_id')
+        //   .or(`user_id.eq.${user2Id},buddy_user_id.eq.${user2Id}`)
+        //   .limit(5);
+        
+        // console.log('🔍 Debug - User1 buddies:', user1Buddies);
+        // console.log('🔍 Debug - User2 buddies:', user2Buddies);
+        // console.log('🔍 Debug - User1 ID:', user1Id);
+        // console.log('🔍 Debug - User2 ID:', user2Id);
+        
+        throw new Error('No buddy relationship found between these users');
+      }
+      
+      const buddyId = buddyRelationships[0].id;
+      // console.log('🔍 Found buddy ID:', buddyId);
+      
+      // Get ALL buddy IDs for this user pair (same logic as getMessages)
+      const { data: allBuddies, error: allBuddiesError } = await supabase
+        .from('buddies')
+        .select('id')
+        .or(`and(user_id.eq.${user1Id},buddy_user_id.eq.${user2Id}),and(user_id.eq.${user2Id},buddy_user_id.eq.${user1Id})`);
+      
+      if (allBuddiesError) {
+        console.error('❌ Error getting all buddy relationships:', allBuddiesError);
+        throw allBuddiesError;
+      }
+      
+      const buddyIds = allBuddies?.map(b => b.id) || [];
+      // console.log('🔍 All buddy IDs for this user pair:', buddyIds);
+      
+      // First, let's see how many messages exist before deletion
+      // const { data: messagesBefore, error: countError } = await supabase
+      //   .from('buddy_messages')
+      //   .select('id')
+      //   .in('buddy_id', buddyIds);
+      
+      // if (countError) {
+      //   console.error('❌ Error counting messages before deletion:', countError);
+      // } else {
+      //   console.log(`📊 Messages before deletion: ${messagesBefore?.length || 0}`);
+      // }
+      
+      // Delete all messages for ALL buddy relationships
+      const { data: deletedData, error: messagesError } = await supabase
+        .from('buddy_messages')
         .delete()
-        .eq('chat_id', chatId);
+        .in('buddy_id', buddyIds)
+        .select('id'); // Select to see what was deleted
       
       if (messagesError) {
         console.error('❌ Error clearing messages:', messagesError);
         throw messagesError;
       }
       
-      // Clear cache
-      this.clearCache(this.getCacheKey('messages', chatId));
+      // console.log(`🗑️ Deleted ${deletedData?.length || 0} messages`);
+      // console.log('🗑️ Deleted message IDs:', deletedData?.map(m => m.id) || []);
       
-      console.log('✅ Chat cleared successfully');
+      // Clear cache for all buddy IDs
+      buddyIds.forEach(id => {
+        this.clearCache(this.getCacheKey('messages', id));
+      });
+      
+      // console.log('✅ Chat cleared successfully for buddy:', buddyId);
       
     } catch (error) {
       console.error('❌ Failed to clear chat:', error);

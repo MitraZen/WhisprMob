@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { useAuth } from '@/store/AuthContext';
 import AnonymousChatService, { ChatRoom, ChatParticipant, ChatMessage, BuddyRequest } from '@/services/anonymousChatService';
 import { testAnonymousChatTables } from '@/utils/testAnonymousChatTables';
 import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView';
+import { getTextInputColor, getPlaceholderTextColor } from '@/utils/textColorUtils';
 
 interface AnonymousChatModalProps {
   visible: boolean;
@@ -668,14 +669,14 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
                   styles.messageInput,
                   { 
                     backgroundColor: theme.colors.background,
-                    color: theme.colors.text,
+                    color: getTextInputColor(theme),
                     borderColor: theme.colors.border
                   }
                 ]}
                 value={messageText}
                 onChangeText={setMessageText}
                 placeholder="Type a message..."
-                placeholderTextColor={theme.colors.textSecondary}
+                placeholderTextColor={getPlaceholderTextColor(theme)}
                 multiline
                 maxLength={500}
                 editable={!isSending}

@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import PermissionService from './permissionService';
+import { ThemedAlertLegacy } from '@/components/ThemedAlert';
 import { StorageService } from '@/utils/helpers';
 
 interface PermissionStatus {
@@ -89,7 +90,7 @@ class PermissionInitializer {
       .join(', ');
 
     return new Promise((resolve) => {
-      Alert.alert(
+      ThemedAlertLegacy.alert(
         'Permissions Required',
         `Whispr needs ${permissionList} permission${missingPermissions.length > 1 ? 's' : ''} to provide the best experience. This includes:\n\n• Notifications for new messages and notes\n• Storage for saving your data\n• Camera for sharing photos\n• Location for finding nearby users\n\nWould you like to grant these permissions now?`,
         [

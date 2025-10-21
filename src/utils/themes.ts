@@ -219,48 +219,48 @@ export const darkTheme = {
   colors: {
     ...MD3DarkTheme.colors,
     // Modern Whispr dark theme colors with high contrast
-    primary: '#a5b4fc', // Brighter indigo for better visibility
-    secondary: '#c4b5fd', // Brighter purple for better visibility
-    tertiary: '#67e8f9', // Brighter cyan for better visibility
+    primary: '#8b5cf6', // Brighter purple for better visibility
+    secondary: '#a78bfa', // Brighter purple variant
+    tertiary: '#06b6d4', // Bright cyan for better visibility
     surface: '#1e293b', // Dark slate
     background: '#0f172a', // Very dark slate
     surfaceVariant: '#334155', // Medium dark slate
-    error: '#fca5a5', // Brighter red for better visibility
-    warning: '#fde047', // Brighter amber for better visibility
-    success: '#6ee7b7', // Brighter emerald for better visibility
-    info: '#93c5fd', // Brighter blue for better visibility
+    error: '#f87171', // Brighter red for better visibility
+    warning: '#fbbf24', // Brighter amber for better visibility
+    success: '#34d399', // Brighter emerald for better visibility
+    info: '#60a5fa', // Brighter blue for better visibility
     
     // High contrast text colors
-    text: '#ffffff', // Pure white for maximum contrast
-    textSecondary: '#e2e8f0', // Light gray for secondary text
-    onSurface: '#ffffff', // Pure white for maximum contrast
-    onBackground: '#ffffff', // Pure white for maximum contrast
+    text: '#f8fafc', // Very light gray for maximum contrast
+    textSecondary: '#cbd5e1', // Light gray for secondary text
+    onSurface: '#f8fafc', // Very light gray for maximum contrast
+    onBackground: '#f8fafc', // Very light gray for maximum contrast
     onPrimary: '#0f172a', // Dark slate
     onSecondary: '#0f172a', // Dark slate
-    onSurfaceVariant: '#e2e8f0', // Light gray
+    onSurfaceVariant: '#cbd5e1', // Light gray
     
     // Modern accent colors with high contrast
-    accent: '#67e8f9', // Bright cyan accent
-    accentSecondary: '#f9a8d4', // Bright pink accent
+    accent: '#06b6d4', // Bright cyan accent
+    accentSecondary: '#f472b6', // Bright pink accent
     
     // Status colors with high contrast
-    online: '#6ee7b7', // Bright emerald
+    online: '#34d399', // Bright emerald
     offline: '#94a3b8', // Medium slate
-    away: '#fde047', // Bright amber
+    away: '#fbbf24', // Bright amber
     
     // Border and divider colors with better visibility
-    border: '#64748b', // Lighter border for better visibility
-    divider: '#475569', // Lighter divider for better visibility
+    border: '#475569', // Lighter border for better visibility
+    divider: '#64748b', // Lighter divider for better visibility
     
     // Modern glass effect colors
     glass: 'rgba(30, 41, 59, 0.9)', // Darker glass for better contrast
     glassDark: 'rgba(0, 0, 0, 0.4)', // Darker glass
     
     // Gradient colors with high contrast
-    gradientStart: '#a5b4fc',
-    gradientEnd: '#c4b5fd',
-    gradientSecondary: '#67e8f9',
-    gradientSecondaryEnd: '#93c5fd',
+    gradientStart: '#8b5cf6',
+    gradientEnd: '#a78bfa',
+    gradientSecondary: '#06b6d4',
+    gradientSecondaryEnd: '#60a5fa',
   },
 };
 

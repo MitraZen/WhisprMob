@@ -1,51 +1,29 @@
 {
   "project_info": {
-    "project_number": "123456789",
-    "project_id": "whispr-mobile-temp",
-    "storage_bucket": "whispr-mobile-temp.appspot.com"
+    "project_number": "333572988445",
+    "project_id": "whisprapp-2d512",
+    "storage_bucket": "whisprapp-2d512.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:123456789:android:abcdef123456789",
+        "mobilesdk_app_id": "1:333572988445:android:fa95bfda1fb9cf5c70b0f4",
         "android_client_info": {
           "package_name": "com.whisprmobiletemp"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "123456789-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDummyKeyForDevelopment123456789"
+          "current_key": "AIzaSyCD19UlxHyf7vZZfTh53bWvjgCMfi-9HKc"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "123456789-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }
   ],
   "configuration_version": "1"
 }
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,6 +1,7 @@
 import { notificationService } from './notificationService';
 import { BuddiesService } from './buddiesService';
 import { realtimeService } from './realtimeService';
+import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
 
 interface NotificationManager {
   startNotificationService: (userId: string) => Promise<void>;
@@ -40,6 +41,8 @@ class NotificationManagerClass implements NotificationManager {
   private initializationCooldown = 30000; // 30 seconds cooldown between attempts
   private isStopping = false; // Add flag to prevent infinite loops
   private initializationPromise: Promise<void> | null = null; // Prevent multiple simultaneous initializations
+  private connectionStateUnsubscribe: (() => void) | null = null;
+  private isConnectionRecoveryEnabled = true;
 
       async startNotificationService(userId: string): Promise<void> {
         // Prevent multiple simultaneous initializations
@@ -55,6 +58,12 @@ class NotificationManagerClass implements NotificationManager {
         }
 
         this.userId = userId;
+        
+        // Initialize connection recovery service if enabled
+        if (this.isConnectionRecoveryEnabled) {
+          await connectionRecoveryService.initialize();
+          this.setupConnectionRecovery();
+        }
         
         // Check cooldown to prevent excessive initialization attempts
         const now = Date.now();
@@ -79,6 +88,10 @@ class NotificationManagerClass implements NotificationManager {
 
       private async performInitialization(userId: string): Promise<void> {
         try {
+          // Initialize FCM after user login
+          console.log('🔥 Initializing FCM for user:', userId);
+          await notificationService.initializeFCMAfterLogin();
+          
           // Try realtime first (now with WebSocket polyfill)
           const realtimeSuccess = await realtimeService.initialize(userId);
           
@@ -172,6 +185,87 @@ class NotificationManagerClass implements NotificationManager {
     this.stopPollingInternal();
   }
 
+  /**
+   * Setup connection recovery integration
+   */
+  private setupConnectionRecovery(): void {
+    if (!this.isConnectionRecoveryEnabled) {
+      return;
+    }
+
+    console.log('🔄 Setting up connection recovery integration for notification manager');
+
+    // Register for connection state changes
+    this.connectionStateUnsubscribe = connectionRecoveryService.onConnectionStateChange((state: ConnectionState) => {
+      this.handleConnectionStateChange(state);
+    });
+
+    // Register reconnection callback
+    connectionRecoveryService.onReconnectionAttempt(async () => {
+      return await this.attemptReconnection();
+    });
+  }
+
+  /**
+   * Handle connection state changes from recovery service
+   */
+  private handleConnectionStateChange(state: ConnectionState): void {
+    console.log('📡 Notification manager - connection state changed:', {
+      isConnected: state.isConnected,
+      isRealtimeConnected: state.isRealtimeConnected,
+      connectionQuality: state.connectionQuality,
+      retryCount: state.retryCount,
+    });
+
+    // Update our internal state based on connection quality
+    if (state.connectionQuality === 'offline') {
+      console.log('🔴 Network offline - switching to polling');
+      if (this.realtimeActive && this.userId) {
+        this.startPollingFallback(this.userId);
+      }
+    } else if (state.connectionQuality === 'poor' && this.fallbackMode) {
+      console.log('⚠️ Poor connection - staying with polling');
+      // Stay with polling for poor connections
+    } else if (state.connectionQuality === 'good' || state.connectionQuality === 'excellent') {
+      console.log('🟢 Good connection - attempting realtime upgrade');
+      if (this.fallbackMode && this.userId) {
+        this.optimizeForForeground();
+      }
+    }
+  }
+
+  /**
+   * Attempt reconnection (called by connection recovery service)
+   */
+  private async attemptReconnection(): Promise<boolean> {
+    if (!this.userId) {
+      console.log('❌ Cannot reconnect - no userId');
+      return false;
+    }
+
+    try {
+      console.log('🔄 Notification manager - attempting reconnection');
+      
+      // Try to initialize realtime service
+      const realtimeSuccess = await realtimeService.initialize(this.userId);
+      
+      if (realtimeSuccess) {
+        this.realtimeActive = true;
+        this.fallbackMode = false;
+        this.stopPollingInternal();
+        console.log('✅ Notification manager reconnection successful');
+        return true;
+      } else {
+        console.log('❌ Notification manager reconnection failed - staying with polling');
+        return false;
+      }
+      
+    } catch (error) {
+      console.error('❌ Notification manager reconnection error:', error);
+      return false;
+    }
+  }
+
   async stopNotificationService(): Promise<void> {
     console.log('🛑 Stopping hybrid notification service...');
     
@@ -187,6 +281,12 @@ class NotificationManagerClass implements NotificationManager {
     // Clean up event listeners
     if (this.realtimeFailureHandler && typeof window !== 'undefined' && window.removeEventListener) {
       window.removeEventListener('realtime-failed', this.realtimeFailureHandler);
+    }
+    
+    // Clean up connection recovery integration
+    if (this.connectionStateUnsubscribe) {
+      this.connectionStateUnsubscribe();
+      this.connectionStateUnsubscribe = null;
     }
     
     this.userId = null;
@@ -381,6 +481,42 @@ class NotificationManagerClass implements NotificationManager {
   trackRealtimeNotification() {
     this.performanceMetrics.realtimeNotifications++;
     this.performanceMetrics.totalNotifications++;
+  }
+
+  /**
+   * Enable or disable connection recovery
+   */
+  setConnectionRecoveryEnabled(enabled: boolean): void {
+    this.isConnectionRecoveryEnabled = enabled;
+    console.log(`🔄 Connection recovery ${enabled ? 'enabled' : 'disabled'} for notification manager`);
+  }
+
+  /**
+   * Force reconnection attempt
+   */
+  async forceReconnection(): Promise<boolean> {
+    if (!this.isConnectionRecoveryEnabled) {
+      console.log('❌ Connection recovery is disabled');
+      return false;
+    }
+
+    return await connectionRecoveryService.forceReconnection();
+  }
+
+  /**
+   * Get connection recovery status
+   */
+  getConnectionRecoveryStatus(): any {
+    if (!this.isConnectionRecoveryEnabled) {
+      return { enabled: false };
+    }
+
+    return {
+      enabled: true,
+      connectionState: connectionRecoveryService.getConnectionState(),
+      isHealthy: connectionRecoveryService.isConnectionHealthy(),
+      serviceStatus: this.getServiceStatus(),
+    };
   }
 
   // Legacy methods for backward compatibility

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform, AppState, DeviceEventEmitter } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Platform, AppState, DeviceEventEmitter, Modal, Pressable } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
@@ -25,6 +25,8 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [messageAlerts, setMessageAlerts] = useState<number>(0);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
+  const [showBuddyOptions, setShowBuddyOptions] = useState(false);
+  const [selectedBuddy, setSelectedBuddy] = useState<Buddy | null>(null);
   const [buddyRequestsCount, setBuddyRequestsCount] = useState<number>(0);
   
   const styles = createStyles(theme);
@@ -250,16 +252,8 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
 
   // Handle buddy options (long press) - show context menu
   const handleBuddyOptions = (buddy: Buddy) => {
-    Alert.alert(
-      'Buddy Options',
-      `What would you like to do with ${buddy.name}?`,
-      [
-        { text: 'View Profile', onPress: () => onNavigate('profile', { userId: buddy.buddyUserId }) },
-        { text: 'Clear Chat', onPress: () => clearBuddyChat(buddy) },
-        { text: 'Delete Buddy', style: 'destructive', onPress: () => handleDeleteBuddy(buddy) },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    setSelectedBuddy(buddy);
+    setShowBuddyOptions(true);
   };
 
   // Clear chat for a specific buddy
@@ -272,6 +266,36 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
       console.error('Error clearing buddy chat:', error);
       Alert.alert('Error', 'Failed to clear chat. Please try again.');
     }
+  };
+
+  // Handle buddy option actions
+  const handleViewProfile = () => {
+    if (selectedBuddy) {
+      onNavigate('profile', { userId: selectedBuddy.buddyUserId });
+      setShowBuddyOptions(false);
+      setSelectedBuddy(null);
+    }
+  };
+
+  const handleClearChat = () => {
+    if (selectedBuddy) {
+      clearBuddyChat(selectedBuddy);
+      setShowBuddyOptions(false);
+      setSelectedBuddy(null);
+    }
+  };
+
+  const handleDeleteBuddyAction = () => {
+    if (selectedBuddy) {
+      handleDeleteBuddy(selectedBuddy);
+      setShowBuddyOptions(false);
+      setSelectedBuddy(null);
+    }
+  };
+
+  const handleCancelOptions = () => {
+    setShowBuddyOptions(false);
+    setSelectedBuddy(null);
   };
 
   // Delete buddy with enhanced real-time handling
@@ -532,6 +556,60 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
         context="buddies"
         userId={user?.id}
       />
+
+      {/* Buddy Options Modal */}
+      <Modal
+        visible={showBuddyOptions}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCancelOptions}
+      >
+        <Pressable 
+          style={styles.buddyOptionsOverlay}
+          onPress={handleCancelOptions}
+        >
+          <View style={styles.buddyOptionsContainer}>
+            <View style={styles.buddyOptionsContent}>
+              <Text style={styles.buddyOptionsTitle}>
+                {selectedBuddy?.name} Options
+              </Text>
+              <View style={styles.buddyOptionsButtons}>
+                <TouchableOpacity
+                  style={styles.buddyOptionButton}
+                  onPress={handleViewProfile}
+                >
+                  <Icon name="person-outline" size={24} color="#007AFF" />
+                  <Text style={styles.buddyOptionText}>View Profile</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.buddyOptionButton}
+                  onPress={handleClearChat}
+                >
+                  <Icon name="trash-outline" size={24} color="#FF9500" />
+                  <Text style={styles.buddyOptionText}>Clear Chat</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.buddyOptionButton}
+                  onPress={handleDeleteBuddyAction}
+                >
+                  <Icon name="person-remove-outline" size={24} color="#FF3B30" />
+                  <Text style={styles.buddyOptionText}>Delete Buddy</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.buddyOptionButton}
+                  onPress={handleCancelOptions}
+                >
+                  <Icon name="close-outline" size={24} color="#8E8E93" />
+                  <Text style={styles.buddyOptionText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -848,6 +926,61 @@ const createStyles = (theme: any) => StyleSheet.create({
   retryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   lastUpdatedContainer: { alignItems: 'center', paddingVertical: spacing.sm },
   lastUpdatedText: { fontSize: 12, color: '#9ca3af' },
+  
+  // Buddy Options Modal Styles
+  buddyOptionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buddyOptionsContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginHorizontal: 30,
+    maxWidth: 320,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  buddyOptionsContent: {
+    padding: 16,
+  },
+  buddyOptionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  buddyOptionsButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  buddyOptionButton: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  buddyOptionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#374151',
+    marginTop: 6,
+    textAlign: 'center',
+  },
 });
 
 export default BuddiesScreen;

@@ -1,35 +1,18 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-  Animated,
-} from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Alert, AlertButton, AlertOptions, Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '@/store/ThemeContext';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
-import { ThemedModal } from './ThemedModal';
 
-const { width: screenWidth } = Dimensions.get('window');
-
-export interface AlertButton {
-  text: string;
-  onPress?: () => void;
-  style?: 'default' | 'cancel' | 'destructive';
-}
-
-export interface ThemedAlertProps {
+interface ThemedAlertProps {
   visible: boolean;
-  title?: string;
+  title: string;
   message?: string;
   buttons?: AlertButton[];
+  options?: AlertOptions;
   onClose: () => void;
   icon?: string;
   iconColor?: string;
-  style?: any;
-  contentStyle?: any;
 }
 
 export const ThemedAlert: React.FC<ThemedAlertProps> = ({
@@ -38,145 +21,140 @@ export const ThemedAlert: React.FC<ThemedAlertProps> = ({
   message,
   buttons = [{ text: 'OK' }],
   onClose,
-  icon,
-  iconColor,
-  style,
-  contentStyle,
+  icon = 'information-circle',
+  iconColor = '#3b82f6'
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
 
-  const handleButtonPress = (button: AlertButton) => {
-    if (button.onPress) {
-      button.onPress();
-    }
-    onClose();
-  };
-
-  const getButtonStyle = (buttonStyle?: string) => {
-    switch (buttonStyle) {
-      case 'destructive':
-        return [styles.button, styles.destructiveButton];
-      case 'cancel':
-        return [styles.button, styles.cancelButton];
-      default:
-        return [styles.button, styles.defaultButton];
-    }
-  };
-
-  const getButtonTextStyle = (buttonStyle?: string) => {
-    switch (buttonStyle) {
-      case 'destructive':
-        return [styles.buttonText, styles.destructiveButtonText];
-      case 'cancel':
-        return [styles.buttonText, styles.cancelButtonText];
-      default:
-        return [styles.buttonText, styles.defaultButtonText];
-    }
-  };
+  if (!visible) return null;
 
   return (
-    <ThemedModal
+    <Modal
       visible={visible}
-      onClose={onClose}
-      size="small"
-      slideFrom="center"
+      transparent
       animationType="fade"
-      closeOnOverlayPress={false}
-      dismissible={false}
-      style={[styles.alertContainer, style]}
-      contentStyle={contentStyle}
+      onRequestClose={onClose}
     >
-      <View style={styles.alertContent}>
-        {/* Icon */}
-        {icon && (
-          <View style={styles.iconContainer}>
-            <Icon 
-              name={icon} 
-              size={48} 
-              color={iconColor || theme.colors.primary} 
-            />
+      <View style={styles.overlay}>
+        <View style={styles.alertContainer}>
+          {/* Icon */}
+          <View style={[styles.iconContainer, { backgroundColor: iconColor + '20' }]}>
+            <Icon name={icon} size={32} color={iconColor} />
           </View>
-        )}
-
-        {/* Title */}
-        {title && (
+          
+          {/* Title */}
           <Text style={styles.title}>{title}</Text>
-        )}
-
-        {/* Message */}
-        {message && (
-          <Text style={styles.message}>{message}</Text>
-        )}
-
-        {/* Buttons */}
-        <View style={styles.buttonContainer}>
-          {buttons.map((button, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                ...getButtonStyle(button.style),
-                buttons.length === 1 && styles.singleButton,
-                buttons.length === 2 && styles.twoButton,
-                buttons.length > 2 && styles.multiButton,
-              ]}
-              onPress={() => handleButtonPress(button)}
-              activeOpacity={0.7}
-            >
-              <Text style={getButtonTextStyle(button.style)}>
-                {button.text}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          
+          {/* Message */}
+          {message && (
+            <Text style={styles.message}>{message}</Text>
+          )}
+          
+          {/* Buttons */}
+          <View style={styles.buttonContainer}>
+            {buttons.map((button, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.button,
+                  button.style === 'cancel' && styles.cancelButton,
+                  button.style === 'destructive' && styles.destructiveButton,
+                  buttons.length === 1 && styles.singleButton
+                ]}
+                onPress={() => {
+                  if (button.onPress) {
+                    button.onPress();
+                  }
+                  onClose();
+                }}
+              >
+                <Text style={[
+                  styles.buttonText,
+                  button.style === 'cancel' && styles.cancelButtonText,
+                  button.style === 'destructive' && styles.destructiveButtonText
+                ]}>
+                  {button.text}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
-    </ThemedModal>
+    </Modal>
   );
 };
 
-// Static method to show alert (similar to Alert.alert)
-export const showThemedAlert = (
-  title?: string,
-  message?: string,
-  buttons?: AlertButton[],
-  options?: {
-    icon?: string;
-    iconColor?: string;
+// Legacy object-based API for backward compatibility
+export const ThemedAlertLegacy = {
+  alert: (title: string, message?: string, buttons?: AlertButton[], options?: AlertOptions) => {
+    // For now, we'll use the default Alert but with better styling
+    // In the future, this can be replaced with a custom modal component
+    return Alert.alert(title, message, buttons, options);
   }
-): Promise<string> => {
-  return new Promise((resolve) => {
-    // This would need to be implemented with a global alert manager
-    // For now, we'll provide the component for manual usage
-    console.log('showThemedAlert called:', { title, message, buttons, options });
-    resolve('OK');
-  });
+};
+
+// Custom hook for themed alerts
+export const useThemedAlert = () => {
+  const { theme } = useTheme();
+
+  const showAlert = (
+    title: string, 
+    message?: string, 
+    buttons?: AlertButton[], 
+    options?: AlertOptions
+  ) => {
+    return Alert.alert(title, message, buttons, options);
+  };
+
+  return { showAlert };
 };
 
 const createStyles = (theme: any) => StyleSheet.create({
-  alertContainer: {
-    width: screenWidth * 0.85,
-    maxWidth: 400,
-  },
-  alertContent: {
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.lg,
+    padding: spacing.lg,
+  },
+  alertContainer: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    minWidth: 280,
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: theme.colors.shadow || '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   iconContainer: {
-    marginBottom: spacing.md,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   title: {
-    ...theme.typography.titleLarge,
+    ...theme.typography.headlineSmall,
     color: theme.colors.onSurface,
-    fontWeight: '600',
     textAlign: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    fontWeight: '600',
   },
   message: {
-    ...theme.typography.bodyLarge,
+    ...theme.typography.bodyMedium,
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
-    lineHeight: 22,
     marginBottom: spacing.xl,
+    lineHeight: 20,
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -185,41 +163,25 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   button: {
     flex: 1,
+    backgroundColor: theme.colors.primary,
+    borderRadius: borderRadius.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.md,
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
   },
   singleButton: {
     flex: 1,
   },
-  twoButton: {
-    flex: 1,
-  },
-  multiButton: {
-    flex: 1,
-  },
-  defaultButton: {
-    backgroundColor: theme.colors.primary,
-    ...theme.shadows.sm,
-  },
   cancelButton: {
     backgroundColor: theme.colors.surfaceVariant,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   destructiveButton: {
     backgroundColor: theme.colors.error,
-    ...theme.shadows.sm,
   },
   buttonText: {
-    ...theme.typography.titleMedium,
-    fontWeight: '600',
-  },
-  defaultButtonText: {
+    ...theme.typography.labelLarge,
     color: theme.colors.onPrimary,
+    fontWeight: '600',
   },
   cancelButtonText: {
     color: theme.colors.onSurfaceVariant,

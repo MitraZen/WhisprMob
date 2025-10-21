@@ -22,6 +22,7 @@ interface LiveWhisprsScreenProps {
 
 const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => {
   const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState<DistanceFilter>('50km');
 
@@ -54,7 +55,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar
-        barStyle={theme.dark ? 'light-content' : 'dark-content'}
+        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
         backgroundColor={theme.colors.surface}
       />
       
@@ -130,7 +131,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: Platform.OS === 'android' ? 0 : 0, // StatusBar height handled by StatusBar component
@@ -143,12 +144,12 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: theme.colors.border,
   },
   backButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.surfaceVariant,
   },
   headerTitle: {
     fontSize: 20,
@@ -161,7 +162,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: theme.colors.border,
   },
   filterTitle: {
     fontSize: 16,

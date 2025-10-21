@@ -36,7 +36,7 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, u
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AIEnhancementResult | null>(null);
-  const [enhancementType, setEnhancementType] = useState<'improve' | 'shorten' | 'expand' | 'make_mysterious'>('improve');
+  const [enhancementType, setEnhancementType] = useState<'improve' | 'shorten' | 'expand' | 'make_mysterious' | 'generate_from_prompt'>('improve');
 
   // AI Enhancement functions
   const handleAIEnhancement = async () => {
@@ -55,11 +55,19 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, u
     setAiResult(null);
 
     try {
-      const result = await AIService.enhanceText({
-        mood: selectedMood,
-        originalText: noteContent,
-        enhancementType: enhancementType
-      });
+      let result: AIEnhancementResult;
+      
+      if (enhancementType === 'generate_from_prompt') {
+        // Use the new generateFromPrompt method for creative generation
+        result = await AIService.generateFromPrompt(noteContent, selectedMood);
+      } else {
+        // Use the existing enhanceText method for other enhancement types
+        result = await AIService.enhanceText({
+          mood: selectedMood,
+          originalText: noteContent,
+          enhancementType: enhancementType
+        });
+      }
 
       setAiResult(result);
     } catch (error) {
@@ -307,12 +315,28 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({ onNavigate, onGoBack, u
                 {/* Enhancement Type Selector */}
                 <View style={styles.enhancementTypeSection}>
                   <Text style={styles.modalSectionTitle}>Enhancement Type</Text>
+                  {enhancementType === 'generate_from_prompt' && (
+                    <Text style={styles.modalSubtitle}>
+                      ✨ Write prompts like "write a motivational quote" or "I am happy, enhance that" and let AI surprise you!
+                    </Text>
+                  )}
+                  {enhancementType === 'generate_from_prompt' && (
+                    <View style={styles.examplePromptsContainer}>
+                      <Text style={styles.examplePromptsTitle}>💡 Example Prompts:</Text>
+                      <Text style={styles.examplePrompt}>• "write a motivational quote"</Text>
+                      <Text style={styles.examplePrompt}>• "I am happy, enhance that"</Text>
+                      <Text style={styles.examplePrompt}>• "create a love poem"</Text>
+                      <Text style={styles.examplePrompt}>• "I feel grateful today"</Text>
+                      <Text style={styles.examplePrompt}>• "write something mysterious"</Text>
+                    </View>
+                  )}
                   <View style={styles.enhancementTypeButtons}>
                     {[
                       { key: 'improve', label: 'Improve', icon: 'trending-up' },
                       { key: 'shorten', label: 'Shorten', icon: 'contract' },
                       { key: 'expand', label: 'Expand', icon: 'expand' },
-                      { key: 'make_mysterious', label: 'Mysterious', icon: 'eye-off' }
+                      { key: 'make_mysterious', label: 'Mysterious', icon: 'eye-off' },
+                      { key: 'generate_from_prompt', label: 'Surprise Me!', icon: 'sparkles' }
                     ].map((type) => (
                       <TouchableOpacity
                         key={type.key}
@@ -621,8 +645,31 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: spacing.md,
   },
+  modalSubtitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: spacing.md,
+    fontStyle: 'italic',
+  },
   enhancementTypeSection: {
     marginBottom: spacing.lg,
+  },
+  examplePromptsContainer: {
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  examplePromptsTitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurface,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
+  },
+  examplePrompt: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: spacing.xs,
   },
   enhancementTypeButtons: {
     flexDirection: 'row',
