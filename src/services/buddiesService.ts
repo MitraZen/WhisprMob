@@ -732,9 +732,9 @@ export class BuddiesService {
     try {
       console.log('🎧 BuddiesService.listenToNote called with:', { noteId, userId });
       const result = await this.rpcRequest('handle_note_propagation', {
-        note_id: noteId,
-        responder_id: userId,
-        response_type: 'listen'
+        p_note_id: noteId,
+        p_responder_id: userId,
+        p_response_type: 'listen'
       });
       console.log('🎧 BuddiesService.listenToNote result:', result);
       return result;
@@ -749,9 +749,9 @@ export class BuddiesService {
     try {
       console.log('❌ BuddiesService.rejectNote called with:', { noteId, userId });
       const result = await this.rpcRequest('handle_note_propagation', {
-        note_id: noteId,
-        responder_id: userId,
-        response_type: 'reject'
+        p_note_id: noteId,
+        p_responder_id: userId,
+        p_response_type: 'reject'
       });
       console.log('❌ BuddiesService.rejectNote result:', result);
       return result;

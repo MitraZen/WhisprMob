@@ -1,4 +1,5 @@
 import { supabase } from '@/config/supabase';
+import { FCMReliabilityService, FCMDeliveryResult } from './fcmReliabilityService';
 
 export interface FCMMessage {
   to: string; // FCM token
@@ -13,7 +14,7 @@ export interface FCMMessage {
 
 export class FCMService {
   /**
-   * Send FCM notification to a specific user
+   * Send FCM notification to a specific user (Enhanced with reliability)
    */
   static async sendNotificationToUser(
     userId: string, 
@@ -24,50 +25,20 @@ export class FCMService {
     try {
       console.log('🔥 Sending FCM notification to user:', userId);
       
-      // Get user's FCM token (handle multiple tokens by getting the latest one)
-      const { data: userFcmTokens, error: profileError } = await supabase
-        .from('user_fcm_tokens')
-        .select('fcm_token, updated_at')
-        .eq('user_id', userId)
-        .order('updated_at', { ascending: false })
-        .limit(1);
+      const result = await FCMReliabilityService.sendReliableNotification(
+        userId, 
+        title, 
+        body, 
+        data
+      );
       
-      if (profileError) {
-        console.error('🔥 Error fetching user FCM token:', profileError);
+      if (result.success) {
+        console.log('🔥 FCM notification sent successfully');
+        return true;
+      } else {
+        console.log('🔥 FCM notification failed:', result.error);
         return false;
       }
-      
-      if (!userFcmTokens || userFcmTokens.length === 0) {
-        console.log('🔥 User has no FCM token yet - they need to log in first');
-        return false;
-      }
-      
-      const userFcmToken = userFcmTokens[0];
-      if (!userFcmToken?.fcm_token) {
-        console.warn('🔥 No FCM token found for user:', userId);
-        return false;
-      }
-      
-      // Send notification via Supabase Edge Function
-      const { data: result, error } = await supabase.functions.invoke('send-fcm-notification', {
-        body: {
-          to: userFcmToken.fcm_token,
-          notification: {
-            title,
-            body
-          },
-          data: data || {}
-        }
-      });
-      
-      if (error) {
-        console.error('🔥 Error sending FCM notification:', error);
-        console.log('🔥 FCM Edge Function not configured - using local notifications only');
-        return false; // Return false so local notifications can be used as fallback
-      }
-      
-      console.log('🔥 FCM notification sent successfully:', result);
-      return true;
     } catch (error) {
       console.error('🔥 Error in sendNotificationToUser:', error);
       return false;
@@ -187,6 +158,27 @@ export class FCMService {
       console.error('🔥 Error sending note notification:', error);
       return false;
     }
+  }
+
+  /**
+   * Test FCM notification delivery for a user
+   */
+  static async testNotification(userId: string): Promise<FCMDeliveryResult> {
+    return FCMReliabilityService.testNotification(userId);
+  }
+
+  /**
+   * Get FCM delivery statistics
+   */
+  static async getDeliveryStats(userId?: string) {
+    return FCMReliabilityService.getDeliveryStats(userId);
+  }
+
+  /**
+   * Clean up invalid FCM tokens
+   */
+  static async cleanupInvalidTokens(): Promise<void> {
+    return FCMReliabilityService.cleanupInvalidTokens();
   }
 }
 

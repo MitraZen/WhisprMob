@@ -8,6 +8,7 @@ import { CachedBuddiesService, Buddy } from '@/services/cachedBuddiesService';
 import AnonymousChatService from '@/services/anonymousChatService';
 import { BuddyRealtimeService } from '@/services/buddyRealtimeService';
 import { WalkthroughManager } from '@/components/WalkthroughManager';
+import GradientBackground from '@/components/GradientBackground';
 
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -355,8 +356,26 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
     }
   };
 
+  // Helper function to generate consistent avatar colors
+  const getAvatarColor = (name: string): string => {
+    const colors = [
+      '#7c3aed', // Purple
+      '#3b82f6', // Blue
+      '#10b981', // Green
+      '#f59e0b', // Amber
+      '#ef4444', // Red
+      '#8b5cf6', // Violet
+      '#06b6d4', // Cyan
+      '#84cc16', // Lime
+      '#f97316', // Orange
+      '#ec4899', // Pink
+    ];
+    const index = name.charCodeAt(0) % colors.length;
+    return colors[index];
+  };
+
   return (
-    <View style={styles.container}>
+    <GradientBackground variant="subtle">
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
@@ -492,15 +511,24 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
               activeOpacity={0.7}
             >
               <View style={styles.buddyContent}>
-                <View style={styles.buddyIconContainer}>
+                {/* Enhanced Avatar with Colored Circle */}
+                <View style={[
+                  styles.buddyAvatarContainer,
+                  { backgroundColor: getAvatarColor(buddy.name) }
+                ]}>
                   <Text style={styles.buddyInitials}>
                     {buddy.name.charAt(0).toUpperCase()}
                   </Text>
+                  {/* Online Status Dot */}
+                  {buddy.isOnline && (
+                    <View style={styles.onlineStatusDot} />
+                  )}
                 </View>
                 
                 <View style={styles.buddyText}>
                   <View style={styles.buddyNameRow}>
                     <Text style={styles.buddyName}>{buddy.name}</Text>
+                    {/* Secondary Online Indicator */}
                     {buddy.isOnline && (
                       <View style={styles.onlineStatusContainer}>
                         <View style={styles.onlineDot} />
@@ -610,7 +638,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
           </View>
         </Pressable>
       </Modal>
-    </View>
+    </GradientBackground>
   );
 };
 
@@ -797,32 +825,46 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   buddiesList: { flex: 1, padding: spacing.xs },
   buddyCard: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surface, // Use solid theme color instead of glass effect
     borderRadius: borderRadius.sm,
-    marginBottom: 2,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    ...theme.shadows.sm,
+    marginBottom: spacing.xs,
+    marginHorizontal: spacing.xs,
+    borderWidth: 0,
+    // Removed all shadow and glass effects for cleaner look
   },
   buddyContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.sm,
+    padding: spacing.sm, // Reduced from md to sm
+    paddingVertical: spacing.xs, // Additional vertical padding reduction
   },
-  buddyIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.sm,
-    backgroundColor: '#7c3aed15',
+  buddyAvatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.xs,
+    marginRight: spacing.sm,
     position: 'relative',
+    // Removed shadows for cleaner look
   },
   buddyInitials: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#7c3aed',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    // Removed text shadow for cleaner look
+  },
+  onlineStatusDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10b981',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    // Removed shadows for cleaner look
   },
   buddyText: {
     flex: 1,
@@ -830,43 +872,46 @@ const createStyles = (theme: any) => StyleSheet.create({
   buddyNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 1,
+    marginBottom: 0, // Reduced from 1 to 0
     gap: spacing.xs,
   },
   buddyName: {
-    fontSize: 16,
+    fontSize: 15, // Reduced from 16 to 15
     fontWeight: '600',
     color: theme.colors.onSurface,
   },
   onlineStatusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3, // Reduced from 4 to 3
   },
   onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6, // Reduced from 8 to 6
+    height: 6, // Reduced from 8 to 6
+    borderRadius: 3, // Adjusted for new size
     backgroundColor: '#10b981',
   },
   onlineText: {
-    fontSize: 12,
+    fontSize: 11, // Reduced from 12 to 11
     fontWeight: '500',
     color: '#10b981',
   },
   buddySubtitle: {
-    fontSize: 12,
+    fontSize: 11, // Reduced from 12 to 11
     color: theme.colors.onSurfaceVariant,
-    marginBottom: 1,
+    marginBottom: 0, // Reduced from 1 to 0
+    opacity: 0.8, // Added slight opacity for hierarchy
   },
   buddyStatus: {
     fontSize: 10,
     color: theme.colors.onSurfaceVariant,
+    opacity: 0.6, // Reduced opacity for cleaner focus
   },
   buddyActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    paddingLeft: spacing.xs, // Added small padding for better spacing
   },
   buddyHeader: {
     flexDirection: 'row',
@@ -888,16 +933,16 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   unreadBadge: {
     backgroundColor: '#ef4444',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    borderRadius: 6, // Reduced from 8 to 6
+    minWidth: 14, // Reduced from 16 to 14
+    height: 14, // Reduced from 16 to 14
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3, // Reduced from 4 to 3
   },
   unreadBadgeText: {
     color: '#ffffff',
-    fontSize: 9,
+    fontSize: 8, // Reduced from 9 to 8
     fontWeight: 'bold',
   },
   emptyState: { alignItems: 'center', paddingVertical: spacing.xxl },

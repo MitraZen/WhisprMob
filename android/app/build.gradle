@@ -79,12 +79,20 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.whisprmobiletemp"
+    
+    // NDK configuration for 16 KB page size support
+    ndkVersion "25.1.8937393"
     defaultConfig {
         applicationId "com.whisprmobiletemp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 51
-        versionName "1.4.0"
+        versionCode 56
+        versionName "1.4.5"
+        
+        // NDK configuration for 16 KB page size support
+        ndk {
+            abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+        }
         
         // Network configuration
         manifestPlaceholders = [
@@ -118,11 +126,18 @@ android {
         }
     }
     
-    // Network configuration
+    // 16 KB native library alignment for Android 15 compatibility
     packagingOptions {
         pickFirst '**/libc++_shared.so'
         pickFirst '**/libjsc.so'
+        // Enable 16 KB page size support
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
+    
+    // Configure native library alignment for 16 KB page sizes
+    // This is handled by the AndroidManifest.xml extractNativeLibs="false" setting
 }
 
 dependencies {
@@ -131,6 +146,10 @@ dependencies {
 
     // React Native Vector Icons
     implementation project(':react-native-vector-icons')
+
+    // AndroidX Core for modern edge-to-edge support
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
 
     // Firebase dependencies for push notifications
     implementation platform('com.google.firebase:firebase-bom:32.7.0')

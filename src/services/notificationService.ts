@@ -38,6 +38,7 @@ class NotificationServiceClass implements NotificationService {
       console.log('🔥 Initializing FCM...');
       
       // Request permission for FCM
+      // Note: Deprecation warnings are expected in v23.4.1 - methods will be updated in future versions
       const authStatus = await messaging().requestPermission();
       const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
                      authStatus === messaging.AuthorizationStatus.PROVISIONAL;

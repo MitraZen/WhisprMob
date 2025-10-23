@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, BackHandler, RefreshControl, AppState
+  ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, BackHandler, RefreshControl, AppState, Animated
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import LottieView from 'lottie-react-native';
 import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius, getMoodConfig } from '@/utils/themes';
 import { NavigationMenu } from '@/components/NavigationMenu';
@@ -11,6 +12,7 @@ import { BuddiesService, WhisprNote } from '@/services/buddiesService';
 import { CachedBuddiesService } from '@/services/cachedBuddiesService';
 import { useAdmin } from '@/store/AdminContext';
 import { WalkthroughManager } from '@/components/WalkthroughManager';
+import GradientBackground from '@/components/GradientBackground';
 
 interface WhisprNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -31,6 +33,53 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const { enableAdminMode } = useAdmin();
+
+  // Animation refs
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const floatAnim = useRef(new Animated.Value(0)).current;
+
+  // Start animations on mount
+  useEffect(() => {
+    // Pulse animation for Share Your Whispr button
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.05,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    // Floating animation for background elements
+    const floatAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 3000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    pulseAnimation.start();
+    floatAnimation.start();
+
+    return () => {
+      pulseAnimation.stop();
+      floatAnimation.stop();
+    };
+  }, []);
 
   // Load notes
   useEffect(() => {
@@ -292,7 +341,34 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <GradientBackground variant="default">
+      {/* Floating Background Animation */}
+      <Animated.View 
+        style={[
+          styles.floatingAnimation,
+          {
+            opacity: floatAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 0.7],
+            }),
+            transform: [{
+              translateY: floatAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -20],
+              }),
+            }],
+          }
+        ]}
+      >
+        <LottieView
+          source={require('../../assets/animations/Voice line _ wave animation.json')}
+          autoPlay
+          loop
+          style={styles.lottieBackground}
+        />
+      </Animated.View>
+
+      <KeyboardAvoidingView style={styles.contentContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
@@ -495,19 +571,26 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         <View style={styles.demarcationLine} />
       </View>
 
-
-      {/* Start Whispr-ing Button */}
-      <TouchableOpacity
-        style={styles.startWhisperingButtonContainer}
-        onPress={() => onNavigate('sendNote')}
-        activeOpacity={0.8}
+      {/* Share Your Whispr Button */}
+      <Animated.View
+        style={[
+          styles.startWhisperingButtonContainer,
+          {
+            transform: [{ scale: pulseAnim }],
+          }
+        ]}
       >
-        <View style={styles.startWhisperingButtonGradient}>
-          <Icon name="add" size={18} color={theme.colors.onPrimary} style={styles.startIcon} />
-          <Text style={styles.startWhisperingButtonText}>Start Whispr-ing</Text>
-          <Icon name="chevron-forward" size={18} color={theme.colors.onPrimary} style={styles.endIcon} />
-        </View>
-      </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => onNavigate('sendNote')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.startWhisperingButtonGradient}>
+            <Icon name="add" size={18} color={theme.colors.onPrimary} style={styles.startIcon} />
+            <Text style={styles.startWhisperingButtonText}>🪶 Share Your Whispr</Text>
+            <Icon name="chevron-forward" size={18} color={theme.colors.onPrimary} style={styles.endIcon} />
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
 
       <NavigationMenu currentScreen="notes" onNavigate={onNavigate} />
       
@@ -518,12 +601,31 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         context="whispr_notes"
         userId={user?.id}
       />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </GradientBackground>
   );
 };
 
 const createStyles = (theme: any) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
+  container: { 
+    flex: 1, 
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  floatingAnimation: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
+  lottieBackground: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.1,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -531,14 +633,17 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
+    zIndex: 1,
   },
   backButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: theme.colors.surfaceVariant,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backdropFilter: 'blur(10px)',
   },
   headerTitle: {
     ...theme.typography.headlineMedium,

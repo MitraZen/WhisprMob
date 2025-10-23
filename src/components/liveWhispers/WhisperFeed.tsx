@@ -420,14 +420,19 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
       alignItems: 'center',
       padding: spacing.xl,
     },
-    emptyText: {
-      fontSize: 18,
-      color: theme.colors.onSurfaceVariant,
-      textAlign: 'center',
+    emptyEmoji: {
+      fontSize: 48,
       marginBottom: spacing.lg,
     },
+    emptyText: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: theme.colors.onSurface,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+    },
     emptySubtext: {
-      fontSize: 14,
+      fontSize: 16,
       color: theme.colors.onSurfaceVariant,
       textAlign: 'center',
       marginBottom: spacing.xl,
@@ -477,7 +482,7 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
           <Text style={styles.title}>Live Whisprs</Text>
           <TouchableOpacity style={styles.recordButton} onPress={onRecordWhispr}>
             <Icon name="add" size={20} color={theme.colors.onPrimary} />
-            <Text style={styles.recordButtonText}>Record</Text>
+            <Text style={styles.recordButtonText}>📜 Whispr</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.errorContainer}>
@@ -496,19 +501,20 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
         <Text style={styles.title}>Live Whisprs</Text>
         <TouchableOpacity style={styles.recordButton} onPress={onRecordWhispr} testID="record-button">
           <Icon name="add" size={20} color={theme.colors.onPrimary} />
-          <Text style={styles.recordButtonText}>Record</Text>
+          <Text style={styles.recordButtonText}>📜 Whispr</Text>
         </TouchableOpacity>
       </View>
 
       {whisprs.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No whispers nearby</Text>
+          <Text style={styles.emptyEmoji}>💭</Text>
+          <Text style={styles.emptyText}>No whispers near yet</Text>
           <Text style={styles.emptySubtext}>
-            Be the first to share a whisper in your area!
+            Start one?
           </Text>
           <TouchableOpacity style={styles.recordButton} onPress={onRecordWhispr} testID="record-first-button">
             <Icon name="add" size={20} color={theme.colors.onPrimary} />
-            <Text style={styles.recordButtonText}>Record First Whispr</Text>
+            <Text style={styles.recordButtonText}>🪶 Share Your Whispr</Text>
           </TouchableOpacity>
         </View>
       ) : (

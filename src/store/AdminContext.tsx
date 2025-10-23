@@ -34,6 +34,7 @@ interface AdminContextType extends AdminState {
   sendTestMessage: (userId: string, message: string) => Promise<void>;
   simulateUserActivity: (userId: string) => Promise<void>;
   clearFakeNotes: () => Promise<void>;
+  testFCMEdgeFunction: () => Promise<void>;
   // Notification debugging actions
   refreshNotificationDebugInfo: () => Promise<void>;
   testAllNotifications: () => Promise<void>;
@@ -273,6 +274,67 @@ export const AdminProvider: React.FC<AdminProviderProps> = ({ children }) => {
     }
   };
 
+  const testFCMEdgeFunction = async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      
+      // Import supabase for the test
+      const { supabase } = await import('@/config/supabase');
+      
+      // Get a real FCM token from the database
+      const { data: tokens, error: tokenError } = await supabase
+        .from('user_fcm_tokens')
+        .select('fcm_token, user_id')
+        .limit(1);
+      
+      if (tokenError) {
+        throw new Error('Failed to fetch FCM tokens: ' + tokenError.message);
+      }
+      
+      if (!tokens || tokens.length === 0) {
+        throw new Error('No FCM tokens found. Please ensure notifications are enabled.');
+      }
+      
+      const testToken = tokens[0].fcm_token;
+      const userId = tokens[0].user_id;
+      
+      console.log('🔥 Testing FCM Edge Function with token:', testToken.substring(0, 20) + '...');
+      
+      // Test the Edge Function (FCM v1)
+      const { data, error } = await supabase.functions.invoke('send-fcm-notification-v1', {
+        body: {
+          to: testToken,
+          notification: {
+            title: '🔥 FCM Edge Function Test',
+            body: 'This notification was sent via your deployed Edge Function!'
+          },
+          data: {
+            type: 'test',
+            timestamp: new Date().toISOString(),
+            source: 'admin_panel_test',
+            userId: userId
+          }
+        }
+      });
+
+      if (error) {
+        throw new Error('Edge Function Error: ' + JSON.stringify(error));
+      }
+      
+      console.log('🔥 Edge Function Success:', data);
+      Alert.alert(
+        'FCM Test Success!', 
+        'Notification sent successfully via Edge Function!\n\nCheck your device for the notification.\n\nResponse: ' + JSON.stringify(data)
+      );
+      
+    } catch (error) {
+      console.error('🔥 FCM Edge Function Test Error:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'FCM Edge Function Test Failed: ' + error.message });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
   // Notification debugging methods
   const refreshNotificationDebugInfo = async () => {
     try {
@@ -385,6 +447,7 @@ export const AdminProvider: React.FC<AdminProviderProps> = ({ children }) => {
     sendTestMessage,
     simulateUserActivity,
     clearFakeNotes,
+    testFCMEdgeFunction,
     refreshNotificationDebugInfo,
     testAllNotifications,
     sendTestNotificationToUser,

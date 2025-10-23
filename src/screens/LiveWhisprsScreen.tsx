@@ -13,6 +13,7 @@ import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius } from '@/utils/themes';
 import WhisprFeed from '@/components/liveWhispers/WhisperFeed';
 import RecordTextWhisper from '@/components/liveWhispers/RecordTextWhisper';
+import GradientBackground from '@/components/GradientBackground';
 
 type DistanceFilter = '50km' | '100km' | 'beyond';
 
@@ -53,14 +54,15 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <GradientBackground variant="default">
       <StatusBar
         barStyle={theme.isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.colors.surface}
+        backgroundColor="transparent"
+        translucent={true}
       />
       
       {/* Header with Back Button */}
-      <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
+      <View style={[styles.header, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => onNavigate('buddies')}
@@ -75,39 +77,78 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       </View>
       
       {/* Distance Filter Header */}
-      <View style={[styles.filterContainer, { backgroundColor: theme.colors.surface }]}>
+      <View style={[styles.filterContainer, { backgroundColor: 'rgba(255, 255, 255, 0.05)' }]}>
         <Text style={[styles.filterTitle, { color: theme.colors.text }]}>
           Show whisprs within:
         </Text>
         <View style={styles.filterButtons}>
-          {(['50km', '100km', 'beyond'] as DistanceFilter[]).map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={[
-                styles.filterButton,
-                {
-                  backgroundColor: distanceFilter === filter 
-                    ? theme.colors.primary 
-                    : theme.colors.surface,
-                  borderColor: theme.colors.border,
-                }
-              ]}
-              onPress={() => setDistanceFilter(filter)}
-            >
-              <Text
+          {(['50km', '100km', 'beyond'] as DistanceFilter[]).map((filter) => {
+            const getFilterIcon = (filterType: DistanceFilter) => {
+              switch (filterType) {
+                case '50km':
+                  return '📍';
+                case '100km':
+                  return '🌍';
+                case 'beyond':
+                  return '🚀';
+                default:
+                  return '📍';
+              }
+            };
+
+            const getFilterLabel = (filterType: DistanceFilter) => {
+              switch (filterType) {
+                case '50km':
+                  return 'Local';
+                case '100km':
+                  return 'Regional';
+                case 'beyond':
+                  return 'Global';
+                default:
+                  return 'Local';
+              }
+            };
+
+            const isSelected = distanceFilter === filter;
+            
+            return (
+              <TouchableOpacity
+                key={filter}
                 style={[
-                  styles.filterButtonText,
+                  styles.filterButton,
                   {
-                    color: distanceFilter === filter 
-                      ? theme.colors.surface 
-                      : theme.colors.text,
+                    backgroundColor: isSelected 
+                      ? theme.colors.primary 
+                      : 'rgba(255, 255, 255, 0.1)',
+                    borderColor: isSelected 
+                      ? theme.colors.primary 
+                      : 'rgba(255, 255, 255, 0.2)',
+                    shadowColor: isSelected ? theme.colors.primary : 'transparent',
                   }
                 ]}
+                onPress={() => setDistanceFilter(filter)}
+                activeOpacity={0.7}
               >
-                {filter === 'beyond' ? 'Beyond 100km' : filter}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.filterButtonContent}>
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      {
+                        color: isSelected 
+                          ? theme.colors.surface 
+                          : theme.colors.text,
+                      }
+                    ]}
+                  >
+                    {getFilterLabel(filter)}
+                  </Text>
+                  <Text style={styles.filterIcon}>
+                    {getFilterIcon(filter)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -127,7 +168,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
           onClose={handleCloseRecordModal}
         />
       </Modal>
-    </View>
+    </GradientBackground>
   );
 };
 
@@ -144,12 +185,14 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
   },
   backButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: theme.colors.surfaceVariant,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backdropFilter: 'blur(10px)',
   },
   headerTitle: {
     fontSize: 20,
@@ -162,7 +205,8 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
   },
   filterTitle: {
     fontSize: 16,
@@ -171,19 +215,38 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   filterButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
+    justifyContent: 'space-between',
   },
   filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
-    minWidth: 80,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
+    elevation: 1,
+    minHeight: 32,
+  },
+  filterButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   filterButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterIcon: {
     fontSize: 14,
-    fontWeight: '500',
   },
 });
 

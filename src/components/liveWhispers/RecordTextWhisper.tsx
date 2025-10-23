@@ -346,7 +346,7 @@ const RecordTextWhisper: React.FC<RecordTextWhisperProps> = ({
         <ScrollView showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Record Whispr</Text>
+            <Text style={styles.title}>📜 Whispr</Text>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
               <Icon name="close" size={24} color={theme.colors.onBackground} />
             </TouchableOpacity>

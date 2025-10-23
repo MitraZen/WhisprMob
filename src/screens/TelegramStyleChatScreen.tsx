@@ -14,6 +14,7 @@ import {
   DeviceEventEmitter,
   Pressable,
   Animated,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -148,6 +149,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const [reactionsByMessageId, setReactionsByMessageId] = useState<Record<string, Record<string, number>>>({});
   const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   
   // Reply state
   const [repliesByMessageId, setRepliesByMessageId] = useState<Record<string, ReplyInfo>>({});
@@ -186,6 +188,36 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     }, 30000); // Clear every 30 seconds
     
     return () => clearInterval(cleanupInterval);
+  }, []);
+
+  // Handle keyboard events
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        // Scroll to bottom when keyboard appears
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        // Optional: scroll to bottom when keyboard hides
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
   }, []);
 
   // Listen for real-time message updates
@@ -735,8 +767,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        enabled={true}
       >
       {/* Header */}
         <View style={styles.header}>
@@ -819,7 +852,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       )}
 
       {/* Input */}
-      <View style={styles.inputContainer}>
+      <View style={[
+        styles.inputContainer,
+        keyboardVisible && Platform.OS === 'android' && styles.inputContainerKeyboardVisible
+      ]}>
         <TextInput
           style={[styles.textInput, { color: getTextInputColor(theme) }]}
           value={newMessage}
@@ -828,6 +864,14 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           placeholderTextColor={getPlaceholderTextColor(theme)}
           multiline
           maxLength={1000}
+          onFocus={() => {
+            // Scroll to bottom when input is focused
+            setTimeout(() => {
+              scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }}
+          blurOnSubmit={false}
+          returnKeyType="default"
         />
         <TouchableOpacity
           style={[
@@ -984,6 +1028,8 @@ const createStyles = (theme: any) => StyleSheet.create({
   messagesContent: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    flexGrow: 1,
+    paddingBottom: 20, // Extra padding at bottom for better scrolling
   },
   loadingContainer: {
     flex: 1,
@@ -1076,11 +1122,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingVertical: 12,
     backgroundColor: theme.colors.surface,
     borderTopWidth: 0.5,
     borderTopColor: theme.colors.border,
-    minHeight: 60,
+    minHeight: 70,
     shadowColor: theme.colors.text,
     shadowOffset: {
       width: 0,
@@ -1089,17 +1135,23 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowOpacity: theme.isDark ? 0.3 : 0.05,
     shadowRadius: 2,
     elevation: 1,
-    // Ensure input is always visible
+    // Ensure input is always visible above keyboard
     zIndex: 1000,
+    position: 'relative',
+    marginBottom: Platform.OS === 'android' ? 10 : 0,
+  },
+  inputContainerKeyboardVisible: {
+    marginBottom: Platform.OS === 'android' ? 20 : 0,
+    paddingBottom: Platform.OS === 'android' ? 20 : 12,
   },
   textInput: {
     flex: 1,
     fontSize: 15,
     maxHeight: 100,
-    minHeight: 40,
+    minHeight: 44,
     marginRight: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: theme.colors.surfaceVariant,
     borderRadius: 20,
     textAlignVertical: 'top',

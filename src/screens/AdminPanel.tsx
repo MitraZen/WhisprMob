@@ -43,6 +43,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     sendTestMessage,
     simulateUserActivity,
     clearFakeNotes,
+    testFCMEdgeFunction,
   } = useAdmin();
 
   const [adminPassword, setAdminPassword] = useState('');
@@ -402,6 +403,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </TouchableOpacity>
         </View>
 
+        {/* FCM Edge Function Test */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>FCM Edge Function Test</Text>
+          <Text style={styles.sectionDescription}>
+            Test your deployed FCM Edge Function by sending a notification to your device.
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.fcmTestButton]} 
+            onPress={testFCMEdgeFunction}
+            disabled={isLoading}
+          >
+            <Text style={styles.actionButtonText}>
+              {isLoading ? 'Testing...' : '🔥 Test FCM Edge Function'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Statistics Display */}
         {showDebugInfo && (
           <View style={styles.section}>
@@ -594,6 +613,9 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  fcmTestButton: {
+    backgroundColor: '#ff6b35', // Orange color for FCM test
   },
   dangerButton: {
     backgroundColor: '#ef4444',

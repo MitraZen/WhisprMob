@@ -88,3 +88,5 @@ java_pid*.hprof
 *.pdf
 *.txt
 *.csv
+#powershell scripts
+*.ps1
