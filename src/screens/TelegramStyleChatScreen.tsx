@@ -1118,7 +1118,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     elevation: 1,
     // Ensure input is always visible above keyboard
     zIndex: 1000,
-    position: 'relative',
+    //position: 'relative',
   },
   //inputContainerKeyboardVisible: {
   //  paddingBottom: Platform.OS === 'android' ? 6 : 12, // Minimal padding when keyboard is visible
@@ -1142,7 +1142,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   messagesContent: {
     paddingHorizontal: 16,
     paddingTop: 8,           // ✅ Changed from paddingVertical
-    paddingBottom: 100,      // ✅ Now this won't conflict
+    paddingBottom: 16,      // ✅ Now this won't conflict
     flexGrow: 1,
   },
   sendButton: {

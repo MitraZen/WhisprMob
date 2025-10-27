@@ -86,8 +86,8 @@ android {
             applicationId "com.whisprmobiletemp"
             minSdkVersion rootProject.ext.minSdkVersion
             targetSdkVersion rootProject.ext.targetSdkVersion
-            versionCode 81
-            versionName "1.7.0"
+            versionCode 88
+            versionName "1.7.7"
         
         // NDK configuration for 16 KB page size support
         ndk {
