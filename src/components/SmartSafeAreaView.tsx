@@ -49,7 +49,6 @@ export const SmartSafeAreaView: React.FC<SmartSafeAreaViewProps> = ({
   const shouldShowDebugBorder = __DEV__ && showDebugBorder;
 
   const isAndroid = Platform.OS === 'android';
-  const isOnePlus = isAndroid && DeviceInfo?.getBrand()?.toLowerCase() === 'oneplus';
 
   useEffect(() => {
     // 🔧 Ensure adjustResize is active for OnePlus/Oppo devices
@@ -65,7 +64,7 @@ export const SmartSafeAreaView: React.FC<SmartSafeAreaViewProps> = ({
   // 🧩 Normalize top/bottom padding for buggy Android OEMs
   const normalizedInsets = {
     top: isAndroid ? Math.min(insets.top, 24) : insets.top, // limit excessive top inset
-    bottom: isOnePlus ? 8 : Math.max(insets.bottom || 10, 12), // remove bottom padding on OnePlus, ensure minimum 12px for others
+    bottom: isAndroid ? 0 : insets.bottom, // Use 0 for all Android devices - let native adjustResize handle it
   };
 
   const safeAreaStyle = [
@@ -101,9 +100,8 @@ export const SmartSafeAreaView: React.FC<SmartSafeAreaViewProps> = ({
     return (
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? keyboardOffset : 0}
-        enabled={Platform.OS === 'ios' ? true : !isOnePlus} // Disable for OnePlus
       >
         {content}
       </KeyboardAvoidingView>

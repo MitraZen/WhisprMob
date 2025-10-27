@@ -13,7 +13,6 @@ import {
   DeviceEventEmitter,
   Pressable,
   Animated,
-  Keyboard,
 } from 'react-native';
 import { SmartSafeAreaView } from '@/components/SmartSafeAreaView';
 import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -148,7 +147,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const [reactionsByMessageId, setReactionsByMessageId] = useState<Record<string, Record<string, number>>>({});
   const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
   
   // Reply state
   const [repliesByMessageId, setRepliesByMessageId] = useState<Record<string, ReplyInfo>>({});
@@ -208,36 +206,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     }, 30000); // Clear every 30 seconds
     
     return () => clearInterval(cleanupInterval);
-  }, []);
-
-  // Handle keyboard events
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => {
-        setKeyboardVisible(true);
-        // Scroll to bottom when keyboard appears
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      }
-    );
-
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        setKeyboardVisible(false);
-        // Optional: scroll to bottom when keyboard hides
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      }
-    );
-
-    return () => {
-      keyboardDidShowListener.remove();
-      keyboardDidHideListener.remove();
-    };
   }, []);
 
   // Listen for real-time message updates
@@ -826,6 +794,8 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         ref={scrollViewRef}
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
       >
         {isLoading ? (
@@ -870,10 +840,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       )}
 
       {/* Input */}
-      <View style={[
-        styles.inputContainer,
-        keyboardVisible && Platform.OS === 'android' && styles.inputContainerKeyboardVisible
-      ]}>
+      <View style={styles.inputContainer}>
         <TextInput
           style={[styles.textInput, { color: getTextInputColor(theme) }]}
           value={newMessage}
@@ -890,8 +857,8 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           }}
           blurOnSubmit={false}
           returnKeyType="default"
-          textAlignVertical="top" // Better alignment for OnePlus
-          scrollEnabled={true} // Enable scrolling for long text
+          textAlignVertical="top"
+          scrollEnabled={true}
         />
         <TouchableOpacity
           style={[
@@ -1044,12 +1011,6 @@ const createStyles = (theme: any) => StyleSheet.create({
   messagesContainer: {
     flex: 1,
   },
-  messagesContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    flexGrow: 1,
-    paddingBottom: 20, // Extra padding at bottom for better scrolling
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1141,11 +1102,12 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'android' ? 6 : 12, // Further reduced padding for Android
+    paddingVertical: 8,
+    paddingBottom: 8, // ✅ Consistent minimal padding
     backgroundColor: theme.colors.surface,
     borderTopWidth: 0.5,
     borderTopColor: theme.colors.border,
-    minHeight: Platform.OS === 'android' ? 60 : 70, // Further reduced minHeight for Android
+    minHeight: 60,
     shadowColor: theme.colors.text,
     shadowOffset: {
       width: 0,
@@ -1158,10 +1120,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     zIndex: 1000,
     position: 'relative',
   },
-  inputContainerKeyboardVisible: {
-    paddingBottom: Platform.OS === 'android' ? 6 : 12, // Minimal padding when keyboard is visible
-    paddingTop: Platform.OS === 'android' ? 6 : 12, // Reduced top padding
-  },
+  //inputContainerKeyboardVisible: {
+  //  paddingBottom: Platform.OS === 'android' ? 6 : 12, // Minimal padding when keyboard is visible
+  //  paddingTop: Platform.OS === 'android' ? 6 : 12, // Reduced top padding
+  //},
   textInput: {
     flex: 1,
     fontSize: 15,
@@ -1176,6 +1138,12 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderWidth: 0.5,
     borderColor: theme.colors.border,
     color: theme.colors.onSurface,
+  },
+  messagesContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,           // ✅ Changed from paddingVertical
+    paddingBottom: 100,      // ✅ Now this won't conflict
+    flexGrow: 1,
   },
   sendButton: {
     width: 44,
