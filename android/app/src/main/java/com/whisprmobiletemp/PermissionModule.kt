@@ -217,4 +217,13 @@ class PermissionModule(reactContext: ReactApplicationContext) : ReactContextBase
         }
         return false
     }
+
+    @ReactMethod
+    fun openBatteryOptimizationSettings() {
+        try {
+            permissionManager.openBatteryOptimizationSettings()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

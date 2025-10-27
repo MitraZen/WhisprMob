@@ -3,8 +3,11 @@ package com.whisprmobiletemp
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
@@ -212,6 +215,33 @@ class PermissionManager(private val context: Context) {
                 }
             }
             else -> false
+        }
+    }
+
+    fun openBatteryOptimizationSettings() {
+        try {
+            val packageName = context.packageName
+            val intent = Intent()
+            
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                    intent.action = "android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+                    intent.data = Uri.parse("package:$packageName")
+                }
+                else -> {
+                    intent.action = "android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS"
+                }
+            }
+            
+            if (intent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(intent)
+            } else {
+                // Fallback: open general settings
+                val fallbackIntent = Intent("android.settings.SETTINGS")
+                context.startActivity(fallbackIntent)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

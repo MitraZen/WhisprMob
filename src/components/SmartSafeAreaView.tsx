@@ -63,8 +63,8 @@ export const SmartSafeAreaView: React.FC<SmartSafeAreaViewProps> = ({
 
   // 🧩 Normalize top/bottom padding for buggy Android OEMs
   const normalizedInsets = {
-    top: isAndroid ? Math.min(insets.top, 24) : insets.top, // limit excessive top inset
-    bottom: isAndroid ? 0 : insets.bottom, // Use 0 for all Android devices - let native adjustResize handle it
+    top: isAndroid ? 0 : insets.top, // Use 0 for Android - let SafeAreaView handle it
+    bottom: isAndroid ? 0 : insets.bottom, // Use 0 for Android - let native adjustResize handle it
   };
 
   const safeAreaStyle = [
@@ -78,7 +78,7 @@ export const SmartSafeAreaView: React.FC<SmartSafeAreaViewProps> = ({
   ];
 
   const content = (
-    <SafeAreaView style={safeAreaStyle} edges={edges}>
+    <SafeAreaView style={safeAreaStyle} edges={isAndroid ? [] : edges}>
       <StatusBar barStyle="dark-content" backgroundColor={backgroundColor} />
       {children}
       {shouldShowDebugBorder && (

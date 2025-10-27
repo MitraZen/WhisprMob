@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AppState, AppStateStatus, Alert, Platform } from 'react-native';
+import { AppState, AppStateStatus, Alert, Platform, NativeModules } from 'react-native';
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         Alert.alert(
           'Enable Notifications',
-          'Whispr needs notification permission to alert you about new messages and notes. Would you like to enable notifications?',
+          'Whispr needs notification permission to alert you about new messages and notes. You\'ll miss important updates without it.\n\nEnable notifications now?',
           [
             {
               text: 'Not Now',
@@ -92,8 +92,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               onPress: async () => {
                 try {
                   console.log('User accepted notification permissions - requesting...');
-                  await notificationService.testNotification();
+                  await notificationService.requestNotificationPermission();
                   console.log('Notification permission request completed');
+                  
+                  // Show battery optimization prompt after notification permission
+                  setTimeout(() => {
+                    showBatteryOptimizationPrompt();
+                  }, 1000);
                 } catch (error) {
                   console.error('Error requesting notification permissions:', error);
                 }
@@ -107,6 +112,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error) {
       console.error('Error checking notification permissions:', error);
+    }
+  };
+
+  // Show battery optimization prompt for better experience
+  const showBatteryOptimizationPrompt = () => {
+    if (Platform.OS === 'android') {
+      Alert.alert(
+        'Optimize Battery Settings',
+        'For the best Whispr experience, please disable battery optimization. This ensures you receive notifications promptly and messages are delivered reliably.\n\nWould you like to adjust your battery settings?',
+        [
+          {
+            text: 'Maybe Later',
+            style: 'cancel',
+            onPress: () => {
+              console.log('User skipped battery optimization');
+            }
+          },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              try {
+                console.log('Opening battery optimization settings...');
+                // Try to open battery optimization settings directly
+                if (NativeModules.PermissionModule) {
+                  NativeModules.PermissionModule.openBatteryOptimizationSettings();
+                } else {
+                  console.warn('PermissionModule not available');
+                }
+              } catch (error) {
+                console.error('Error opening battery settings:', error);
+              }
+            }
+          }
+        ],
+        { cancelable: true }
+      );
     }
   };
 

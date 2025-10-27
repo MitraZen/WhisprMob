@@ -349,12 +349,12 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           {
             opacity: floatAnim.interpolate({
               inputRange: [0, 1],
-              outputRange: [0.3, 0.7],
+              outputRange: [0.6, 1.0],
             }),
             transform: [{
               translateY: floatAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, -20],
+                outputRange: [0, -30],
               }),
             }],
           }
@@ -624,7 +624,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   lottieBackground: {
     width: '100%',
     height: '100%',
-    opacity: 0.1,
+    opacity: 0.4,
   },
   header: {
     flexDirection: 'row',
