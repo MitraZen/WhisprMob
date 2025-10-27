@@ -100,8 +100,8 @@ export const SmartSafeAreaView: React.FC<SmartSafeAreaViewProps> = ({
     return (
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior="padding"
-        keyboardVerticalOffset={Platform.OS === 'ios' ? keyboardOffset : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? keyboardOffset : keyboardOffset}
       >
         {content}
       </KeyboardAvoidingView>

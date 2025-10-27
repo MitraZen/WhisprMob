@@ -24,7 +24,6 @@ import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView'
 import { getTextInputColor, getPlaceholderTextColor } from '@/utils/textColorUtils';
 import { messageReactionsService, Emoji } from '@/services/messageReactionsService';
 import { messageRepliesService, ReplyInfo } from '@/services/messageRepliesService';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -791,14 +790,12 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       </View>
 
       {/* Messages */}
-      <KeyboardAwareScrollView
+      <ScrollView
         ref={scrollViewRef}
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
         keyboardShouldPersistTaps="handled"
-        enableOnAndroid={true}
-        extraScrollHeight={Platform.OS === 'android' ? 20 : 0}
-        showsVerticalScrollIndicator={false}
+        keyboardDismissMode="interactive"
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
       >
         {isLoading ? (
@@ -819,7 +816,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             </View>
           ))
         )}
-      </KeyboardAwareScrollView>
+      </ScrollView>
 
       {/* Reply Context */}
       {replyingToMessage && (
@@ -1118,11 +1115,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     },
     shadowOpacity: theme.isDark ? 0.3 : 0.05,
     shadowRadius: 2,
-    flexShrink: 0, // ✅ ensures it doesn’t compress off-screen 
     elevation: 1,
     // Ensure input is always visible above keyboard
     zIndex: 1000,
-    //position: 'relative',
+    position: 'relative',
   },
   //inputContainerKeyboardVisible: {
   //  paddingBottom: Platform.OS === 'android' ? 6 : 12, // Minimal padding when keyboard is visible
