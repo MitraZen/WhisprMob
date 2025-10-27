@@ -30,7 +30,8 @@ export class FCMReliabilityService {
     title: string,
     body: string,
     data?: { [key: string]: string },
-    retryCount: number = 0
+    retryCount: number = 0,
+    checkOnlineStatus: boolean = false
   ): Promise<FCMDeliveryResult> {
     try {
       console.log(`🔥 [Attempt ${retryCount + 1}] Sending FCM notification to user:`, userId);
@@ -51,7 +52,8 @@ export class FCMReliabilityService {
         tokenInfo.token,
         title,
         body,
-        data
+        data,
+        checkOnlineStatus
       );
 
       if (result.success) {
@@ -146,7 +148,8 @@ export class FCMReliabilityService {
     token: string,
     title: string,
     body: string,
-    data?: { [key: string]: string }
+    data?: { [key: string]: string },
+    checkOnlineStatus: boolean = false
   ): Promise<FCMDeliveryResult> {
     const timeoutPromise = new Promise<FCMDeliveryResult>((_, reject) => {
       setTimeout(() => reject(new Error('FCM request timeout')), 10000); // 10 second timeout
@@ -156,7 +159,8 @@ export class FCMReliabilityService {
       body: {
         to: token,
         notification: { title, body },
-        data: data || {}
+        data: { ...data, userId },
+        checkOnlineStatus
       }
     });
 
@@ -167,6 +171,15 @@ export class FCMReliabilityService {
         return {
           success: false,
           error: result.error.message || 'FCM Edge Function error',
+          fcmResponse: result.data
+        };
+      }
+
+      // Handle server-side online status check response
+      if (result.data?.reason === 'user_online') {
+        return {
+          success: false,
+          error: 'user_online', // Special error code for online users
           fcmResponse: result.data
         };
       }

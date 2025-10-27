@@ -96,12 +96,43 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
 
     const handleBuddyUpdated = (updatedBuddy: any) => {
       console.log('🔄 Real-time buddy update received:', updatedBuddy);
+      // console.log('🔄 [DEBUG] Updated buddy keys:', Object.keys(updatedBuddy));
+      // console.log('🔄 [DEBUG] unread_count value:', updatedBuddy.unread_count);
+      // console.log('🔄 [DEBUG] last_message value:', updatedBuddy.last_message);
+      
+      // Transform database field names to app field names
+      const transformedBuddy = {
+        id: updatedBuddy.id,
+        name: updatedBuddy.name,
+        lastMessage: updatedBuddy.last_message,
+        lastMessageTime: updatedBuddy.last_message_time ? new Date(updatedBuddy.last_message_time) : undefined,
+        unreadCount: updatedBuddy.unread_count || 0,
+        isOnline: updatedBuddy.is_online || false,
+        status: updatedBuddy.status || 'active',
+        mood: updatedBuddy.mood || undefined,
+        isPinned: updatedBuddy.is_pinned || false,
+        initials: updatedBuddy.initials,
+        avatar: updatedBuddy.avatar_url,
+        buddyUserId: updatedBuddy.buddy_user_id,
+        createdAt: new Date(updatedBuddy.created_at),
+        updatedAt: new Date(updatedBuddy.updated_at),
+      };
+      
+      // console.log('🔄 [DEBUG] Transformed buddy:', transformedBuddy);
+      // console.log('🔄 [DEBUG] Transformed unreadCount:', transformedBuddy.unreadCount);
+      
       // Update the specific buddy in the local state
-      setBuddies(prevBuddies => 
-        prevBuddies.map(buddy => 
-          buddy.id === updatedBuddy.id ? { ...buddy, ...updatedBuddy } : buddy
-        )
-      );
+      setBuddies(prevBuddies => {
+        const updatedBuddies = prevBuddies.map(buddy => {
+          if (buddy.id === transformedBuddy.id) {
+            // console.log('🔄 [DEBUG] Updating existing buddy:', { old: buddy, new: transformedBuddy });
+            return transformedBuddy;
+          }
+          return buddy;
+        });
+        // console.log('🔄 [DEBUG] Total buddies after update:', updatedBuddies.length);
+        return updatedBuddies;
+      });
     };
 
     const handleBuddiesUpdated = (eventData: any) => {
@@ -109,6 +140,14 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
       // Force immediate refresh when buddies are updated
       console.log('🔄 Forcing immediate buddy list refresh due to buddies-updated event');
       loadBuddies(false); // Silent refresh to get latest data
+    };
+
+    const handleMessageUpdated = (eventData: any) => {
+      console.log('💬 Message-updated event received:', eventData);
+      // Don't manually refresh - rely on realtime buddy UPDATE events instead
+      // The database trigger will update unread_count in buddies table,
+      // which will trigger a realtime UPDATE event via handleBuddyUpdated
+      console.log('⏭️ Relying on realtime buddy UPDATE events for unread count updates');
     };
 
     // Subscribe to real-time notifications
@@ -131,12 +170,17 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
     const buddiesUpdatedSubscription = DeviceEventEmitter.addListener('buddies-updated', handleBuddiesUpdated);
     console.log('🔔 Subscribed to buddies-updated events for immediate refresh');
 
+    // Subscribe to message-updated events to refresh unread counts
+    const messageUpdatedSubscription = DeviceEventEmitter.addListener('message-updated', handleMessageUpdated);
+    console.log('🔔 Subscribed to message-updated events for unread count updates');
+
     // Cleanup on unmount
     return () => {
       console.log('🔕 Cleaning up real-time buddy notifications');
       BuddyRealtimeService.unsubscribeFromBuddyNotifications(user.id);
       deviceEventCleanup();
       buddiesUpdatedSubscription.remove();
+      messageUpdatedSubscription.remove();
     };
   }, [user?.id]);
 
@@ -536,7 +580,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
                       </View>
                     )}
                   </View>
-                  <Text style={styles.buddySubtitle}>
+                  <Text style={styles.buddySubtitle} numberOfLines={1} ellipsizeMode="tail">
                     {buddy.lastMessage || 'No messages yet'}
                   </Text>
                   <Text style={styles.buddyStatus}>

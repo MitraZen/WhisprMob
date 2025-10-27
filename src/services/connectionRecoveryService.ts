@@ -41,14 +41,14 @@ class ConnectionRecoveryService {
   };
 
   private config: ConnectionRecoveryConfig = {
-    maxRetries: 5,
-    baseRetryDelay: 1000,
+    maxRetries: 8, // Increased for better resilience
+    baseRetryDelay: 500, // Faster initial retry
     maxRetryDelay: 30000,
-    exponentialBackoffMultiplier: 2,
-    healthCheckInterval: 10000,
-    connectionTimeout: 5000,
-    circuitBreakerThreshold: 3,
-    circuitBreakerTimeout: 300000, // 5 minutes
+    exponentialBackoffMultiplier: 1.5, // Smoother backoff
+    healthCheckInterval: 5000, // More frequent health checks
+    connectionTimeout: 3000, // Faster timeout
+    circuitBreakerThreshold: 5, // More tolerant
+    circuitBreakerTimeout: 30000, // Shorter circuit breaker timeout
   };
 
   private stateChangeCallbacks: ConnectionStateChangeCallback[] = [];

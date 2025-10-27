@@ -6,6 +6,7 @@ import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { BuddiesService } from '@/services/buddiesService';
 import { notificationService } from '@/services/notificationService';
 import BiometricService from '@/services/biometricService';
+import { supabase } from '@/config/supabase';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -111,6 +112,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     checkAuthStatus();
+    
+    // Set up Supabase auth state change listener for FCM token management
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔐 Supabase auth state changed:', event, session?.user?.id);
+      
+      if (event === 'SIGNED_IN' && session?.user) {
+        console.log('🔐 User signed in via Supabase - saving FCM token');
+        try {
+          await notificationService.saveFCMTokenWhenAuthenticated(session.user.id);
+        } catch (error) {
+          console.error('❌ Error saving FCM token on auth state change:', error);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        console.log('🔐 User signed out via Supabase - clearing FCM token');
+        try {
+          await notificationService.clearFCMTokenOnLogout();
+        } catch (error) {
+          console.error('❌ Error clearing FCM token on auth state change:', error);
+        }
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        console.log('🔐 Token refreshed - ensuring FCM token is saved');
+        try {
+          await notificationService.saveFCMTokenWhenAuthenticated(session.user.id);
+        } catch (error) {
+          console.error('❌ Error saving FCM token on token refresh:', error);
+        }
+      }
+    });
+    
+    // Cleanup subscription on unmount
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   // AppState listener for hybrid notification services - Phase 2
@@ -194,9 +228,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Step 3: Start hybrid notification service (realtime + polling fallback)
       await notificationManager.startNotificationService(userId);
       
-      // Step 4: Save FCM token now that user is authenticated
+      // Step 4: Initialize FCM (with defensive guard) now that user is authenticated
       const { notificationService } = await import('@/services/notificationService');
-      await notificationService.saveFCMTokenWhenAuthenticated(userId);
+      await notificationService.initializeFCMAfterLogin(userId);
       
       console.log('✅ AuthContext - All services initialized successfully (cache + realtime + notifications)');
     } catch (error) {
@@ -357,6 +391,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await stopNotificationServicesSafely();
       
       if (state.user) {
+        // Clear FCM token from database
+        await notificationService.clearFCMTokenOnLogout(state.user.id);
+        
         // Update user's online status to false
         await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
         // Sync online status to buddies table

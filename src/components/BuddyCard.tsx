@@ -53,7 +53,7 @@ export const BuddyCard: React.FC<BuddyCardProps> = ({
             </View>
           </View>
           
-          <Text style={styles.lastMessage} numberOfLines={1}>
+          <Text style={styles.lastMessage} numberOfLines={1} ellipsizeMode="tail">
             {buddy.lastMessage || 'No messages yet'}
           </Text>
         </View>

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   Alert,
   Modal,
@@ -16,7 +15,7 @@ import {
   Animated,
   Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SmartSafeAreaView } from '@/components/SmartSafeAreaView';
 import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
@@ -159,6 +158,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   useEffect(() => {
     // Profile view state monitoring removed
   }, [showProfileView]);
+  
   const scrollViewRef = useRef<ScrollView>(null);
   const processingMessages = useRef<Set<string>>(new Set());
 
@@ -166,8 +166,28 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   useEffect(() => {
     if (buddy?.id && user?.id) {
       loadMessages();
+      
+      // Mark messages as read when chat is opened
+      const markAsRead = async () => {
+        try {
+          const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
+          console.log('📖 Marking messages as read for buddy:', buddy.id);
+          await CachedBuddiesService.markMessagesAsRead(buddy.id, user.id);
+          console.log('✅ Messages marked as read');
+          
+          // Notify parent if callback provided
+          if (onMessagesRead) {
+            onMessagesRead(buddy.id);
+          }
+        } catch (error) {
+          console.error('❌ Error marking messages as read:', error);
+        }
+      };
+      
+      // Mark as read after a short delay to ensure messages are loaded
+      setTimeout(markAsRead, 500);
     }
-  }, [buddy?.id, user?.id]);
+  }, [buddy?.id, user?.id, onMessagesRead]);
 
   // Set active chat when component mounts and clear when unmounts
   useEffect(() => {
@@ -764,12 +784,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        enabled={true}
+      <SmartSafeAreaView 
+        style={styles.safeArea}
+        enableKeyboardAvoid={true}
+        componentType="screen"
       >
       {/* Header */}
         <View style={styles.header}>
@@ -872,6 +890,8 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           }}
           blurOnSubmit={false}
           returnKeyType="default"
+          textAlignVertical="top" // Better alignment for OnePlus
+          scrollEnabled={true} // Enable scrolling for long text
         />
         <TouchableOpacity
           style={[
@@ -885,7 +905,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             <Icon name="send" size={20} color="white" />
         </TouchableOpacity>
       </View>
-      </KeyboardAvoidingView>
       
       {/* Profile Modal */}
       <EnhancedBuddyProfileView
@@ -944,7 +963,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           </View>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </SmartSafeAreaView>
     </GestureHandlerRootView>
   );
 };
@@ -962,7 +981,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingVertical: Platform.OS === 'android' ? 4 : 4, // Reduced padding for Android
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 0.5,
     borderBottomColor: theme.colors.border,
@@ -987,7 +1006,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   usernameButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: Platform.OS === 'android' ? 2 : 4, // Reduced padding for Android
     paddingHorizontal: 8,
     borderRadius: 8,
     backgroundColor: theme.colors.surfaceVariant,
@@ -1122,11 +1141,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'android' ? 6 : 12, // Further reduced padding for Android
     backgroundColor: theme.colors.surface,
     borderTopWidth: 0.5,
     borderTopColor: theme.colors.border,
-    minHeight: 70,
+    minHeight: Platform.OS === 'android' ? 60 : 70, // Further reduced minHeight for Android
     shadowColor: theme.colors.text,
     shadowOffset: {
       width: 0,
@@ -1138,11 +1157,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     // Ensure input is always visible above keyboard
     zIndex: 1000,
     position: 'relative',
-    marginBottom: Platform.OS === 'android' ? 10 : 0,
   },
   inputContainerKeyboardVisible: {
-    marginBottom: Platform.OS === 'android' ? 20 : 0,
-    paddingBottom: Platform.OS === 'android' ? 20 : 12,
+    paddingBottom: Platform.OS === 'android' ? 6 : 12, // Minimal padding when keyboard is visible
+    paddingTop: Platform.OS === 'android' ? 6 : 12, // Reduced top padding
   },
   textInput: {
     flex: 1,
@@ -1151,7 +1169,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     minHeight: 44,
     marginRight: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: Platform.OS === 'android' ? 12 : 14, // Reduced padding for Android
     backgroundColor: theme.colors.surfaceVariant,
     borderRadius: 20,
     textAlignVertical: 'top',

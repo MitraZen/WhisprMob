@@ -2,6 +2,7 @@ import { notificationService } from './notificationService';
 import { BuddiesService } from './buddiesService';
 import { realtimeService } from './realtimeService';
 import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
+import { supabase } from '../config/supabase';
 
 interface NotificationManager {
   startNotificationService: (userId: string) => Promise<void>;
@@ -43,6 +44,9 @@ class NotificationManagerClass implements NotificationManager {
   private initializationPromise: Promise<void> | null = null; // Prevent multiple simultaneous initializations
   private connectionStateUnsubscribe: (() => void) | null = null;
   private isConnectionRecoveryEnabled = true;
+  private lastPollingTime: number = 0;
+  private pollingCooldown = 30000; // 30 seconds between polls
+  private lastAppActiveTime: number = 0; // Track when app was last active
 
       async startNotificationService(userId: string): Promise<void> {
         // Prevent multiple simultaneous initializations
@@ -90,7 +94,7 @@ class NotificationManagerClass implements NotificationManager {
         try {
           // Initialize FCM after user login
           console.log('🔥 Initializing FCM for user:', userId);
-          await notificationService.initializeFCMAfterLogin();
+          await notificationService.initializeFCMAfterLogin(userId);
           
           // Try realtime first (now with WebSocket polyfill)
           const realtimeSuccess = await realtimeService.initialize(userId);
@@ -143,6 +147,19 @@ class NotificationManagerClass implements NotificationManager {
     }
   }
 
+  private getOptimalPollingInterval(): number {
+    // Dynamic polling based on connection health and mode
+    if (this.fallbackMode) {
+      return 15000; // 15 seconds in fallback mode (reduced from 30s)
+    }
+    
+    if (this.performanceMetrics.realtimeSuccessRate < 0.8) {
+      return 30000; // 30 seconds if realtime is unreliable
+    }
+    
+    return 60000; // 1 minute if realtime is healthy (increased from 30s)
+  }
+
   private startPollingInternal(userId: string): void {
     if (this.pollingActive) {
       this.stopPollingInternal();
@@ -155,15 +172,25 @@ class NotificationManagerClass implements NotificationManager {
     this.lastMessageIds = {};
     this.lastNoteIds = [];
     
-    // Use shorter interval in fallback mode
-    const interval = this.fallbackMode ? 15000 : 30000;
+    // Use dynamic interval based on connection health
+    const interval = this.getOptimalPollingInterval();
     
     this.pollingInterval = setInterval(async () => {
-      await this.checkForNewMessages();
-      await this.checkForNewNotes();
+      try {
+        await this.checkForNewMessages();
+        await this.checkForNewNotes();
+        
+        // Update performance metrics
+        this.updatePerformanceMetrics();
+        
+        console.log(`📡 Polling cycle completed (${interval}ms interval)`);
+      } catch (error) {
+        console.error('❌ Polling cycle error:', error);
+        this.performanceMetrics.fallbackActivations++;
+      }
     }, interval);
 
-    console.log(`🔄 Notification polling started (${this.fallbackMode ? 'fallback' : 'primary'} mode, ${interval}ms interval)`);
+    console.log(`📡 Notification polling started (${this.fallbackMode ? 'fallback' : 'primary'} mode, ${interval}ms interval)`);
   }
 
   private startPollingPublic(userId: string): void {
@@ -340,6 +367,7 @@ class NotificationManagerClass implements NotificationManager {
 
   async optimizeForForeground(): Promise<void> {
     console.log('☀️ Optimizing for foreground mode...');
+    this.lastAppActiveTime = Date.now(); // Track when app became active
     
     if (this.fallbackMode && this.pollingActive) {
       // Check cooldown before attempting realtime reconnection
@@ -381,8 +409,24 @@ class NotificationManagerClass implements NotificationManager {
   }
 
   // Keep existing polling methods as fallback
+  /**
+   * Public method to poll for new messages (Phase 3: Direct Wake-up)
+   */
+  async pollForNewMessages(): Promise<void> {
+    console.log('🔄 Polling for new messages...');
+    await this.checkForNewMessages();
+    await this.checkForNewNotes();
+  }
+
   private async checkForNewMessages(): Promise<void> {
     if (!this.userId) return;
+    
+    // Check cooldown to prevent too frequent polling
+    const now = Date.now();
+    if (this.lastPollingTime && (now - this.lastPollingTime) < this.pollingCooldown) {
+      console.log(`⏳ Polling cooldown active, skipping check (${Math.round((this.pollingCooldown - (now - this.lastPollingTime)) / 1000)}s remaining)`);
+      return;
+    }
 
     try {
       const buddies = await BuddiesService.getBuddies(this.userId);
@@ -391,18 +435,47 @@ class NotificationManagerClass implements NotificationManager {
       for (const buddy of limitedBuddies) {
         try {
           const messages = await BuddiesService.getMessages(buddy.id, this.userId);
-          const newMessages = messages.filter(msg => 
-            msg.senderId !== this.userId && 
-            !this.lastMessageIds[buddy.id]?.includes(msg.id)
-          );
+          const now = Date.now();
+          const lastPollTime = this.lastPollingTime || (now - 60000); // Default to 1 minute ago if never polled
+          
+          const newMessages = messages.filter(msg => {
+            // Only process messages from other users
+            if (msg.senderId === this.userId) return false;
+            
+            // Check if message is newer than last polling time
+            const messageTime = new Date(msg.created_at || msg.timestamp).getTime();
+            const isNewByTime = messageTime > lastPollTime;
+            
+            // Also check if not already processed (fallback)
+            const notInCache = !this.lastMessageIds[buddy.id]?.includes(msg.id);
+            
+            // Additional check: Don't process messages that are older than when app was last active
+            // This prevents processing messages that were already handled by FCM when app was backgrounded
+            const appActiveTime = this.lastAppActiveTime || (now - 300000); // Default to 5 minutes ago if never tracked
+            const isRecentMessage = messageTime > appActiveTime;
+            
+            console.log(`🔍 Message filtering for ${msg.id}:`, {
+              messageTime: new Date(messageTime).toISOString(),
+              lastPollTime: new Date(lastPollTime).toISOString(),
+              appActiveTime: new Date(appActiveTime).toISOString(),
+              isNewByTime,
+              notInCache,
+              isRecentMessage,
+              willProcess: isNewByTime && notInCache && isRecentMessage
+            });
+            
+            return isNewByTime && notInCache && isRecentMessage;
+          });
           
           if (newMessages.length > 0) {
             console.log(`📨 Polling: Found ${newMessages.length} new messages for ${buddy.name}`);
             for (const message of newMessages) {
+              // Use the same buddy name resolution as hybrid system
+              const buddyDisplayName = await this.getBuddyDisplayName(message.senderId);
               await notificationService.showMessageNotification(
                 'New Message',
                 message.content,
-                buddy.name
+                buddyDisplayName
               );
               this.performanceMetrics.pollingNotifications++;
               this.performanceMetrics.totalNotifications++;
@@ -418,6 +491,9 @@ class NotificationManagerClass implements NotificationManager {
           console.error(`Error checking messages for buddy ${buddy.id}:`, error);
         }
       }
+      
+      // Update last polling time
+      this.lastPollingTime = Date.now();
     } catch (error) {
       console.error('Error checking for new messages:', error);
     }
@@ -542,6 +618,56 @@ class NotificationManagerClass implements NotificationManager {
     console.log('Manually triggering notification check...');
     await this.checkForNewMessages();
     await this.checkForNewNotes();
+  }
+  /**
+   * Get buddy display name with caching (same logic as hybrid system)
+   */
+  private async getBuddyDisplayName(senderId: string): Promise<string> {
+    try {
+      console.log('👤 [Polling] Getting buddy display name for senderId:', senderId);
+      
+      // Check cache first
+      const cachedProfile = this.userProfileCache?.get(senderId);
+      if (cachedProfile && (Date.now() - cachedProfile.timestamp) < 300000) { // 5 minutes cache
+        console.log('👤 [Polling] Using cached buddy name:', cachedProfile.name);
+        return cachedProfile.name;
+      }
+      
+      console.log('👤 [Polling] Cache miss, fetching from database for senderId:', senderId);
+      
+      // Fetch from database
+      const { data: userProfile, error } = await supabase
+        .from('user_profiles')
+        .select('display_name, username')
+        .eq('id', senderId)
+        .single();
+      
+      if (error) {
+        console.error('👤 [Polling] Database error fetching user profile:', error);
+        return 'Buddy';
+      }
+      
+      console.log('👤 [Polling] User profile data:', userProfile);
+      
+      const buddyDisplayName = userProfile?.display_name || userProfile?.username || 'Buddy';
+      
+      console.log('👤 [Polling] Resolved buddy display name:', buddyDisplayName);
+      
+      // Cache the name
+      if (!this.userProfileCache) {
+        this.userProfileCache = new Map();
+      }
+      this.userProfileCache.set(senderId, {
+        name: buddyDisplayName,
+        timestamp: Date.now()
+      });
+      
+      return buddyDisplayName;
+      
+    } catch (error) {
+      console.error('👤 [Polling] Error fetching buddy name:', error);
+      return 'Buddy';
+    }
   }
 }
 

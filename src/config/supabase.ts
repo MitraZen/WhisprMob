@@ -22,6 +22,7 @@ export const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKe
       eventsPerSecond: 10, // Rate limiting for performance
       heartbeatIntervalMs: 30000, // 30 seconds heartbeat
       reconnectAfterMs: [1000, 2000, 5000, 10000], // Exponential backoff
+      timeout: 20000, // 20 seconds timeout (increased from default)
     },
   },
 });

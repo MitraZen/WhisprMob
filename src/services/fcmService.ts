@@ -1,5 +1,7 @@
 import { supabase } from '@/config/supabase';
 import { FCMReliabilityService, FCMDeliveryResult } from './fcmReliabilityService';
+import { OnlineStatusService } from './onlineStatusService';
+import { DirectWakeupService } from './directWakeupService';
 
 export interface FCMMessage {
   to: string; // FCM token
@@ -29,7 +31,9 @@ export class FCMService {
         userId, 
         title, 
         body, 
-        data
+        data,
+        0, // retryCount
+        true // checkOnlineStatus
       );
       
       if (result.success) {
@@ -129,6 +133,89 @@ export class FCMService {
     } catch (error) {
       console.error('🔥 Error sending message notification:', error);
       return false;
+    }
+  }
+  
+  /**
+   * Send lightweight FCM ping (Phase 1: Proposed Design)
+   * Used when recipient is offline to wake up the app
+   */
+  static async sendLightweightPing(userId: string): Promise<boolean> {
+    try {
+      console.log('🔥 Sending lightweight FCM ping to user:', userId);
+      
+      const title = 'New Message';
+      const body = 'You have a new message';
+      const data = {
+        type: 'ping'
+      };
+      
+      return await this.sendNotificationToUser(userId, title, body, data);
+    } catch (error) {
+      console.error('🔥 Error sending lightweight ping:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send message notification with server-side online status check
+   * Server-side check eliminates redundancy and timing inconsistencies
+   */
+  static async sendMessageNotificationWithStatusCheck(
+    senderId: string,
+    receiverId: string,
+    message: string,
+    buddyName: string
+  ): Promise<boolean> {
+    try {
+      console.log('🔥 Sending message notification with server-side status check:', { senderId, receiverId, buddyName });
+      
+      const title = 'New Message';
+      const body = `${buddyName}: ${message}`;
+      const data = {
+        type: 'message',
+        senderId,
+        buddyName,
+        message
+      };
+      
+      // Let server-side Edge Function handle online status check
+      // This eliminates client-server redundancy and timing issues
+      const result = await FCMReliabilityService.sendReliableNotification(
+        receiverId, 
+        title, 
+        body, 
+        data,
+        0, // retryCount
+        true // checkOnlineStatus - server will handle this
+      );
+      
+      if (result.success) {
+        console.log('🔥 Message notification sent successfully');
+        return true;
+      } else {
+        console.log('🔥 Message notification failed:', result.error);
+        
+        // If server-side check determined user is online, try direct wake-up
+        if (result.error?.includes('user_online')) {
+          console.log('🟢 Server confirmed user is online - attempting direct wake-up');
+          const wakeupResult = await DirectWakeupService.wakeUpUser(receiverId);
+          
+          if (wakeupResult.success) {
+            console.log(`✅ Direct wake-up successful via ${wakeupResult.method}`);
+            return true;
+          } else {
+            console.log('⚠️ Direct wake-up failed, notification skipped');
+            return false;
+          }
+        }
+        
+        return false;
+      }
+    } catch (error) {
+      console.error('🔥 Error in sendMessageNotificationWithStatusCheck:', error);
+      // Fallback to regular notification if status check fails
+      return await this.sendMessageNotification(senderId, receiverId, message, buddyName);
     }
   }
   

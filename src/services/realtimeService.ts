@@ -6,6 +6,7 @@ import { CachedBuddiesService } from './cachedBuddiesService';
 import { activeChatService } from './activeChatService';
 import { fcmService } from './fcmService';
 import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
+import { Phase3NotificationLogicService } from './phase3NotificationLogicService';
 
 interface RealtimeSubscription {
   channel: any;
@@ -18,19 +19,41 @@ class RealtimeService {
   private userId: string | null = null;
   private isConnected = false;
   private connectionRetryCount = 0;
-  private maxRetries = 3; // Reduced from 5 to prevent excessive retries
-  private retryDelay = 2000; // Increased to 2 seconds
+  private phase3Service = Phase3NotificationLogicService.getInstance();
+  private maxRetries = 8; // Phase 2: Increased for better resilience
+  private retryDelay = 500; // Phase 2: Faster initial retry
   private maxRetryDelay = 30000; // Max 30 seconds
   private circuitBreakerOpen = false;
-  private circuitBreakerTimeout = 300000; // 5 minutes before trying again
+  private circuitBreakerTimeout = 30000; // Phase 2: Shorter circuit breaker timeout
   private recentNotificationSenders?: Set<string>;
   private userProfileCache = new Map<string, { name: string; timestamp: number }>();
   private lastCircuitBreakerReset = 0;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private initializationPromise: Promise<boolean> | null = null; // Prevent multiple simultaneous initializations
   private recentNotifications: Set<string> = new Set(); // Track recent notifications to prevent duplicates
+  private processedMessages: Set<string> = new Set(); // Track processed messages to prevent duplicates
+  
+  // Hybrid Notification System Properties
+  private notificationCooldown = 2000; // 2 seconds cooldown for immediate notifications
+  private lastNotificationTime = 0;
+  private pendingMessages: Array<{messageId: string, timestamp: number, buddyId: string, fullMessage: any}> = [];
+  private batchThreshold = 3; // Route to batch if 3+ messages in queue
+  
   private connectionStateUnsubscribe: (() => void) | null = null;
   private isConnectionRecoveryEnabled = true;
+  
+  // Phase 2: Performance metrics
+  private performanceMetrics = {
+    messagesProcessed: 0,
+    notificationsSent: 0,
+    connectionAttempts: 0,
+    successfulConnections: 0,
+    failedConnections: 0,
+    averageConnectionTime: 0,
+    lastConnectionTime: 0,
+    totalUptime: 0,
+    startTime: Date.now(),
+  };
 
   async initialize(userId: string): Promise<boolean> {
     // Prevent multiple simultaneous initializations
@@ -73,8 +96,11 @@ class RealtimeService {
   }
 
   private async performInitialization(userId: string): Promise<boolean> {
+    const startTime = Date.now();
+    this.trackConnectionAttempt();
+    
     try {
-      console.log('🚀 Initializing realtime service for user:', userId);
+      console.log('🚀 Phase 2: Initializing realtime service for user:', userId);
       
       // Test connection before proceeding
       await this.testConnection();
@@ -92,11 +118,15 @@ class RealtimeService {
       this.connectionRetryCount = 0;
       this.circuitBreakerOpen = false;
       
-      console.log('✅ Realtime service initialized successfully');
+      const connectionTime = Date.now() - startTime;
+      this.trackSuccessfulConnection(connectionTime);
+      
+      console.log(`✅ Phase 2: Realtime service initialized successfully in ${connectionTime}ms`);
       return true;
       
     } catch (error) {
-      console.error('❌ Failed to initialize realtime service:', error);
+      console.error('❌ Phase 2: Failed to initialize realtime service:', error);
+      this.trackFailedConnection();
       this.handleConnectionError();
       return false;
     }
@@ -162,7 +192,8 @@ class RealtimeService {
       // Test connection
       await this.testConnection();
       
-      // Set up new subscriptions
+      // Set up new subscriptions (force resubscribe to all channels)
+      console.log('🔄 Force resubscribing to all channels after reconnect...');
       await this.setupSubscriptions(this.userId);
       
       // Start health monitoring
@@ -172,7 +203,7 @@ class RealtimeService {
       this.connectionRetryCount = 0;
       this.circuitBreakerOpen = false;
       
-      console.log('✅ Realtime reconnection successful');
+      console.log('✅ Realtime reconnection successful with subscriptions restored');
       return true;
       
     } catch (error) {
@@ -356,12 +387,32 @@ class RealtimeService {
 
   private async handleNewMessage(payload: any): Promise<void> {
     try {
-      console.log('handleNewMessage called with payload:', JSON.stringify(payload, null, 2));
+      console.log('Phase 2: handleNewMessage called with payload:', JSON.stringify(payload, null, 2));
       
       if (!payload || !payload.new) {
         console.warn('Invalid payload structure:', payload);
         return;
       }
+
+      // 🔄 Message Deduplication: Prevent same message from being processed multiple times
+      const messageId = payload.new.id;
+      if (this.processedMessages.has(messageId)) {
+        console.log(`🔄 Message ${messageId} already processed, skipping duplicate processing`);
+        return; // Skip processing but don't affect notifications
+      }
+
+      // Mark message as processed
+      this.processedMessages.add(messageId);
+
+      // Clean up old processed messages (keep memory efficient)
+      if (this.processedMessages.size > 100) {
+        const oldestMessages = Array.from(this.processedMessages).slice(0, 50);
+        oldestMessages.forEach(id => this.processedMessages.delete(id));
+        console.log(`🧹 Cleaned up ${oldestMessages.length} old processed messages`);
+      }
+
+      // Phase 2: Track message processing
+      this.trackMessageProcessed();
 
       // 🧩 Step 2: Skip duplicate events caused by database trigger
       if (payload.new?.origin === 'trigger' && payload.new?.sender_id === this.userId) {
@@ -427,104 +478,22 @@ class RealtimeService {
         if (!this.recentNotifications.has(notificationKey)) {
           // Check if the user is currently viewing this chat (handles reciprocal buddy relationships)
           const isChatActive = await activeChatService.isMessageForActiveChat(payload.new.buddy_id);
+          console.log('🔔 Active chat check result:', { buddyId: payload.new.buddy_id, isChatActive });
           
           if (isChatActive) {
             console.log('🔕 Skipping notification - user is actively viewing this chat');
           } else {
-            console.log('🔔 Showing notification for message from other user');
-            try {
-              // OPTION 1 FIX: Force immediate cache update and UI refresh BEFORE notification
-              console.log('⚡ Forcing immediate cache update and UI refresh');
-              await CachedBuddiesService.applyRealtimeUpdate('message', payload.new, this.userId!);
-              this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
-              
-              // SIMPLE FIX: Get buddy name directly from the message sender
-              let buddyDisplayName = 'Buddy';
-              
-              // Add rate limiting to prevent excessive database queries
-              const notificationKey = `notification-${payload.new.sender_id}-${Date.now()}`;
-              const recentNotificationKey = `recent-${payload.new.sender_id}`;
-              
-              // Check if we've already processed a notification for this sender recently
-              if (this.recentNotificationSenders?.has(recentNotificationKey)) {
-                console.log('🔔 Skipping notification - already processed for this sender recently');
-                return;
-              }
-              
-              // Mark this sender as recently processed
-              if (!this.recentNotificationSenders) {
-                this.recentNotificationSenders = new Set();
-              }
-              this.recentNotificationSenders.add(recentNotificationKey);
-              
-              // Clean up after 10 seconds
-              setTimeout(() => {
-                this.recentNotificationSenders?.delete(recentNotificationKey);
-              }, 10000);
-              
-              // Get buddy name for notification
-              
-              // The sender is the buddy (not the current user)
-              const buddyUserId = payload.new.sender_id;
-              
-              // Check cache first
-              const cachedProfile = this.userProfileCache.get(buddyUserId);
-              if (cachedProfile && (Date.now() - cachedProfile.timestamp) < 300000) { // 5 minutes cache
-                buddyDisplayName = cachedProfile.name;
-                console.log('✅ Using cached sender name:', buddyDisplayName);
-              } else {
-                try {
-                  const { data: userProfile } = await supabase
-                    .from('user_profiles')
-                    .select('display_name, username')
-                    .eq('id', buddyUserId)
-                    .single();
-                  
-                  if (userProfile?.display_name) {
-                    buddyDisplayName = userProfile.display_name;
-                    console.log('✅ Using sender display_name:', buddyDisplayName);
-                  } else if (userProfile?.username) {
-                    buddyDisplayName = userProfile.username;
-                    console.log('✅ Using sender username:', buddyDisplayName);
-                  } else {
-                    console.log('⚠️ No name found for sender, using default');
-                  }
-                  
-                  // Cache the result
-                  this.userProfileCache.set(buddyUserId, { name: buddyDisplayName, timestamp: Date.now() });
-                } catch (error) {
-                  console.log('⚠️ Error getting sender name:', error);
-                }
-              }
-              
-              console.log('🔔 Final buddy display name for notification:', buddyDisplayName);
-              
-              // Send local notification (for foreground)
-              await notificationService.showMessageNotification(
-                'New Message',
-                payload.new.content ? payload.new.content.substring(0, 100) : 'New message',
-                buddyDisplayName
-              );
-              
-              // Send FCM notification (for background/closed app)
-              try {
-                const fcmResult = await fcmService.sendMessageNotification(
-                  payload.new.sender_id,
-                  this.userId!,
-                  payload.new.content ? payload.new.content.substring(0, 100) : 'New message',
-                  buddyDisplayName
-                );
-                if (fcmResult) {
-                  console.log('🔥 FCM message notification sent');
-                } else {
-                  console.log('🔥 FCM notification skipped - user has no FCM token yet');
-                }
-              } catch (fcmError) {
-                console.warn('🔥 FCM notification failed (using local only):', fcmError);
-                // FCM is not available, local notifications will work fine
-              }
-            } catch (error) {
-              console.error('❌ Error showing notification:', error);
+            console.log('🔔 Showing notification - user is NOT actively viewing this chat');
+            // 🔄 Hybrid Notification Routing
+            await this.handleHybridNotificationRouting(payload.new);
+            
+            // Add to recent notifications to prevent duplicates
+            this.recentNotifications.add(notificationKey);
+            
+            // Clean up old entries (keep only last 100 notifications)
+            if (this.recentNotifications.size > 100) {
+              const firstKey = Array.from(this.recentNotifications)[0];
+              this.recentNotifications.delete(firstKey);
             }
           }
         } else {
@@ -900,6 +869,284 @@ class RealtimeService {
       connectionState: connectionRecoveryService.getConnectionState(),
       isHealthy: connectionRecoveryService.isConnectionHealthy(),
     };
+  }
+
+  /**
+   * Phase 2: Get performance metrics
+   */
+  getPerformanceMetrics(): any {
+    const now = Date.now();
+    const uptime = now - this.performanceMetrics.startTime;
+    
+    return {
+      ...this.performanceMetrics,
+      uptime: uptime,
+      uptimePercentage: this.isConnected ? (uptime / (now - this.performanceMetrics.startTime)) * 100 : 0,
+      connectionSuccessRate: this.performanceMetrics.connectionAttempts > 0 
+        ? (this.performanceMetrics.successfulConnections / this.performanceMetrics.connectionAttempts) * 100 
+        : 0,
+      messagesPerMinute: uptime > 0 ? (this.performanceMetrics.messagesProcessed / (uptime / 60000)) : 0,
+      notificationsPerMinute: uptime > 0 ? (this.performanceMetrics.notificationsSent / (uptime / 60000)) : 0,
+    };
+  }
+
+  /**
+   * Phase 2: Track connection attempt
+   */
+  private trackConnectionAttempt(): void {
+    this.performanceMetrics.connectionAttempts++;
+  }
+
+  /**
+   * Phase 2: Track successful connection
+   */
+  private trackSuccessfulConnection(connectionTime: number): void {
+    this.performanceMetrics.successfulConnections++;
+    this.performanceMetrics.lastConnectionTime = connectionTime;
+    
+    // Update average connection time
+    const totalConnections = this.performanceMetrics.successfulConnections;
+    this.performanceMetrics.averageConnectionTime = 
+      ((this.performanceMetrics.averageConnectionTime * (totalConnections - 1)) + connectionTime) / totalConnections;
+  }
+
+  /**
+   * Phase 2: Track failed connection
+   */
+  private trackFailedConnection(): void {
+    this.performanceMetrics.failedConnections++;
+  }
+
+  /**
+   * Phase 2: Track message processing
+   */
+  private trackMessageProcessed(): void {
+    this.performanceMetrics.messagesProcessed++;
+  }
+
+  /**
+   * Phase 2: Track notification sent
+   */
+  private trackNotificationSent(): void {
+    this.performanceMetrics.notificationsSent++;
+  }
+  // Clear processed messages (useful for testing or reset scenarios)
+  public clearProcessedMessages(): void {
+    console.log('🧹 Clearing processed messages cache');
+    this.processedMessages.clear();
+  }
+
+  // Get count of processed messages (for debugging)
+  public getProcessedMessagesCount(): number {
+    return this.processedMessages.size;
+  }
+
+  /**
+   * 🔄 Hybrid Notification Routing System
+   * Intelligently routes notifications between immediate (realtime) and batch (Phase 3) systems
+   */
+  private async handleHybridNotificationRouting(messageData: any): Promise<void> {
+    try {
+      const now = Date.now();
+      const messageId = messageData.id;
+      const buddyId = messageData.buddy_id;
+      
+      // Add message to pending queue
+      this.pendingMessages.push({
+        messageId,
+        timestamp: now,
+        buddyId,
+        fullMessage: messageData
+      });
+      
+      // Clean up old pending messages (older than 5 seconds)
+      this.pendingMessages = this.pendingMessages.filter(msg => 
+        now - msg.timestamp < 5000
+      );
+      
+      // Calculate time since last notification
+      const timeSinceLastNotification = now - this.lastNotificationTime;
+      
+      // Determine routing strategy
+      const shouldUseImmediate = 
+        timeSinceLastNotification > this.notificationCooldown && 
+        this.pendingMessages.length === 1;
+      
+      const shouldUseBatch = 
+        this.pendingMessages.length >= this.batchThreshold ||
+        (timeSinceLastNotification <= this.notificationCooldown && this.pendingMessages.length > 1);
+      
+      console.log(`🔄 Hybrid Routing Decision:`, {
+        timeSinceLastNotification,
+        pendingMessagesCount: this.pendingMessages.length,
+        shouldUseImmediate,
+        shouldUseBatch,
+        messageId
+      });
+      
+      if (shouldUseImmediate) {
+        console.log('⚡ Routing to IMMEDIATE notification (realtime)');
+        await this.sendImmediateNotification(messageData);
+        this.lastNotificationTime = now;
+        this.pendingMessages = []; // Clear queue after immediate notification
+      } else if (shouldUseBatch) {
+        console.log('📦 Routing to BATCH notification (Phase 3)');
+        await this.routeToBatchSystem(messageData);
+        this.lastNotificationTime = now;
+        this.pendingMessages = []; // Clear queue after batch notification
+      } else {
+        console.log('⏳ Waiting for more messages or cooldown period...');
+        // Set a timeout to process pending messages if no new ones arrive
+        setTimeout(async () => {
+          if (this.pendingMessages.length > 0) {
+            console.log('⏰ Timeout reached, processing pending messages');
+            await this.processPendingMessages();
+          }
+        }, 1000); // 1 second timeout
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in hybrid notification routing:', error);
+    }
+  }
+
+  /**
+   * Send immediate notification (realtime system)
+   */
+  private async sendImmediateNotification(messageData: any): Promise<void> {
+    try {
+      console.log('⚡ Sending immediate notification');
+      console.log('⚡ Message data:', messageData);
+      
+      // Force immediate cache update and UI refresh
+      await CachedBuddiesService.applyRealtimeUpdate('message', messageData, this.userId!);
+      this.dispatchUIUpdateEvent(messageData.buddy_id, 'message-updated', messageData);
+      
+      console.log('⚡ About to get buddy display name for senderId:', messageData.sender_id);
+      
+      // Get buddy name
+      const buddyDisplayName = await this.getBuddyDisplayName(messageData.sender_id);
+      
+      console.log('⚡ Got buddy display name:', buddyDisplayName);
+      
+      // Show LOCAL notification (works in both foreground and background)
+      const { notificationService } = await import('@/services/notificationService');
+      await notificationService.showMessageNotification(
+        'New Message',
+        messageData.content || 'New message',
+        buddyDisplayName
+      );
+      
+      console.log('✅ Immediate notification sent successfully');
+      
+    } catch (error) {
+      console.error('❌ Error sending immediate notification:', error);
+    }
+  }
+
+  /**
+   * Route to batch notification system (Phase 3)
+   */
+  private async routeToBatchSystem(messageData: any): Promise<void> {
+    try {
+      console.log('📦 Routing to batch notification system');
+      
+      // Force immediate cache update and UI refresh
+      await CachedBuddiesService.applyRealtimeUpdate('message', messageData, this.userId!);
+      this.dispatchUIUpdateEvent(messageData.buddy_id, 'message-updated', messageData);
+      
+      // Get buddy name
+      const buddyDisplayName = await this.getBuddyDisplayName(messageData.sender_id);
+      
+      // Add to Phase 3 batch system
+      await this.phase3Service.addToBatch(
+        'New Message',
+        messageData.content || 'New message',
+        buddyDisplayName,
+        'normal'
+      );
+      
+      console.log('✅ Message routed to batch system successfully');
+      
+    } catch (error) {
+      console.error('❌ Error routing to batch system:', error);
+    }
+  }
+
+  /**
+   * Process pending messages when timeout is reached
+   */
+  private async processPendingMessages(): Promise<void> {
+    if (this.pendingMessages.length === 0) return;
+    
+    try {
+      console.log(`📦 Processing ${this.pendingMessages.length} pending messages`);
+      
+      // Get the most recent message
+      const latestPendingMessage = this.pendingMessages[this.pendingMessages.length - 1];
+      const latestFullMessage = latestPendingMessage.fullMessage;
+      
+      if (this.pendingMessages.length === 1) {
+        // Single message - use immediate notification
+        await this.sendImmediateNotification(latestFullMessage);
+      } else {
+        // Multiple messages - use batch notification
+        await this.routeToBatchSystem(latestFullMessage);
+      }
+      
+      this.pendingMessages = [];
+      
+    } catch (error) {
+      console.error('❌ Error processing pending messages:', error);
+    }
+  }
+
+  /**
+   * Get buddy display name with caching
+   */
+  private async getBuddyDisplayName(senderId: string): Promise<string> {
+    try {
+      console.log('👤 Getting buddy display name for senderId:', senderId);
+      
+      // Check cache first
+      const cachedProfile = this.userProfileCache.get(senderId);
+      if (cachedProfile && (Date.now() - cachedProfile.timestamp) < 300000) { // 5 minutes cache
+        console.log('👤 Using cached buddy name:', cachedProfile.name);
+        return cachedProfile.name;
+      }
+      
+      console.log('👤 Cache miss, fetching from database for senderId:', senderId);
+      
+      // Fetch from database
+      const { data: userProfile, error } = await supabase
+        .from('user_profiles')
+        .select('display_name, username')
+        .eq('id', senderId)
+        .single();
+      
+      if (error) {
+        console.error('👤 Database error fetching user profile:', error);
+        return 'Buddy';
+      }
+      
+      console.log('👤 User profile data:', userProfile);
+      
+      const buddyDisplayName = userProfile?.display_name || userProfile?.username || 'Buddy';
+      
+      console.log('👤 Resolved buddy display name:', buddyDisplayName);
+      
+      // Cache the name
+      this.userProfileCache.set(senderId, {
+        name: buddyDisplayName,
+        timestamp: Date.now()
+      });
+      
+      return buddyDisplayName;
+      
+    } catch (error) {
+      console.error('👤 Error fetching buddy name:', error);
+      return 'Buddy';
+    }
   }
 }
 

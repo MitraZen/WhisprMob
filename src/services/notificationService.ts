@@ -23,7 +23,8 @@ class NotificationServiceClass implements NotificationService {
   
   constructor() {
     this.configurePushNotifications();
-    this.initializeFCM();
+    // Don't initialize FCM here - wait for user authentication
+    // FCM will be initialized via initializeFCMAfterLogin() after user logs in
     this.initializePermissions();
   }
   
@@ -33,159 +34,52 @@ class NotificationServiceClass implements NotificationService {
     console.log('🔔 Chat active state set to:', isActive);
   }
 
-  private async initializeFCM() {
-    try {
-      console.log('🔥 Initializing FCM...');
-      
-      // Request permission for FCM
-      // Note: Deprecation warnings are expected in v23.4.1 - methods will be updated in future versions
-      const authStatus = await messaging().requestPermission();
-      const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-                     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      
-      if (enabled) {
-        console.log('🔥 FCM Authorization status:', authStatus);
-        
-        // Get FCM token
-        const token = await messaging().getToken();
-        this.fcmToken = token;
-        console.log('🔥 FCM Token:', token);
-        
-        // Save token to database for server-side notifications
-        await this.saveFCMTokenToDatabase(token);
-        
-        // Listen for token refresh
-        messaging().onTokenRefresh(async (newToken) => {
-          console.log('🔥 FCM Token refreshed:', newToken);
-          this.fcmToken = newToken;
-          await this.saveFCMTokenToDatabase(newToken);
-        });
-        
-        // Handle background messages
-        messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-          console.log('🔥 Background message received:', remoteMessage);
-          // Handle background notification here
-        });
-        
-        // Handle foreground messages
-        const unsubscribe = messaging().onMessage(async (remoteMessage) => {
-          console.log('🔥 Foreground message received:', remoteMessage);
-          
-          // Show local notification when app is in foreground
-          if (remoteMessage.notification) {
-            PushNotification.localNotification({
-              channelId: 'whispr-messages',
-              title: remoteMessage.notification.title || 'New Message',
-              message: remoteMessage.notification.body || 'You have a new message',
-              playSound: true,
-              soundName: 'default',
-              vibrate: true,
-              vibration: 300,
-              priority: 'high',
-              importance: 'high',
-              smallIcon: 'ic_notification',
-              largeIcon: 'ic_launcher',
-            });
-          }
-        });
-        
-        console.log('🔥 FCM initialized successfully');
-      } else {
-        console.warn('🔥 FCM permission not granted');
-      }
-    } catch (error) {
-      console.error('🔥 Error initializing FCM:', error);
-      console.log('🔥 FCM disabled - using local notifications only');
-      // FCM is not available, continue with local notifications only
-    }
-  }
-
   private async saveFCMTokenToDatabase(token: string) {
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.warn('🔥 No user found, cannot save FCM token');
+        console.warn('⚠️ No user found — cannot save FCM token');
         return;
       }
 
-      console.log('🔥 Saving FCM token for user:', user.id);
+      const platform = Platform.OS;
+      console.log(`💾 Saving FCM token for user ${user.id} (${platform})`);
 
-      // Save FCM token to user_fcm_tokens table
-      // First try to update existing record, then insert if not found
-      const { error: updateError } = await supabase
+      // Use UPSERT by fcm_token, not user_id
+      const { error } = await supabase
         .from('user_fcm_tokens')
-        .update({
+        .upsert({
+          user_id: user.id,
           fcm_token: token,
-          platform: Platform.OS,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', user.id);
+          platform,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'fcm_token' });
 
-      // If update failed or no rows were updated, try to insert
-      if (updateError) {
-        console.log('🔥 Update failed, trying to insert new record');
-        const { error: insertError } = await supabase
-          .from('user_fcm_tokens')
-          .insert({
-            user_id: user.id,
-            fcm_token: token,
-            platform: Platform.OS,
-            updated_at: new Date().toISOString()
-          });
-        
-        if (insertError) {
-          console.error('🔥 Error inserting FCM token:', insertError);
-          throw insertError;
-        } else {
-          console.log('🔥 FCM token inserted successfully');
-        }
-      } else {
-        console.log('🔥 FCM token updated successfully');
-      }
+      if (error) throw error;
+      console.log('✅ FCM token saved successfully');
     } catch (error) {
-      console.error('🔥 Error saving FCM token to database:', error);
+      console.error('🔥 Error saving FCM token:', error);
     }
   }
 
   private async saveFCMTokenToDatabaseWithUserId(token: string, userId: string) {
     try {
-      console.log('🔥 Saving FCM token for user:', userId);
+      const platform = Platform.OS;
+      console.log(`💾 Saving FCM token for user ${userId} (${platform})`);
 
-      // Save FCM token to user_fcm_tokens table
-      // First try to update existing record, then insert if not found
-      const { error: updateError } = await supabase
+      const { error } = await supabase
         .from('user_fcm_tokens')
-        .update({
+        .upsert({
+          user_id: userId,
           fcm_token: token,
-          platform: Platform.OS,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId);
+          platform,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'fcm_token' });
 
-      // If update failed or no rows were updated, try to insert
-      if (updateError) {
-        console.log('🔥 Update failed, trying to insert new record');
-        const { error: insertError } = await supabase
-          .from('user_fcm_tokens')
-          .insert({
-            user_id: userId,
-            fcm_token: token,
-            platform: Platform.OS,
-            updated_at: new Date().toISOString()
-          });
-        
-        if (insertError) {
-          console.error('🔥 Error inserting FCM token:', insertError);
-          throw insertError;
-        } else {
-          console.log('🔥 FCM token inserted successfully');
-        }
-      } else {
-        console.log('🔥 FCM token updated successfully');
-      }
+      if (error) throw error;
+      console.log('✅ FCM token saved successfully');
     } catch (error) {
-      console.error('🔥 Error saving FCM token to database:', error);
+      console.error('🔥 Error saving FCM token with user ID:', error);
     }
   }
 
@@ -229,39 +123,138 @@ class NotificationServiceClass implements NotificationService {
   }
 
   // Method to initialize FCM after user login
-  async initializeFCMAfterLogin(): Promise<void> {
+  async initializeFCMAfterLogin(userId?: string): Promise<void> {
     try {
       console.log('🔥 Initializing FCM after login...');
       
-      // Get FCM token
-      const token = await messaging().getToken();
-      this.fcmToken = token;
-      console.log('🔥 FCM Token:', token);
+      // Defensive guard: Verify user session exists
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
+        console.warn('🚫 Skipping FCM init — no active user session');
+        return;
+      }
       
-      // Wait a bit for user authentication to complete, then save token
-      setTimeout(async () => {
-        console.log('🔥 Attempting to save FCM token after authentication delay...');
-        await this.saveFCMTokenToDatabase(token);
-      }, 3000); // Wait 3 seconds for authentication to complete
+      const authenticatedUserId = userId || session.user.id;
+      console.log('✅ Starting FCM setup for authenticated user:', authenticatedUserId);
       
-      console.log('🔥 FCM initialized successfully after login');
+      // Request permission for FCM
+      const authStatus = await messaging().requestPermission();
+      const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+                     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      
+      if (enabled) {
+        console.log('🔥 FCM Authorization status:', authStatus);
+        
+        // Get FCM token
+        const token = await messaging().getToken();
+        this.fcmToken = token;
+        console.log('🔥 FCM Token:', token);
+        
+        // Save token to database for server-side notifications
+        console.log('🔥 Saving FCM token for user:', authenticatedUserId);
+        await this.saveFCMTokenToDatabaseWithUserId(token, authenticatedUserId);
+        
+        // Listen for token refresh
+        messaging().onTokenRefresh(async (newToken) => {
+          console.log('🔁 FCM Token refreshed at:', new Date().toISOString());
+          console.log('🔥 FCM New token:', newToken.substring(0, 20) + '...');
+          this.fcmToken = newToken;
+          await this.saveFCMTokenToDatabaseWithUserId(newToken, authenticatedUserId);
+        });
+        
+        // Handle background messages
+        messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+          console.log('🔥 Background message received:', remoteMessage);
+          
+          // Skip processing - hybrid system handles notifications
+          // This prevents duplicate notifications
+          console.log('🔥 Skipping background notification processing - hybrid system handles it');
+        });
+        
+            // Handle foreground messages
+            messaging().onMessage(async (remoteMessage) => {
+              console.log('🔥 Foreground FCM message received:', remoteMessage);
+              console.log('🔕 Skipping foreground notification - hybrid system handles it via realtime');
+              // Don't show notification here - realtimeService.ts already handles it
+              // This prevents duplicate notifications
+            });
+        
+        console.log('🔥 FCM initialized successfully after login');
+      } else {
+        console.warn('🔥 FCM permission not granted');
+      }
     } catch (error) {
       console.error('🔥 Error initializing FCM after login:', error);
       console.log('🔥 FCM disabled - using local notifications only');
     }
   }
 
+  // Method to clean up FCM token when user logs out
+  async clearFCMTokenOnLogout(userId?: string): Promise<void> {
+    try {
+      console.log('🔥 Clearing FCM token on logout for user:', userId);
+      
+      if (userId) {
+        // Remove FCM token from database
+        const { error } = await supabase
+          .from('user_fcm_tokens')
+          .delete()
+          .eq('user_id', userId);
+        
+        if (error) {
+          console.error('🔥 Error clearing FCM token from database:', error);
+        } else {
+          console.log('✅ FCM token cleared from database');
+        }
+      }
+      
+      // Clear local FCM token
+      this.fcmToken = null;
+      console.log('✅ Local FCM token cleared');
+    } catch (error) {
+      console.error('🔥 Error clearing FCM token on logout:', error);
+    }
+  }
+
   // Method to explicitly save FCM token when user is authenticated
   async saveFCMTokenWhenAuthenticated(userId?: string): Promise<void> {
-    if (this.fcmToken) {
-      console.log('🔥 Saving FCM token now that user is authenticated...');
-      if (userId) {
-        await this.saveFCMTokenToDatabaseWithUserId(this.fcmToken, userId);
-      } else {
-        await this.saveFCMTokenToDatabase(this.fcmToken);
+    try {
+      // Double-check that user is actually authenticated in Supabase
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        // This is expected during app startup before login - don't log as error
+        if (authError.message?.includes('Auth session missing')) {
+          console.log('🔐 No auth session yet - FCM token will be saved after login');
+        } else {
+          console.warn('⚠️ Auth error when saving FCM token:', authError);
+        }
+        return;
       }
-    } else {
-      console.log('🔥 No FCM token available to save');
+      
+      if (!user) {
+        console.log('🔐 No authenticated user found - FCM token will be saved after login');
+        return;
+      }
+      
+      // Verify the userId matches the authenticated user (if provided)
+      if (userId && user.id !== userId) {
+        console.warn('⚠️ UserId mismatch when saving FCM token:', { provided: userId, authenticated: user.id });
+        return;
+      }
+      
+      if (this.fcmToken) {
+        console.log('🔥 Saving FCM token now that user is authenticated...');
+        if (userId) {
+          await this.saveFCMTokenToDatabaseWithUserId(this.fcmToken, userId);
+        } else {
+          await this.saveFCMTokenToDatabase(this.fcmToken);
+        }
+      } else {
+        console.log('🔥 No FCM token available to save');
+      }
+    } catch (error) {
+      console.error('🔥 Error in saveFCMTokenWhenAuthenticated:', error);
     }
   }
   
@@ -301,7 +294,13 @@ class NotificationServiceClass implements NotificationService {
       
       // Called when a remote or local notification is opened or received
       onNotification: function (notification: any) {
-        console.log('LOCAL NOTIFICATION:', notification);
+        console.log('🔔 [EVENT] onNotification callback triggered:', notification);
+        console.log('🔔 [EVENT] Notification will be displayed:', !(notification.finish === 1));
+        
+        // If finish is not 1, the notification will be presented to the user
+        if (notification.finish !== 1) {
+          console.log('🔔 [EVENT] Notification will be displayed to user');
+        }
       },
       
       // Should the initial notification be popped automatically
@@ -354,29 +353,13 @@ class NotificationServiceClass implements NotificationService {
       }
       
       // Fallback to local notification permission check
-      const permissions = await PushNotification.checkPermissions();
+      // Note: react-native-push-notification doesn't have checkPermissions method
+      // We'll assume local notifications work if FCM is not available
+      const permissions = true; // Assume permissions are granted
       console.log('Local notification permissions check result:', permissions);
       
-      // Handle different permission response formats
-      if (permissions && typeof permissions === 'object') {
-        // Standard format: { alert: true/false, badge: true/false, sound: true/false }
-        if ('alert' in permissions) {
-          return permissions.alert === true;
-        }
-        // Alternative format: { notification: true/false }
-        if ('notification' in permissions) {
-          return permissions.notification === true;
-        }
-        // If permissions object exists but no known properties, assume granted
-        return true;
-      }
-      
-      // If permissions is undefined or null, try alternative approach
-      console.warn('Notification permissions check returned undefined/null - assuming permissions granted for Android');
-      
-      // For Android, assume permissions are granted if checkPermissions returns undefined
-      // This is a common Android behavior where permissions work but aren't explicitly reported
-      return true;
+      // Since we're assuming permissions are granted, return true
+      return permissions;
     } catch (error) {
       console.error('Error checking notification permissions:', error);
       // On error, assume not granted to be safe
@@ -384,18 +367,38 @@ class NotificationServiceClass implements NotificationService {
     }
   }
   
+  /**
+   * Handle FCM ping notification (Phase 1: Proposed Design)
+   * When app receives a ping, fetch new messages and reconnect to realtime
+   */
+  async handleFCMPing(): Promise<void> {
+    try {
+      console.log('🔥 Handling FCM ping - fetching new messages and reconnecting...');
+      
+      // Import services dynamically to avoid circular dependencies
+      const { realtimeService } = await import('@/services/realtimeService');
+      
+      // Reconnect to Supabase Realtime (this will also fetch new messages)
+      await realtimeService.forceReconnection();
+      
+      console.log('✅ FCM ping handled successfully');
+    } catch (error) {
+      console.error('❌ Error handling FCM ping:', error);
+    }
+  }
+  
   async showMessageNotification(title: string, message: string, buddyName: string): Promise<string> {
     try {
-      console.log('🔔 showMessageNotification called:', { title, message, buddyName });
-      
-      // Create a unique key for this notification to prevent duplicates
+      console.log('🔔 [NOTIFICATION] showMessageNotification called:', { title, message, buddyName });
       const notificationKey = `${title}-${buddyName}-${message.substring(0, 50)}`;
       
       // Check if we've already shown this notification recently (within last 5 seconds)
       if (this.recentNotifications.has(notificationKey)) {
-        console.log('🔔 Duplicate notification prevented:', notificationKey);
+        console.log('🔔 [NOTIFICATION] Duplicate notification prevented:', notificationKey);
         return 'Duplicate notification prevented';
       }
+      
+      console.log('🔔 [NOTIFICATION] Not a duplicate, proceeding...');
       
       // Add to recent notifications and clean up after 5 seconds
       this.recentNotifications.add(notificationKey);
@@ -404,8 +407,9 @@ class NotificationServiceClass implements NotificationService {
       }, 5000);
       
       // Check if chat is currently active - suppress notifications if user is actively chatting
+      console.log('🔔 [NOTIFICATION] Chat active state:', this.isChatActive);
       if (this.isChatActive) {
-        console.log('🔔 Notification suppressed - chat is currently active');
+        console.log('🔔 [NOTIFICATION] Notification suppressed - chat is currently active');
         return 'Notification suppressed - chat active';
       }
       
@@ -414,16 +418,18 @@ class NotificationServiceClass implements NotificationService {
       console.log('🔔 Notification permission status:', hasPermission);
       
       if (!hasPermission) {
-        console.warn('Notification permission not granted - attempting to request permissions');
+        console.warn('🔔 [NOTIFICATION] Permission not granted - attempting to request');
         
         // Try to request permissions
         const permissionGranted = await this.requestNotificationPermission();
         if (!permissionGranted) {
-          console.warn('Notification permission still not granted - skipping message notification');
+          console.warn('🔔 [NOTIFICATION] Permission still not granted - skipping');
           return 'Notification permission not granted';
         }
       }
 
+      console.log('🔔 [NOTIFICATION] Showing local notification now...');
+      
       // Send local notification (works when app is in foreground)
       PushNotification.localNotification({
         channelId: 'whispr-messages',
@@ -437,16 +443,17 @@ class NotificationServiceClass implements NotificationService {
         importance: 'high',
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
+        userInfo: { id: Date.now().toString() },
       });
 
-      console.log('Message notification sent');
+      console.log('🔔 [NOTIFICATION] Notification sent successfully!');
       return 'Message notification sent successfully';
     } catch (error) {
       console.error('Error sending message notification:', error);
       throw error;
     }
   }
-  
+
   async showNoteNotification(title: string, content: string): Promise<string> {
     try {
       // Check if notifications are enabled

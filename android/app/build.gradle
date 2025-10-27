@@ -81,13 +81,13 @@ android {
     namespace "com.whisprmobiletemp"
     
     // NDK configuration for 16 KB page size support
-    ndkVersion "25.1.8937393"
-    defaultConfig {
-        applicationId "com.whisprmobiletemp"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 56
-        versionName "1.4.5"
+        ndkVersion "25.1.8937393"
+        defaultConfig {
+            applicationId "com.whisprmobiletemp"
+            minSdkVersion rootProject.ext.minSdkVersion
+            targetSdkVersion rootProject.ext.targetSdkVersion
+            versionCode 66
+            versionName "1.5.5"
         
         // NDK configuration for 16 KB page size support
         ndk {

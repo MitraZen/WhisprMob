@@ -17,7 +17,7 @@ serve(async (req) => {
     const body = await req.json();
     console.log('🔥 Request body:', JSON.stringify(body, null, 2));
 
-    const { to, notification, data } = body;
+    const { to, notification, data, checkOnlineStatus } = body;
 
     if (!to || !notification) {
       console.error('❌ Missing required fields');
@@ -79,7 +79,64 @@ serve(async (req) => {
     const accessToken = await getFirebaseAccessToken(serviceAccount);
     console.log('🔥 Access token generated successfully');
 
-    // Prepare FCM v1 message
+    // Unified online status check - single source of truth
+    if (checkOnlineStatus && data?.userId) {
+      console.log('🔍 [UNIFIED] Checking online status for user:', data.userId);
+      
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        if (supabaseUrl && supabaseServiceKey) {
+          const response = await fetch(`${supabaseUrl}/rest/v1/user_profiles?id=eq.${data.userId}&select=is_online,last_seen`, {
+            headers: {
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'apikey': supabaseServiceKey,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const userData = await response.json();
+            const userProfile = userData?.[0];
+            const isOnline = userProfile?.is_online || false;
+            const lastSeen = userProfile?.last_seen || null;
+            
+            console.log('🔍 [UNIFIED] User online status:', { isOnline, lastSeen });
+            
+            if (isOnline) {
+              console.log('🟢 [UNIFIED] User is online - skipping FCM notification');
+              return new Response(
+                JSON.stringify({ 
+                  success: true, 
+                  message: 'User is online - FCM notification skipped',
+                  reason: 'user_online',
+                  onlineStatus: {
+                    isOnline: true,
+                    lastSeen: lastSeen,
+                    checkedAt: new Date().toISOString()
+                  }
+                }),
+                { 
+                  status: 200, 
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+                }
+              );
+            } else {
+              console.log('🔴 [UNIFIED] User is offline - proceeding with FCM notification');
+            }
+          } else {
+            console.warn('⚠️ [UNIFIED] Failed to fetch user profile, proceeding with FCM');
+          }
+        } else {
+          console.warn('⚠️ [UNIFIED] Missing Supabase credentials, proceeding with FCM');
+        }
+      } catch (error) {
+        console.warn('⚠️ [UNIFIED] Error checking online status, proceeding with FCM:', error);
+      }
+    }
+
+    // Prepare FCM v1 message with high priority for OnePlus/Xiaomi compatibility
     const fcmMessage = {
       message: {
         token: to,
@@ -87,7 +144,18 @@ serve(async (req) => {
           title: notification.title,
           body: notification.body
         },
-        data: data || {}
+        data: data || {},
+        android: {
+          priority: 'high',
+          notification: {
+            channel_id: 'whispr-messages',
+            sound: 'default',
+            vibrate_timings: [300, 100, 300],
+            priority: 'high',
+            visibility: 'public'
+          },
+          ttl: '60s' // 60 seconds TTL for reliable delivery
+        }
       }
     };
 

@@ -14,6 +14,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { theme, spacing } from '@/utils/theme';
 import { useAdmin } from '@/store/AdminContext';
+import Phase1PerformanceTest from '@/components/Phase1PerformanceTest';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -48,6 +49,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
   const [adminPassword, setAdminPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPerformanceTest, setShowPerformanceTest] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [testMessage, setTestMessage] = useState('Hello from Admin!');
   const [buddyList, setBuddyList] = useState<any[]>([]);
@@ -421,6 +423,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </TouchableOpacity>
         </View>
 
+        {/* Phase 1 Performance Test */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>⚡ Phase 1 Performance Test</Text>
+          <Text style={styles.sectionDescription}>
+            Test the optimized database functions and measure performance improvements.
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.performanceTestButton]} 
+            onPress={() => setShowPerformanceTest(true)}
+          >
+            <Text style={styles.actionButtonText}>🚀 Run Performance Test</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Statistics Display */}
         {showDebugInfo && (
           <View style={styles.section}>
@@ -463,6 +480,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Phase 1 Performance Test Modal */}
+      <Modal
+        visible={showPerformanceTest}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>⚡ Phase 1 Performance Test</Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowPerformanceTest(false)}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Phase1PerformanceTest />
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -543,6 +580,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
   passwordInput: {
     borderWidth: 1,
     borderColor: '#e5e7eb',
@@ -616,6 +663,9 @@ const styles = StyleSheet.create({
   },
   fcmTestButton: {
     backgroundColor: '#ff6b35', // Orange color for FCM test
+  },
+  performanceTestButton: {
+    backgroundColor: '#00d4aa', // Teal color for performance test
   },
   dangerButton: {
     backgroundColor: '#ef4444',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform, Modal } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
@@ -10,6 +10,7 @@ import PermissionInitializer from '../services/permissionInitializer';
 import { AdminService } from '@/services/adminService'; // Import admin service
 import BiometricService from '@/services/biometricService';
 import { ThemedAlertLegacy } from '@/components/ThemedAlert';
+// Test components removed for production build
 
 interface SettingsOption {
   id: string;
@@ -34,6 +35,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
   const [isAdmin, setIsAdmin] = useState(false); // Add admin state
+  // Test states removed for production build
+  
+  // Debug code removed for production build
   
   const styles = createStyles(theme);
 
@@ -318,7 +322,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       icon: 'download-outline',
       onPress: handleExportData,
       color: theme.colors.success
-    }
+    },
+    // Test options removed for production build
   ];
 
   // Admin-only debug options
@@ -373,14 +378,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
           <View style={styles.headerSpacer} />
         </Animated.View>
 
-        {/* Settings Options */}
-        <Animated.View 
-          style={[
-            styles.optionsContainer,
-            { transform: [{ translateY: slideAnim }] }
-          ]}
-        >
-          {settingsOptions.map((option, index) => (
+            {/* Debug button removed for production build */}
+            <Animated.View 
+              style={[
+                styles.optionsContainer,
+                { transform: [{ translateY: slideAnim }] }
+              ]}
+            >
+              {settingsOptions.map((option, index) => (
             <TouchableOpacity
               key={option.id}
               style={[
@@ -413,8 +418,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
                 )}
               </View>
             </TouchableOpacity>
-          ))}
-        </Animated.View>
+              ))}
+            </Animated.View>
 
         {/* Footer */}
         <Animated.View 
@@ -430,6 +435,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
       </ScrollView>
 
       <NavigationMenu currentScreen="settings" onNavigate={onNavigate} />
+
+      {/* Test modals removed for production build */}
     </Animated.View>
   );
 };
@@ -518,6 +525,29 @@ const createStyles = (theme: any) => StyleSheet.create({
     ...theme.typography.bodySmall,
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  modalTitle: {
+    ...theme.typography.headlineSmall,
+    color: theme.colors.onSurface,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
   },
 });
 
