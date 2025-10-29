@@ -304,7 +304,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       const stats = await BuddiesService.getUserStats(user.id);
       
       if (profile) {
-        const ageDisplay = profile.age ? calculateAge(new Date(profile.age)) : 'Not specified';
+        const ageDisplay = (() => {
+          const dob = profile.date_of_birth ? new Date(profile.date_of_birth) : null;
+          const numericAge = typeof profile.age === 'number' ? profile.age : parseInt(profile.age, 10);
+          if (dob && !isNaN(dob.getTime())) {
+            const today = new Date();
+            let ageYears = today.getFullYear() - dob.getFullYear();
+            const m = today.getMonth() - dob.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+              ageYears--;
+            }
+            return String(ageYears);
+          }
+          if (!isNaN(numericAge)) {
+            return String(numericAge);
+          }
+          return 'Not specified';
+        })();
         const genderDisplay = profile.gender ? formatGender(profile.gender) : 'Not specified';
         
         setProfileData({
@@ -316,7 +332,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
           gender: genderDisplay,
           mood: profile.mood || user.mood || 'happy',
           joinDate: new Date(profile.created_at || user.createdAt),
-          dateOfBirth: profile.age ? new Date(profile.age) : null,
+          dateOfBirth: profile.date_of_birth ? new Date(profile.date_of_birth) : null,
         });
         
         const statsData = {

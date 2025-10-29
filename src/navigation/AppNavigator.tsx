@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, BackHandler, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, BackHandler, Alert, DeviceEventEmitter } from 'react-native';
 import { theme, spacing } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
 import ProfileCompletionScreen from '@/screens/ProfileCompletionScreen';
@@ -199,6 +199,80 @@ const AppNavigator = () => {
       }
     }
   }, [isAuthenticated]);
+
+  // Listen for notification tap events to navigate to chat
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    let isHandling = false; // Prevent duplicate handling
+
+    const handleNotificationNavigation = async (event: any) => {
+      // Prevent duplicate navigation
+      if (isHandling) {
+        console.log('📱 [NAV] Navigation already in progress, skipping');
+        return;
+      }
+
+      try {
+        isHandling = true;
+        console.log('📱 [NAV] Received navigateToChat event:', event);
+        const { buddy, buddyName } = event;
+
+        if (buddy) {
+          // If buddy object is provided, navigate directly
+          console.log('📱 [NAV] Navigating to chat with buddy object:', buddy);
+          navigate('chat', { buddy });
+        } else if (buddyName) {
+          // If only buddyName is provided, find the buddy first (with timeout)
+          console.log('📱 [NAV] Finding buddy by name:', buddyName);
+          try {
+            const findPromise = (async () => {
+              const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
+              const buddies = await CachedBuddiesService.getBuddies(user.id);
+              const foundBuddy = buddies.find(
+                b => b.name === buddyName || b.username === buddyName || b.displayName === buddyName
+              );
+
+              if (foundBuddy) {
+                console.log('📱 [NAV] Found buddy, navigating to chat:', foundBuddy);
+                navigate('chat', { buddy: foundBuddy });
+              } else {
+                console.warn('📱 [NAV] Buddy not found, navigating to buddies screen');
+                navigate('buddies');
+              }
+            })();
+
+            // Add timeout to prevent hanging
+            const timeoutPromise = new Promise<void>((resolve) => {
+              setTimeout(() => {
+                console.warn('📱 [NAV] Timeout finding buddy, navigating to buddies');
+                navigate('buddies');
+                resolve();
+              }, 3000);
+            });
+
+            await Promise.race([findPromise, timeoutPromise]);
+          } catch (error) {
+            console.error('📱 [NAV] Error finding buddy:', error);
+            navigate('buddies');
+          }
+        }
+      } catch (error) {
+        console.error('📱 [NAV] Error handling notification navigation:', error);
+      } finally {
+        // Reset after a delay to allow navigation to complete
+        setTimeout(() => {
+          isHandling = false;
+        }, 1000);
+      }
+    };
+
+    const subscription = DeviceEventEmitter.addListener('navigateToChat', handleNotificationNavigation);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated, user]);
 
   if (isLoading) {
     return (

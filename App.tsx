@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import messaging from '@react-native-firebase/messaging';
+import PushNotification from 'react-native-push-notification';
 
 import AppNavigator from '@/navigation/AppNavigator';
 import { AuthProvider } from '@/store/AuthContext';
@@ -17,6 +18,13 @@ import { supabase } from '@/config/supabase';
 const AppContent: React.FC = () => {
   const { theme, isDark } = useTheme();
   
+  // Handle notification opened when app was closed/killed or in background
+  // Note: This is handled by onNotification callback in notificationService
+  // Only check for initial notification if needed - commented out to prevent freeze
+  // useEffect(() => {
+  //   // Initial notification handling is done via notificationService.onNotification
+  // }, []);
+
   // Phase 1: Handle FCM ping messages (Proposed Design)
   useEffect(() => {
     const unsubscribe = messaging().onMessage(async remoteMessage => {

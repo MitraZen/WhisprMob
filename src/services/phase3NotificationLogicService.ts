@@ -34,18 +34,22 @@ interface RateLimitState {
 export class Phase3NotificationLogicService {
   private static instance: Phase3NotificationLogicService;
   private notificationBatch: NotificationBatch | null = null;
+  // Per-user message accumulator - keeps all messages from each user until cleared
+  private userMessageBatches: Map<string, Array<{ content: string; timestamp: number }>> = new Map();
   private buddyNameCache: BuddyNameCache = {};
   private rateLimitState: RateLimitState = {};
   private recentNotifications: Set<string> = new Set();
   private batchTimer: NodeJS.Timeout | null = null;
+  private lastProcessTime: number = 0;
   
   // Configuration
-  private readonly BATCH_SIZE = 5;
-  private readonly BATCH_DELAY = 2000; // 2 seconds
+  private readonly BATCH_SIZE = 10; // Increased to allow more messages per batch
+  private readonly BATCH_DELAY = 1500; // 1.5 seconds - shorter delay for faster batching
   private readonly CACHE_TTL = 300000; // 5 minutes
   private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
-  private readonly RATE_LIMIT_MAX = 10; // Max 10 notifications per minute per buddy
+  private readonly RATE_LIMIT_MAX = 20; // Increased max notifications per minute per buddy
   private readonly DEDUPLICATION_WINDOW = 5000; // 5 seconds
+  private readonly MAX_BATCH_TIME = 3000; // Maximum time to wait before processing batch (3 seconds)
 
   private constructor() {
     this.loadCachedData();
@@ -61,6 +65,7 @@ export class Phase3NotificationLogicService {
 
   /**
    * Phase 3: Smart Batching - Groups notifications to prevent spam
+   * Accumulates messages per user until notification is cleared/processed
    */
   async addToBatch(
     title: string,
@@ -68,7 +73,7 @@ export class Phase3NotificationLogicService {
     buddyName: string,
     priority: 'high' | 'normal' | 'low' = 'normal'
   ): Promise<void> {
-    console.log('🧠 Phase 3: Adding notification to batch');
+    console.log('🧠 Phase 3: Adding notification to batch for user:', buddyName);
 
     // Check rate limiting first
     if (!this.checkRateLimit(buddyName)) {
@@ -89,51 +94,36 @@ export class Phase3NotificationLogicService {
       this.recentNotifications.delete(notificationKey);
     }, this.DEDUPLICATION_WINDOW);
 
-    // Initialize batch if needed
-    if (!this.notificationBatch) {
-      this.notificationBatch = {
-        id: this.generateBatchId(),
-        notifications: [],
-        createdAt: Date.now(),
-        maxAge: this.BATCH_DELAY,
-      };
+    // Add message to user's persistent batch (accumulates until cleared)
+    if (!this.userMessageBatches.has(buddyName)) {
+      this.userMessageBatches.set(buddyName, []);
     }
-
-    // Add notification to batch
-    this.notificationBatch.notifications.push({
-      title,
+    const userBatch = this.userMessageBatches.get(buddyName)!;
+    userBatch.push({
       content,
-      buddyName,
-      priority,
       timestamp: Date.now(),
     });
 
-    console.log(`🧠 Phase 3: Batch now contains ${this.notificationBatch.notifications.length} notifications`);
+    console.log(`🧠 Phase 3: User ${buddyName} now has ${userBatch.length} messages in batch`);
 
-    // Process batch if it's full or if it's a high priority notification
-    if (
-      this.notificationBatch.notifications.length >= this.BATCH_SIZE ||
-      priority === 'high'
-    ) {
-      await this.processBatch();
+    // Process and update notification immediately if high priority
+    if (priority === 'high') {
+      await this.processUserBatches();
     } else {
-      // Set timer to process batch after delay
+      // Schedule batch processing after delay (accumulates more messages)
       this.scheduleBatchProcessing();
     }
   }
 
   /**
-   * Phase 3: Process notification batch
+   * Phase 3: Process notification batch - sends/updates notifications for all users
    */
-  private async processBatch(): Promise<void> {
-    if (!this.notificationBatch || this.notificationBatch.notifications.length === 0) {
+  private async processUserBatches(): Promise<void> {
+    if (this.userMessageBatches.size === 0) {
       return;
     }
 
-    console.log('🧠 Phase 3: Processing notification batch');
-
-    const batch = this.notificationBatch;
-    this.notificationBatch = null;
+    console.log('🧠 Phase 3: Processing user batches');
 
     // Clear any pending timer
     if (this.batchTimer) {
@@ -141,35 +131,68 @@ export class Phase3NotificationLogicService {
       this.batchTimer = null;
     }
 
-    // Sort by priority (high first)
-    batch.notifications.sort((a, b) => {
-      const priorityOrder = { high: 3, normal: 2, low: 1 };
-      return priorityOrder[b.priority] - priorityOrder[a.priority];
-    });
+    // Process each user's accumulated messages
+    for (const [buddyName, messages] of this.userMessageBatches.entries()) {
+      if (messages.length === 0) continue;
 
-    // Group by buddy for consolidated notifications
-    const groupedByBuddy = this.groupNotificationsByBuddy(batch.notifications);
-
-    // Send consolidated notifications
-    for (const [buddyName, notifications] of Object.entries(groupedByBuddy)) {
-      if (notifications.length === 1) {
-        // Single notification
+      if (messages.length === 1) {
+        // Single message - show normally
         await notificationService.showMessageNotification(
-          notifications[0].title,
-          notifications[0].content,
+          buddyName,
+          messages[0].content,
           buddyName
         );
       } else {
-        // Multiple notifications - send consolidated
+        // Multiple messages - show all messages in one notification
+        // Format: "Msg1\nMsg2\nMsg3..."
+        const allMessages = messages.map(msg => msg.content).join('\n');
         await notificationService.showMessageNotification(
-          `${notifications.length} New Messages`,
-          `You have ${notifications.length} new messages from ${buddyName}`,
-          buddyName
+          buddyName,
+          allMessages,
+          buddyName,
+          messages.length // Pass message count for notification tag
         );
       }
     }
 
-    console.log('✅ Phase 3: Batch processed successfully');
+    this.lastProcessTime = Date.now();
+    console.log('✅ Phase 3: User batches processed successfully');
+    // Note: We don't clear userMessageBatches here - they accumulate until notification is dismissed/cleared
+  }
+
+  /**
+   * Phase 3: Process old batch (legacy method - kept for compatibility)
+   */
+  private async processBatch(): Promise<void> {
+    // Legacy method - redirect to new processUserBatches
+    await this.processUserBatches();
+  }
+
+  /**
+   * Clear messages for a specific user (call when notification is dismissed or user opens chat)
+   */
+  clearUserBatch(buddyName: string): void {
+    console.log('🧠 Phase 3: Clearing batch for user:', buddyName);
+    this.userMessageBatches.delete(buddyName);
+  }
+
+  /**
+   * Clear all user batches
+   */
+  clearAllBatches(): void {
+    console.log('🧠 Phase 3: Clearing all user batches');
+    this.userMessageBatches.clear();
+  }
+
+  /**
+   * Get current batch status for a user
+   */
+  getUserBatchStatus(buddyName: string): { messageCount: number; messages: string[] } {
+    const messages = this.userMessageBatches.get(buddyName) || [];
+    return {
+      messageCount: messages.length,
+      messages: messages.map(msg => msg.content),
+    };
   }
 
   /**
@@ -181,7 +204,7 @@ export class Phase3NotificationLogicService {
     }
 
     this.batchTimer = setTimeout(async () => {
-      await this.processBatch();
+      await this.processUserBatches();
     }, this.BATCH_DELAY);
   }
 

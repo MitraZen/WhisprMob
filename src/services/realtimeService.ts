@@ -943,7 +943,7 @@ class RealtimeService {
 
   /**
    * 🔄 Hybrid Notification Routing System
-   * Intelligently routes notifications between immediate (realtime) and batch (Phase 3) systems
+   * Routes all messages through batch system to group messages from the same user
    */
   private async handleHybridNotificationRouting(messageData: any): Promise<void> {
     try {
@@ -951,59 +951,19 @@ class RealtimeService {
       const messageId = messageData.id;
       const buddyId = messageData.buddy_id;
       
-      // Add message to pending queue
-      this.pendingMessages.push({
-        messageId,
-        timestamp: now,
-        buddyId,
-        fullMessage: messageData
-      });
+      // Always route through batch system to group messages from same user
+      console.log('📦 Routing message to BATCH system (will group by user):', messageId);
       
-      // Clean up old pending messages (older than 5 seconds)
-      this.pendingMessages = this.pendingMessages.filter(msg => 
-        now - msg.timestamp < 5000
-      );
+      // Force immediate cache update and UI refresh (don't wait for batch)
+      await CachedBuddiesService.applyRealtimeUpdate('message', messageData, this.userId!);
+      this.dispatchUIUpdateEvent(messageData.buddy_id, 'message-updated', messageData);
       
-      // Calculate time since last notification
-      const timeSinceLastNotification = now - this.lastNotificationTime;
+      // Route to batch system which will group messages from the same user
+      await this.routeToBatchSystem(messageData);
       
-      // Determine routing strategy
-      const shouldUseImmediate = 
-        timeSinceLastNotification > this.notificationCooldown && 
-        this.pendingMessages.length === 1;
+      this.lastNotificationTime = now;
       
-      const shouldUseBatch = 
-        this.pendingMessages.length >= this.batchThreshold ||
-        (timeSinceLastNotification <= this.notificationCooldown && this.pendingMessages.length > 1);
-      
-      console.log(`🔄 Hybrid Routing Decision:`, {
-        timeSinceLastNotification,
-        pendingMessagesCount: this.pendingMessages.length,
-        shouldUseImmediate,
-        shouldUseBatch,
-        messageId
-      });
-      
-      if (shouldUseImmediate) {
-        console.log('⚡ Routing to IMMEDIATE notification (realtime)');
-        await this.sendImmediateNotification(messageData);
-        this.lastNotificationTime = now;
-        this.pendingMessages = []; // Clear queue after immediate notification
-      } else if (shouldUseBatch) {
-        console.log('📦 Routing to BATCH notification (Phase 3)');
-        await this.routeToBatchSystem(messageData);
-        this.lastNotificationTime = now;
-        this.pendingMessages = []; // Clear queue after batch notification
-      } else {
-        console.log('⏳ Waiting for more messages or cooldown period...');
-        // Set a timeout to process pending messages if no new ones arrive
-        setTimeout(async () => {
-          if (this.pendingMessages.length > 0) {
-            console.log('⏰ Timeout reached, processing pending messages');
-            await this.processPendingMessages();
-          }
-        }, 1000); // 1 second timeout
-      }
+      console.log('✅ Message routed to batch system for user grouping');
       
     } catch (error) {
       console.error('❌ Error in hybrid notification routing:', error);

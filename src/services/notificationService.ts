@@ -1,10 +1,10 @@
-import { Platform, Alert } from 'react-native';
+import { Platform, Alert, DeviceEventEmitter } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import messaging from '@react-native-firebase/messaging';
 import { supabase } from '@/config/supabase';
 
 export interface NotificationService {
-  showMessageNotification: (title: string, message: string, buddyName: string) => Promise<string>;
+  showMessageNotification: (title: string, message: string, buddyName: string, messageCount?: number) => Promise<string>;
   showNoteNotification: (title: string, content: string) => Promise<string>;
   showGeneralNotification: (title: string, content: string) => Promise<string>;
   cancelAllNotifications: () => Promise<string>;
@@ -293,9 +293,20 @@ class NotificationServiceClass implements NotificationService {
       },
       
       // Called when a remote or local notification is opened or received
-      onNotification: function (notification: any) {
+      onNotification: (notification: any) => {
         console.log('🔔 [EVENT] onNotification callback triggered:', notification);
+        console.log('🔔 [EVENT] Notification userInteraction:', notification.userInteraction);
         console.log('🔔 [EVENT] Notification will be displayed:', !(notification.finish === 1));
+        
+        // Check if notification was tapped/clicked by user
+        // Use setTimeout to ensure this doesn't block the notification callback
+        if (notification.userInteraction || notification.userInteraction === true) {
+          console.log('🔔 [EVENT] Notification was tapped by user');
+          // Delay to prevent blocking the callback
+          setTimeout(() => {
+            this.handleNotificationTap(notification);
+          }, 100);
+        }
         
         // If finish is not 1, the notification will be presented to the user
         if (notification.finish !== 1) {
@@ -386,25 +397,111 @@ class NotificationServiceClass implements NotificationService {
       console.error('❌ Error handling FCM ping:', error);
     }
   }
+
+  /**
+   * Handle notification tap - navigate to chat and clear batch
+   * Made non-blocking to prevent app freeze
+   */
+  private handleNotificationTap(notification: any): void {
+    // Run asynchronously without blocking
+    (async () => {
+      try {
+        console.log('🔔 [TAP] Handling notification tap:', notification);
+        
+        const userInfo = notification.userInfo || notification.data;
+        const buddyName = userInfo?.buddyName;
+        
+        if (!buddyName) {
+          console.warn('🔔 [TAP] No buddyName in notification, cannot navigate');
+          return;
+        }
+
+        console.log('🔔 [TAP] Navigating to chat for:', buddyName);
+
+        // Clear notification batch for this user (non-blocking)
+        (async () => {
+          try {
+            const { Phase3NotificationLogicService } = await import('@/services/phase3NotificationLogicService');
+            const phase3Service = Phase3NotificationLogicService.getInstance();
+            phase3Service.clearUserBatch(buddyName);
+            console.log('🧠 [TAP] Cleared notification batch for:', buddyName);
+          } catch (batchError) {
+            console.warn('⚠️ [TAP] Could not clear notification batch:', batchError);
+          }
+        })();
+
+        // Find the buddy by name to get their ID (with timeout protection)
+        try {
+          const findBuddyPromise = (async () => {
+            const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
+            const { data: { user } } = await supabase.auth.getUser();
+            
+            if (!user) {
+              console.warn('🔔 [TAP] No authenticated user, emitting with buddyName only');
+              DeviceEventEmitter.emit('navigateToChat', { buddyName });
+              return;
+            }
+
+            // Get all buddies and find the one matching the name
+            const buddies = await CachedBuddiesService.getBuddies(user.id);
+            const buddy = buddies.find(b => b.name === buddyName || b.username === buddyName);
+
+            if (buddy) {
+              console.log('🔔 [TAP] Found buddy, emitting navigation event:', buddy);
+              DeviceEventEmitter.emit('navigateToChat', { buddy });
+            } else {
+              console.warn('🔔 [TAP] Buddy not found for name:', buddyName);
+              DeviceEventEmitter.emit('navigateToChat', { buddyName });
+            }
+          })();
+
+          // Add timeout to prevent hanging
+          const timeoutPromise = new Promise<void>((resolve) => {
+            setTimeout(() => {
+              console.warn('🔔 [TAP] Timeout finding buddy, emitting with name only');
+              DeviceEventEmitter.emit('navigateToChat', { buddyName });
+              resolve();
+            }, 5000);
+          });
+
+          await Promise.race([findBuddyPromise, timeoutPromise]);
+        } catch (error) {
+          console.error('❌ [TAP] Error finding buddy:', error);
+          // Emit event with just the name as fallback
+          DeviceEventEmitter.emit('navigateToChat', { buddyName });
+        }
+      } catch (error) {
+        console.error('❌ [TAP] Error handling notification tap:', error);
+      }
+    })();
+  }
   
-  async showMessageNotification(title: string, message: string, buddyName: string): Promise<string> {
+  async showMessageNotification(title: string, message: string, buddyName: string, messageCount?: number): Promise<string> {
     try {
-      console.log('🔔 [NOTIFICATION] showMessageNotification called:', { title, message, buddyName });
-      const notificationKey = `${title}-${buddyName}-${message.substring(0, 50)}`;
+      console.log('🔔 [NOTIFICATION] showMessageNotification called:', { title, message, buddyName, messageCount });
+      
+      // For multiple messages, create a notification key based on user only (to allow updates)
+      const notificationKey = messageCount && messageCount > 1 
+        ? `batch-${buddyName}`
+        : `${title}-${buddyName}-${message.substring(0, 50)}`;
       
       // Check if we've already shown this notification recently (within last 5 seconds)
-      if (this.recentNotifications.has(notificationKey)) {
+      // But allow updates for batched notifications
+      if (messageCount && messageCount > 1) {
+        // For batched notifications, we want to update them, not skip
+        console.log('🔔 [NOTIFICATION] Batched notification - will update existing notification');
+      } else if (this.recentNotifications.has(notificationKey)) {
         console.log('🔔 [NOTIFICATION] Duplicate notification prevented:', notificationKey);
         return 'Duplicate notification prevented';
       }
       
-      console.log('🔔 [NOTIFICATION] Not a duplicate, proceeding...');
-      
-      // Add to recent notifications and clean up after 5 seconds
-      this.recentNotifications.add(notificationKey);
-      setTimeout(() => {
-        this.recentNotifications.delete(notificationKey);
-      }, 5000);
+      // Add to recent notifications (for single messages only)
+      if (!messageCount || messageCount === 1) {
+        this.recentNotifications.add(notificationKey);
+        setTimeout(() => {
+          this.recentNotifications.delete(notificationKey);
+        }, 5000);
+      }
       
       // Check if chat is currently active - suppress notifications if user is actively chatting
       console.log('🔔 [NOTIFICATION] Chat active state:', this.isChatActive);
@@ -430,11 +527,38 @@ class NotificationServiceClass implements NotificationService {
 
       console.log('🔔 [NOTIFICATION] Showing local notification now...');
       
-      // Send local notification (works when app is in foreground)
+      // Format message: if multiple messages, they're already separated by \n
+      // Title is the buddy name, message contains all messages
+      const displayTitle = messageCount && messageCount > 1 
+        ? `${buddyName} (${messageCount} messages)`
+        : buddyName;
+      
+      const displayMessage = messageCount && messageCount > 1
+        ? message // Already formatted with line breaks
+        : message; // Single message, use as is
+      
+      // Generate consistent numeric ID from buddy name for batched notifications
+      // This ensures same user's notifications replace each other
+      const getNotificationId = (name: string): number => {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+          const char = name.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash) || 1; // Ensure positive number, minimum 1
+      };
+      
+      const notificationId = messageCount && messageCount > 1 
+        ? getNotificationId(buddyName) // Same ID for same user = replaces previous notification
+        : Date.now() % 2147483647; // Unique ID for single messages (max 32-bit int)
+      
       PushNotification.localNotification({
+        id: notificationId, // Numeric ID required by react-native-push-notification
         channelId: 'whispr-messages',
-        title: title,
-        message: `${buddyName}: ${message}`,
+        title: displayTitle,
+        message: displayMessage,
+        tag: buddyName, // Use buddyName as tag so notifications from same user replace each other
         playSound: true,
         soundName: 'default',
         vibrate: true,
@@ -443,10 +567,15 @@ class NotificationServiceClass implements NotificationService {
         importance: 'high',
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
-        userInfo: { id: Date.now().toString() },
+        userInfo: { 
+          id: notificationId,
+          buddyName: buddyName,
+          messageCount: messageCount || 1,
+          isBatched: messageCount && messageCount > 1
+        },
       });
 
-      console.log('🔔 [NOTIFICATION] Notification sent successfully!');
+      console.log('🔔 [NOTIFICATION] Notification sent successfully!', { notificationId, tag: buddyName });
       return 'Message notification sent successfully';
     } catch (error) {
       console.error('Error sending message notification:', error);

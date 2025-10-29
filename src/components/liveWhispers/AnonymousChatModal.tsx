@@ -492,11 +492,77 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
           />
           <TouchableOpacity 
             style={styles.participantNameButton}
-            onPress={() => {
+            onPress={async () => {
               if (!isCurrentUser) {
-                console.log('Opening profile for participant:', item.user_id);
-                setSelectedParticipant(item);
-                setShowProfileView(true);
+                console.log('Checking buddy status before opening profile for participant:', item.user_id);
+                
+                // First check cached buddy status
+                const cachedBuddyStatus = buddyStatuses.get(item.user_id) || 'none';
+                
+                if (cachedBuddyStatus === 'buddies') {
+                  // Users ARE buddies - show message and allow profile viewing
+                  Alert.alert(
+                    'Already Buddies',
+                    `You and ${item.anonymous_name} are already buddies. You can check the profile to identify your buddy.`,
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel'
+                      },
+                      {
+                        text: 'View Profile',
+                        onPress: () => {
+                          console.log('Opening profile for buddy:', item.user_id);
+                          setSelectedParticipant(item);
+                          setShowProfileView(true);
+                        }
+                      }
+                    ]
+                  );
+                  return;
+                }
+                
+                // If not in cache or status unclear, check directly
+                try {
+                  const areBuddies = await AnonymousChatService.areUsersBuddies(user.id, item.user_id);
+                  
+                  if (areBuddies) {
+                    // Users ARE buddies - show message and allow profile viewing
+                    Alert.alert(
+                      'Already Buddies',
+                      `You and ${item.anonymous_name} are already buddies. You can check the profile to identify your buddy.`,
+                      [
+                        {
+                          text: 'Cancel',
+                          style: 'cancel'
+                        },
+                        {
+                          text: 'View Profile',
+                          onPress: () => {
+                            console.log('Opening profile for buddy:', item.user_id);
+                            setSelectedParticipant(item);
+                            setShowProfileView(true);
+                          }
+                        }
+                      ]
+                    );
+                  } else {
+                    // Users are NOT buddies - maintain anonymity
+                    Alert.alert(
+                      'Profile Unavailable',
+                      'User profiles are private to maintain anonymity in anonymous chat. You can view profiles after becoming buddies.',
+                      [{ text: 'OK', style: 'default' }]
+                    );
+                  }
+                } catch (error) {
+                  console.error('Error checking buddy status:', error);
+                  // On error, maintain anonymity by default
+                  Alert.alert(
+                    'Profile Unavailable',
+                    'User profiles are private to maintain anonymity in anonymous chat. You can view profiles after becoming buddies.',
+                    [{ text: 'OK', style: 'default' }]
+                  );
+                }
               }
             }}
             disabled={isCurrentUser}

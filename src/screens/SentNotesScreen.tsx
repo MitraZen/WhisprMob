@@ -9,7 +9,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
-  Clipboard,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { BuddiesService } from '../services/buddiesService';
@@ -38,11 +37,16 @@ interface SentNote {
 }
 
 interface NoteRecipient {
-  user_id: string;
-  username: string;
-  status: string;
-  received_at: string;
-  responded_at: string;
+  user_id?: string;
+  recipient_id?: string;
+  username?: string;
+  display_name?: string;
+  status?: string;
+  received_at?: string;
+  responded_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  id?: string;
 }
 
 const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onGoBack }) => {
@@ -77,11 +81,118 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
   const loadRecipients = async (noteId: string) => {
     try {
       setLoadingRecipients(true);
-      const recipientsData = await BuddiesService.getNoteRecipients(noteId);
-      setRecipients(recipientsData);
+      console.log('📋 Loading recipients for note:', noteId);
+      
+      // First try the RPC function
+      try {
+        const recipientsData = await BuddiesService.getNoteRecipients(noteId);
+        console.log('📋 Recipients data received from RPC:', recipientsData);
+        
+        if (recipientsData && Array.isArray(recipientsData)) {
+          // Ensure data has required fields - be flexible with field names
+          const validRecipients = recipientsData.filter((r: any) => r && (r.user_id || r.recipient_id || r.id));
+          console.log('📋 Valid recipients count:', validRecipients.length);
+          setRecipients(validRecipients);
+          return;
+        }
+      } catch (rpcError: any) {
+        const errorMessage = rpcError?.message || String(rpcError);
+        console.warn('⚠️ RPC function failed, trying fallback:', errorMessage);
+        
+        // Check if it's the known database schema error
+        if (errorMessage.includes('column up.user_id does not exist') || errorMessage.includes('42703')) {
+          console.warn('⚠️ Database function needs fixing: get_note_recipients references wrong column name');
+          // Fallback: try to get basic info from note_recipients table directly
+          try {
+            const { supabase } = await import('@/config/supabase');
+            console.log('📋 Attempting fallback query for note:', noteId);
+            
+            const { data, error: queryError } = await supabase
+              .from('note_recipients')
+              .select('recipient_id, status, received_at, responded_at, created_at, updated_at')
+              .eq('note_id', noteId)
+              .order('received_at', { ascending: false });
+            
+            if (queryError) {
+              console.error('❌ Fallback query error:', queryError);
+              setRecipients([]);
+              return;
+            }
+            
+            if (!data || data.length === 0) {
+              console.log('📋 No recipients found in fallback query');
+              setRecipients([]);
+              return;
+            }
+            
+            console.log('📋 Using fallback query, found recipients:', data.length);
+            
+            // Map to expected format with username lookup
+            const mappedRecipients = await Promise.all(
+              data.map(async (r: any) => {
+                try {
+                  // Try to get username from user_profiles
+                  const { data: profile, error: profileError } = await supabase
+                    .from('user_profiles')
+                    .select('username, display_name, id')
+                    .eq('id', r.recipient_id)
+                    .maybeSingle();
+                  
+                  if (profileError) {
+                    console.warn('⚠️ Error fetching profile for recipient:', r.recipient_id, profileError);
+                  }
+                  
+                  return {
+                    user_id: r.recipient_id,
+                    recipient_id: r.recipient_id,
+                    username: profile?.username || profile?.display_name || 'Unknown User',
+                    display_name: profile?.display_name,
+                    status: r.status || 'delivered',
+                    received_at: r.received_at || r.created_at,
+                    responded_at: r.responded_at || r.updated_at,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                  };
+                } catch (profileFetchError) {
+                  console.error('❌ Error fetching profile:', profileFetchError);
+                  return {
+                    user_id: r.recipient_id,
+                    recipient_id: r.recipient_id,
+                    username: 'Unknown User',
+                    status: r.status || 'delivered',
+                    received_at: r.received_at || r.created_at,
+                    responded_at: r.responded_at || r.updated_at,
+                  };
+                }
+              })
+            );
+            
+            console.log('📋 Mapped recipients:', mappedRecipients.length);
+            setRecipients(mappedRecipients);
+            return;
+          } catch (fallbackError) {
+            console.error('❌ Fallback query failed:', fallbackError);
+          }
+        }
+        
+        // Re-throw if not the known error
+        throw rpcError;
+      }
+      
+      // If we get here, RPC didn't fail but returned invalid data
+      console.warn('📋 RPC returned invalid data, setting empty recipients');
+      setRecipients([]);
     } catch (error) {
-      console.error('Error loading recipients:', error);
-      Alert.alert('Error', 'Failed to load recipients');
+      console.error('❌ Error loading recipients:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Don't show alert on error - just show empty list
+      setRecipients([]);
+      
+      // Log full error for debugging
+      if (!errorMessage.includes('column up.user_id does not exist') && !errorMessage.includes('42703')) {
+        console.error('❌ Full error details:', error);
+      }
     } finally {
       setLoadingRecipients(false);
     }
@@ -192,15 +303,41 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
       <View style={styles.noteStats}>
         <View style={styles.statItem}>
           <Icon name="send" size={16} color={theme.colors.onSurfaceVariant} />
-          <Text style={styles.statText}>{item.recipient_count} delivered</Text>
+          <Text style={styles.statText}>
+            {/* Recipient count should be total interactions (listened + rejected) */}
+            {Math.max(
+              item.recipient_count || 0,
+              (item.listened_count || 0) + (item.rejected_count || 0)
+            )} delivered
+          </Text>
         </View>
         <View style={styles.statItem}>
           <Icon name="play" size={16} color={theme.colors.success} />
-          <Text style={styles.statText}>{item.listened_count} listened</Text>
+          <Text style={styles.statText}>
+            {/* Listened count cannot exceed recipient count */}
+            {(() => {
+              const listened = item.listened_count || 0;
+              const total = Math.max(
+                item.recipient_count || 0,
+                (item.listened_count || 0) + (item.rejected_count || 0)
+              );
+              return Math.min(listened, total);
+            })()} listened
+          </Text>
         </View>
         <View style={styles.statItem}>
           <Icon name="close" size={16} color={theme.colors.error} />
-          <Text style={styles.statText}>{item.rejected_count} rejected</Text>
+          <Text style={styles.statText}>
+            {/* Rejected count cannot exceed recipient count */}
+            {(() => {
+              const rejected = item.rejected_count || 0;
+              const total = Math.max(
+                item.recipient_count || 0,
+                (item.listened_count || 0) + (item.rejected_count || 0)
+              );
+              return Math.min(rejected, total);
+            })()} rejected
+          </Text>
         </View>
       </View>
       
@@ -211,45 +348,41 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
     </TouchableOpacity>
   );
 
-  const renderRecipientItem = ({ item }: { item: NoteRecipient }) => (
-    <View style={styles.recipientCard}>
-      <View style={styles.recipientHeader}>
-        <View style={styles.recipientInfo}>
-          <Text style={styles.recipientName}>{item.username}</Text>
-          <Text style={styles.recipientDate}>
-            Received: {formatDate(item.received_at)}
-          </Text>
-          {item.responded_at && (
+  const renderRecipientItem = ({ item }: { item: NoteRecipient }) => {
+    // Handle missing data gracefully
+    const username = item.username || item.display_name || 'Unknown User';
+    const status = item.status || 'delivered';
+    const receivedAt = item.received_at || item.created_at || new Date().toISOString();
+    const respondedAt = item.responded_at || item.updated_at;
+    
+    return (
+      <View style={styles.recipientCard}>
+        <View style={styles.recipientHeader}>
+          <View style={styles.recipientInfo}>
+            <Text style={styles.recipientName}>{username}</Text>
             <Text style={styles.recipientDate}>
-              Responded: {formatDate(item.responded_at)}
+              {status === 'listened' ? 'Listened' : status === 'rejected' ? 'Rejected' : 'Received'}: {formatDate(receivedAt)}
             </Text>
-          )}
-        </View>
-        <View style={styles.recipientStatus}>
-          <Icon
-            name={getStatusIcon(item.status)}
-            size={20}
-            color={getStatusColor(item.status)}
-          />
-          <Text style={[styles.recipientStatusText, { color: getStatusColor(item.status) }]}>
-            {item.status.toUpperCase()}
-          </Text>
+            {respondedAt && respondedAt !== receivedAt && (
+              <Text style={styles.recipientDate}>
+                Responded: {formatDate(respondedAt)}
+              </Text>
+            )}
+          </View>
+          <View style={styles.recipientStatus}>
+            <Icon
+              name={getStatusIcon(status)}
+              size={20}
+              color={getStatusColor(status)}
+            />
+            <Text style={[styles.recipientStatusText, { color: getStatusColor(status) }]}>
+              {status.toUpperCase()}
+            </Text>
+          </View>
         </View>
       </View>
-      
-      <TouchableOpacity
-        onPress={() => {
-          Clipboard.setString(item.user_id);
-          Alert.alert('Copied', 'User ID copied to clipboard');
-        }}
-        style={styles.userIdContainer}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.recipientUserId}>ID: {item.user_id}</Text>
-        <Icon name="copy-outline" size={14} color={theme.colors.primary} />
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -310,10 +443,18 @@ const SentNotesScreen: React.FC<SentNotesScreenProps> = ({ onNavigate, user, onG
               <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.loadingText}>Loading recipients...</Text>
             </View>
+          ) : recipients.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="people-outline" size={64} color={theme.colors.onSurfaceVariant} />
+              <Text style={styles.emptyText}>No recipients yet</Text>
+              <Text style={styles.emptySubtext}>
+                This note hasn't been listened to or rejected by anyone yet.
+              </Text>
+            </View>
           ) : (
             <FlatList
               data={recipients}
-              keyExtractor={(item) => item.user_id}
+              keyExtractor={(item) => item.user_id || item.id || Math.random().toString()}
               renderItem={renderRecipientItem}
               style={styles.recipientsList}
               showsVerticalScrollIndicator={false}
@@ -550,21 +691,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     marginTop: 2,
-  },
-  userIdContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: theme.colors.surfaceVariant,
-    padding: spacing.sm,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.primary + '15',
-  },
-  recipientUserId: {
-    fontSize: 12,
-    color: theme.colors.primary,
-    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,

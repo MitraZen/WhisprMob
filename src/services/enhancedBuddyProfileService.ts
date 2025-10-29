@@ -144,9 +144,23 @@ class EnhancedBuddyProfileService {
           displayName: profileData.display_name || profileData.username || 'Anonymous User',
           username: profileData.username || profileData.anonymous_id || 'anonymous',
           bio: profileData.bio || 'No bio available',
-          age: profileData.age || profileData.date_of_birth ? 
-            (new Date().getFullYear() - new Date(profileData.date_of_birth).getFullYear()).toString() : 
-            'Not specified',
+          age: (() => {
+            const dob = profileData.date_of_birth ? new Date(profileData.date_of_birth) : null;
+            const numericAge = typeof profileData.age === 'number' ? profileData.age : parseInt(profileData.age, 10);
+            if (dob && !isNaN(dob.getTime())) {
+              const today = new Date();
+              let ageYears = today.getFullYear() - dob.getFullYear();
+              const m = today.getMonth() - dob.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+                ageYears--;
+              }
+              return String(ageYears);
+            }
+            if (!isNaN(numericAge)) {
+              return String(numericAge);
+            }
+            return 'Not specified';
+          })(),
           location: profileData.location || profileData.country || 'Not specified',
           gender: profileData.gender || 'Not specified',
           mood: profileData.mood || 'happy',

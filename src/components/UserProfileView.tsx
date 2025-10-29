@@ -51,7 +51,23 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           displayName: profile.display_name || 'Unknown User',
           username: profile.username || 'unknown',
           bio: profile.bio || 'No bio available',
-          age: profile.age || 'Not specified',
+          age: (() => {
+            const dob = profile.date_of_birth ? new Date(profile.date_of_birth) : null;
+            const numericAge = typeof profile.age === 'number' ? profile.age : parseInt(profile.age, 10);
+            if (dob && !isNaN(dob.getTime())) {
+              const today = new Date();
+              let ageYears = today.getFullYear() - dob.getFullYear();
+              const m = today.getMonth() - dob.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+                ageYears--;
+              }
+              return String(ageYears);
+            }
+            if (!isNaN(numericAge)) {
+              return String(numericAge);
+            }
+            return 'Not specified';
+          })(),
           location: profile.location || 'Not specified',
           gender: profile.gender || 'Not specified',
           mood: profile.mood || 'neutral',
