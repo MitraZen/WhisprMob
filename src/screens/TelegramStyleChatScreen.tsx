@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -146,8 +146,31 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const [repliesByMessageId, setRepliesByMessageId] = useState<Record<string, ReplyInfo>>({});
   const [replyingToMessage, setReplyingToMessage] = useState<any>(null);
   
+  // Search functionality
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchMode, setIsSearchMode] = useState(false);
+  
   const scrollViewRef = useRef<ScrollView>(null);
   const processingMessages = useRef<Set<string>>(new Set());
+
+  // Filter messages based on search query
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return messages;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    return messages.filter(message => 
+      message.content?.toLowerCase().includes(query)
+    );
+  }, [messages, searchQuery]);
+
+  // Toggle search mode
+  const toggleSearchMode = () => {
+    setIsSearchMode(prev => !prev);
+    if (isSearchMode) {
+      setSearchQuery('');
+    }
+  };
 
   useEffect(() => {
     if (buddy?.id && user?.id) {
@@ -771,6 +794,18 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           <Text style={styles.buddyStatus}>Online</Text>
         </View>
         
+        <TouchableOpacity 
+          style={styles.searchButton} 
+          onPress={toggleSearchMode}
+          activeOpacity={0.7}
+        >
+          <Icon 
+            name={isSearchMode ? "close" : "search"} 
+            size={24} 
+            color={isSearchMode ? theme.colors.error : theme.colors.primary} 
+          />
+        </TouchableOpacity>
+        
         <TouchableOpacity style={styles.menuButton} onPress={clearChat}>
           <Icon name="trash-outline" size={24} color={theme.colors.onSurface} />
         </TouchableOpacity>
@@ -779,6 +814,38 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           <Icon name="person-remove-outline" size={24} color={theme.colors.error} />
         </TouchableOpacity>
       </View>
+
+      {/* Search Bar */}
+      {isSearchMode && (
+        <View>
+          <View style={styles.searchContainer}>
+            <Icon name="search" size={20} color={theme.colors.onSurfaceVariant} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: getTextInputColor(theme) }]}
+              placeholder="Search messages..."
+              placeholderTextColor={getPlaceholderTextColor(theme)}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus={true}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity 
+                onPress={() => setSearchQuery('')}
+                style={styles.clearSearchButton}
+              >
+                <Icon name="close-circle" size={20} color={theme.colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            )}
+          </View>
+          {searchQuery.trim().length > 0 && (
+            <View style={styles.searchResultsContainer}>
+              <Text style={styles.searchResultsCount}>
+                {filteredMessages.length} {filteredMessages.length === 1 ? 'result' : 'results'}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
 
       <ScrollView
         ref={scrollViewRef}
@@ -793,14 +860,20 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={styles.loadingText}>Loading messages...</Text>
           </View>
-        ) : messages.length === 0 ? (
+        ) : filteredMessages.length === 0 && searchQuery.trim().length > 0 ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
+            <Text style={styles.emptyText}>No results found</Text>
+            <Text style={styles.emptySubtext}>Try a different search term</Text>
+          </View>
+        ) : filteredMessages.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
             <Text style={styles.emptyText}>No messages yet</Text>
             <Text style={styles.emptySubtext}>Start a conversation!</Text>
           </View>
         ) : (
-          messages.map((message, index) => (
+          filteredMessages.map((message, index) => (
             <View key={message.id || `message-${index}`}>
               {renderMessage(message)}
             </View>
@@ -974,12 +1047,50 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 14,
     color: theme.colors.onSurfaceVariant,
   },
+  searchButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
   menuButton: {
     padding: 8,
   },
   deleteButton: {
     padding: 8,
     marginLeft: 8,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: theme.colors.border,
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: theme.colors.onSurface,
+    paddingVertical: 8,
+  },
+  clearSearchButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  searchResultsContainer: {
+    backgroundColor: theme.colors.surfaceVariant,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: theme.colors.border,
+  },
+  searchResultsCount: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '500',
   },
   messagesContainer: {
     flex: 1,

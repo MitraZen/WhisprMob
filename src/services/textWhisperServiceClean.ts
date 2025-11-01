@@ -94,15 +94,58 @@ class TextWhisperService {
   }
 
   /**
-   * Get nearby text whisprs
+   * Calculate distance between two coordinates using Haversine formula (returns meters)
+   */
+  private calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  }
+
+  /**
+   * Get nearby text whisprs filtered by actual geographic distance
    */
   async getNearbyTextWhisprs(limit: number = 20, radiusMeters?: number): Promise<TextWhispr[]> {
     try {
       console.log('📍 Fetching nearby text whisprs...');
       if (radiusMeters) {
-        console.log(`📍 Filtering by radius: ${radiusMeters}m`);
+        console.log(`📍 Filtering by actual distance: ${radiusMeters}m`);
       }
 
+      // Get current user's location from user_locations
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get current user's location
+      const { data: userLocation, error: locationError } = await supabase
+        .from('user_locations')
+        .select('latitude, longitude')
+        .eq('user_id', user.id)
+        .single();
+
+      let currentUserLat: number | null = null;
+      let currentUserLon: number | null = null;
+
+      if (!locationError && userLocation) {
+        currentUserLat = userLocation.latitude;
+        currentUserLon = userLocation.longitude;
+        console.log('📍 Current user location:', { lat: currentUserLat, lon: currentUserLon });
+      } else {
+        console.warn('⚠️ Could not get user location, will show all whisprs');
+      }
+
+      // Fetch whisprs with user_id to get creator locations
       const { data, error } = await supabase
         .from('whisprs')
         .select(`
@@ -113,27 +156,106 @@ class TextWhisperService {
           is_anonymous,
           created_at,
           expires_at,
-          radius_meters
+          radius_meters,
+          user_id
         `)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
-        .limit(limit);
+        .limit(limit * 3); // Fetch more to account for filtering
 
       if (error) {
         console.error('❌ Error fetching whisprs:', error);
         throw new Error(`Failed to fetch whisprs: ${error.message}`);
       }
 
-      // Filter by radius if specified
-      let filteredData = data || [];
-      if (radiusMeters && data) {
-        filteredData = data.filter(whispr => {
-          const whisprRadius = whispr.radius_meters || 1000;
-          return whisprRadius <= radiusMeters;
-        });
-        console.log(`📍 Filtered from ${data.length} to ${filteredData.length} whisprs`);
+      if (!data || data.length === 0) {
+        console.log('✅ No whisprs found');
+        return [];
       }
 
+      // If no location or no radius filter, return all whisprs (respecting whispr's own radius)
+      if (!currentUserLat || !currentUserLon || !radiusMeters) {
+        console.log('📍 No location or no filter specified, returning all whisprs');
+        return data.map(w => ({
+          id: w.id,
+          content: w.content,
+          character_count: w.character_count,
+          mood: w.mood,
+          is_anonymous: w.is_anonymous,
+          created_at: w.created_at,
+          expires_at: w.expires_at,
+          radius_meters: w.radius_meters
+        }));
+      }
+
+      // Get creator locations for all whisprs
+      const creatorIds = [...new Set(data.map(w => w.user_id).filter(Boolean))];
+      const { data: creatorLocations, error: creatorLocError } = await supabase
+        .from('user_locations')
+        .select('user_id, latitude, longitude')
+        .in('user_id', creatorIds);
+
+      if (creatorLocError) {
+        console.warn('⚠️ Could not get creator locations:', creatorLocError);
+      }
+
+      // Create a map of user_id -> location for quick lookup
+      const locationMap = new Map<string, { lat: number; lon: number }>();
+      (creatorLocations || []).forEach(loc => {
+        if (loc.latitude && loc.longitude) {
+          locationMap.set(loc.user_id, { lat: loc.latitude, lon: loc.longitude });
+        }
+      });
+
+      // Filter by actual geographic distance
+      const filteredData = data
+        .map(w => {
+          const creatorLoc = w.user_id ? locationMap.get(w.user_id) : null;
+          let distanceMeters: number | null = null;
+
+          if (creatorLoc && currentUserLat && currentUserLon) {
+            distanceMeters = this.calculateDistanceMeters(
+              currentUserLat,
+              currentUserLon,
+              creatorLoc.lat,
+              creatorLoc.lon
+            );
+          }
+
+          return {
+            whispr: w,
+            distanceMeters
+          };
+        })
+        .filter(({ whispr, distanceMeters }) => {
+          // If we don't have location data, don't filter (show it)
+          if (distanceMeters === null) {
+            return true;
+          }
+
+          // Filter by actual distance
+          const withinDistance = distanceMeters <= radiusMeters;
+          
+          // Also respect the whispr's own radius setting
+          // A whispr with radius_meters = 50000 should only be visible within 50km
+          const whisprRadius = whispr.radius_meters || 1000;
+          const respectsWhisprRadius = distanceMeters <= whisprRadius;
+
+          return withinDistance && respectsWhisprRadius;
+        })
+        .map(({ whispr }) => ({
+          id: whispr.id,
+          content: whispr.content,
+          character_count: whispr.character_count,
+          mood: whispr.mood,
+          is_anonymous: whispr.is_anonymous,
+          created_at: whispr.created_at,
+          expires_at: whispr.expires_at,
+          radius_meters: whispr.radius_meters
+        }))
+        .slice(0, limit); // Limit results
+
+      console.log(`📍 Filtered from ${data.length} to ${filteredData.length} whisprs by actual distance`);
       console.log('✅ Found', filteredData.length, 'nearby text whisprs');
       return filteredData;
     } catch (error) {

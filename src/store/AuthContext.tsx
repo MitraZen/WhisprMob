@@ -7,6 +7,8 @@ import { BuddiesService } from '@/services/buddiesService';
 import { notificationService } from '@/services/notificationService';
 import BiometricService from '@/services/biometricService';
 import { supabase } from '@/config/supabase';
+import messaging from '@react-native-firebase/messaging';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -68,50 +70,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const [isProfileComplete, setIsProfileComplete] = React.useState<boolean | undefined>(undefined);
 
-  // Check and prompt for notification permissions
+  // Check and prompt for notification permissions using native OS permission dialog
   const checkNotificationPermissions = async () => {
     try {
-      const hasPermission = await notificationService.checkNotificationPermission();
-      
-      if (!hasPermission) {
-        console.log('🔔 Notification permissions not granted - showing prompt');
-        
-        Alert.alert(
-          'Enable Notifications',
-          'Whispr needs notification permission to alert you about new messages and notes. You\'ll miss important updates without it.\n\nEnable notifications now?',
-          [
-            {
-              text: 'Not Now',
-              style: 'cancel',
-              onPress: () => {
-                console.log('User declined notification permissions');
-              }
-            },
-            {
-              text: 'Enable',
-              onPress: async () => {
-                try {
-                  console.log('User accepted notification permissions - requesting...');
-                  await notificationService.requestNotificationPermission();
-                  console.log('Notification permission request completed');
-                  
-                  // Show battery optimization prompt after notification permission
-                  setTimeout(() => {
-                    showBatteryOptimizationPrompt();
-                  }, 1000);
-                } catch (error) {
-                  console.error('Error requesting notification permissions:', error);
-                }
-              }
-            }
-          ],
-          { cancelable: true }
-        );
-      } else {
-        console.log('🔔 Notification permissions already granted');
+      const prompted = await AsyncStorage.getItem('notifPrompted');
+      if (prompted) {
+        console.log('🔔 Notification permission already requested before');
+        return;
       }
+
+      console.log('🔔 Requesting OS-level notification permission...');
+
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+      if (enabled) {
+        console.log('✅ Notification permission granted by user');
+        const token = await messaging().getToken();
+        console.log('🔑 FCM Token:', token);
+
+        // Save token to database if user is authenticated
+        // FCMManager.initialize() handles token saving internally
+        if (state.user?.id) {
+          try {
+            const { fcmManager } = await import('@/services/FCMManager');
+            await fcmManager.initialize(state.user.id);
+            console.log('✅ FCM token saved via FCMManager');
+          } catch (error) {
+            console.warn('⚠️ Failed to save FCM token after permission:', error);
+          }
+        }
+
+        // Show battery optimization prompt after notification permission
+        setTimeout(() => {
+          showBatteryOptimizationPrompt();
+        }, 1000);
+      } else {
+        console.log('🚫 Notification permission denied by user');
+      }
+
+      await AsyncStorage.setItem('notifPrompted', 'true');
     } catch (error) {
-      console.error('Error checking notification permissions:', error);
+      console.error('❌ Error checking/requesting notification permissions:', error);
     }
   };
 
