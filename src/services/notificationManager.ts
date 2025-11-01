@@ -39,85 +39,91 @@ class NotificationManagerClass implements NotificationManager {
     pollingNotifications: 0,
   };
   private lastInitializationAttempt = 0;
-  private initializationCooldown = 30000; // 30 seconds cooldown between attempts
-  private isStopping = false; // Add flag to prevent infinite loops
-  private initializationPromise: Promise<void> | null = null; // Prevent multiple simultaneous initializations
+  private initializationCooldown = 30000; // 30 seconds cooldown
+  private isStopping = false;
+  private initializationPromise: Promise<void> | null = null;
   private connectionStateUnsubscribe: (() => void) | null = null;
   private isConnectionRecoveryEnabled = true;
   private lastPollingTime: number = 0;
   private pollingCooldown = 30000; // 30 seconds between polls
-  private lastAppActiveTime: number = 0; // Track when app was last active
+  private lastAppActiveTime: number = 0;
+  private userProfileCache: Map<string, { name: string; timestamp: number }> | null = null;
 
-      async startNotificationService(userId: string): Promise<void> {
-        // Prevent multiple simultaneous initializations
-        if (this.initializationPromise) {
-          console.log('🔄 Notification service initialization already in progress, waiting...');
-          return this.initializationPromise;
-        }
+  async startNotificationService(userId: string): Promise<void> {
+    // Prevent multiple simultaneous initializations
+    if (this.initializationPromise) {
+      console.log('🔄 Notification service initialization already in progress, waiting...');
+      return this.initializationPromise;
+    }
 
-        // If already active for the same user, return early
-        if (this.userId === userId && (this.realtimeActive || this.pollingActive)) {
-          console.log('✅ Notification service already active for user:', userId);
-          return;
-        }
+    // If already active for the same user, return early
+    if (this.userId === userId && (this.realtimeActive || this.pollingActive)) {
+      console.log('✅ Notification service already active for user:', userId);
+      return;
+    }
 
-        this.userId = userId;
+    this.userId = userId;
+    
+    // Initialize connection recovery service if enabled
+    if (this.isConnectionRecoveryEnabled) {
+      await connectionRecoveryService.initialize();
+      this.setupConnectionRecovery();
+    }
+    
+    // Check cooldown to prevent excessive initialization attempts
+    const now = Date.now();
+    if (now - this.lastInitializationAttempt < this.initializationCooldown) {
+      console.log('⏰ Initialization cooldown active - using polling only');
+      await this.startPollingFallback(userId);
+      return;
+    }
+    
+    this.lastInitializationAttempt = now;
+    console.log('🚀 Starting hybrid notification service for user:', userId);
+    
+    // Create initialization promise to prevent duplicates
+    this.initializationPromise = this.performInitialization(userId);
+    
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  // ✅ FIXED: Removed duplicate FCM initialization
+  private async performInitialization(userId: string): Promise<void> {
+    try {
+      // ❌ REMOVED: Duplicate FCM initialization
+      // OLD CODE (DELETED):
+      // console.log('🔥 Initializing FCM for user:', userId);
+      // await notificationService.initializeFCMAfterLogin(userId);
+      
+      // ✅ FCM is now handled ONLY by FCMManager in AuthContext
+      console.log('📡 Initializing realtime service (FCM handled by FCMManager)');
+      
+      // Try realtime first (now with WebSocket polyfill)
+      const realtimeSuccess = await realtimeService.initialize(userId);
+      
+      if (realtimeSuccess) {
+        this.realtimeActive = true;
+        this.fallbackMode = false;
+        this.performanceMetrics.realtimeSuccessRate = 100;
+        console.log('✅ Realtime service started successfully');
         
-        // Initialize connection recovery service if enabled
-        if (this.isConnectionRecoveryEnabled) {
-          await connectionRecoveryService.initialize();
-          this.setupConnectionRecovery();
-        }
+        // Setup fallback listener
+        this.setupRealtimeFailureListener();
         
-        // Check cooldown to prevent excessive initialization attempts
-        const now = Date.now();
-        if (now - this.lastInitializationAttempt < this.initializationCooldown) {
-          console.log('⏰ Initialization cooldown active - using polling only');
-          await this.startPollingFallback(userId);
-          return;
-        }
-        
-        this.lastInitializationAttempt = now;
-        console.log('🚀 Starting hybrid notification service for user:', userId);
-        
-        // Create initialization promise to prevent duplicates
-        this.initializationPromise = this.performInitialization(userId);
-        
-        try {
-          await this.initializationPromise;
-        } finally {
-          this.initializationPromise = null;
-        }
+        // Start background optimization
+        this.startBackgroundOptimization();
+      } else {
+        throw new Error('Realtime initialization failed');
       }
-
-      private async performInitialization(userId: string): Promise<void> {
-        try {
-          // Initialize FCM after user login
-          console.log('🔥 Initializing FCM for user:', userId);
-          await notificationService.initializeFCMAfterLogin(userId);
-          
-          // Try realtime first (now with WebSocket polyfill)
-          const realtimeSuccess = await realtimeService.initialize(userId);
-          
-          if (realtimeSuccess) {
-            this.realtimeActive = true;
-            this.fallbackMode = false;
-            this.performanceMetrics.realtimeSuccessRate = 100;
-            console.log('✅ Realtime service started successfully');
-            
-            // Setup fallback listener
-            this.setupRealtimeFailureListener();
-            
-            // Start background optimization
-            this.startBackgroundOptimization();
-          } else {
-            throw new Error('Realtime initialization failed');
-          }
-        } catch (error) {
-          console.warn('⚠️ Realtime failed, starting polling fallback:', error);
-          await this.startPollingFallback(userId);
-        }
-      }
+    } catch (error) {
+      console.warn('⚠️ Realtime failed, starting polling fallback:', error);
+      await this.startPollingFallback(userId);
+    }
+  }
 
   private async startPollingFallback(userId: string): Promise<void> {
     this.fallbackMode = true;
@@ -128,7 +134,6 @@ class NotificationManagerClass implements NotificationManager {
   }
 
   private setupRealtimeFailureListener(): void {
-    // Listen for realtime failures
     const handleRealtimeFailure = (event: any) => {
       const { userId } = event.detail;
       if (userId === this.userId && !this.fallbackMode) {
@@ -137,27 +142,24 @@ class NotificationManagerClass implements NotificationManager {
       }
     };
 
-    // Check if we're in a browser environment
     if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('realtime-failed', handleRealtimeFailure);
       this.realtimeFailureHandler = handleRealtimeFailure;
     } else {
-      // In React Native, we'll use a different approach
       console.log('🔄 Realtime failure listener set up for React Native');
     }
   }
 
   private getOptimalPollingInterval(): number {
-    // Dynamic polling based on connection health and mode
     if (this.fallbackMode) {
-      return 15000; // 15 seconds in fallback mode (reduced from 30s)
+      return 15000; // 15 seconds in fallback mode
     }
     
     if (this.performanceMetrics.realtimeSuccessRate < 0.8) {
       return 30000; // 30 seconds if realtime is unreliable
     }
     
-    return 60000; // 1 minute if realtime is healthy (increased from 30s)
+    return 60000; // 1 minute if realtime is healthy
   }
 
   private startPollingInternal(userId: string): void {
@@ -172,17 +174,13 @@ class NotificationManagerClass implements NotificationManager {
     this.lastMessageIds = {};
     this.lastNoteIds = [];
     
-    // Use dynamic interval based on connection health
     const interval = this.getOptimalPollingInterval();
     
     this.pollingInterval = setInterval(async () => {
       try {
         await this.checkForNewMessages();
         await this.checkForNewNotes();
-        
-        // Update performance metrics
         this.updatePerformanceMetrics();
-        
         console.log(`📡 Polling cycle completed (${interval}ms interval)`);
       } catch (error) {
         console.error('❌ Polling cycle error:', error);
@@ -193,58 +191,39 @@ class NotificationManagerClass implements NotificationManager {
     console.log(`📡 Notification polling started (${this.fallbackMode ? 'fallback' : 'primary'} mode, ${interval}ms interval)`);
   }
 
-  private startPollingPublic(userId: string): void {
-    console.log('🔄 Public startPolling called - delegating to internal method');
-    this.startPollingInternal(userId);
-  }
-
   private stopPollingInternal(): void {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
     this.pollingActive = false;
-    console.log('🛑 Notification polling stopped (internal)');
+    console.log('🛑 Notification polling stopped');
   }
 
-  private stopPollingPublic(): void {
-    console.log('🛑 Public stopPolling called - delegating to internal method');
-    this.stopPollingInternal();
-  }
-
-  /**
-   * Setup connection recovery integration
-   */
   private setupConnectionRecovery(): void {
     if (!this.isConnectionRecoveryEnabled) {
       return;
     }
 
-    console.log('🔄 Setting up connection recovery integration for notification manager');
+    console.log('🔄 Setting up connection recovery integration');
 
-    // Register for connection state changes
     this.connectionStateUnsubscribe = connectionRecoveryService.onConnectionStateChange((state: ConnectionState) => {
       this.handleConnectionStateChange(state);
     });
 
-    // Register reconnection callback
     connectionRecoveryService.onReconnectionAttempt(async () => {
       return await this.attemptReconnection();
     });
   }
 
-  /**
-   * Handle connection state changes from recovery service
-   */
   private handleConnectionStateChange(state: ConnectionState): void {
-    console.log('📡 Notification manager - connection state changed:', {
+    console.log('📡 Connection state changed:', {
       isConnected: state.isConnected,
       isRealtimeConnected: state.isRealtimeConnected,
       connectionQuality: state.connectionQuality,
       retryCount: state.retryCount,
     });
 
-    // Update our internal state based on connection quality
     if (state.connectionQuality === 'offline') {
       console.log('🔴 Network offline - switching to polling');
       if (this.realtimeActive && this.userId) {
@@ -252,7 +231,6 @@ class NotificationManagerClass implements NotificationManager {
       }
     } else if (state.connectionQuality === 'poor' && this.fallbackMode) {
       console.log('⚠️ Poor connection - staying with polling');
-      // Stay with polling for poor connections
     } else if (state.connectionQuality === 'good' || state.connectionQuality === 'excellent') {
       console.log('🟢 Good connection - attempting realtime upgrade');
       if (this.fallbackMode && this.userId) {
@@ -261,9 +239,6 @@ class NotificationManagerClass implements NotificationManager {
     }
   }
 
-  /**
-   * Attempt reconnection (called by connection recovery service)
-   */
   private async attemptReconnection(): Promise<boolean> {
     if (!this.userId) {
       console.log('❌ Cannot reconnect - no userId');
@@ -271,24 +246,22 @@ class NotificationManagerClass implements NotificationManager {
     }
 
     try {
-      console.log('🔄 Notification manager - attempting reconnection');
+      console.log('🔄 Attempting reconnection');
       
-      // Try to initialize realtime service
       const realtimeSuccess = await realtimeService.initialize(this.userId);
       
       if (realtimeSuccess) {
         this.realtimeActive = true;
         this.fallbackMode = false;
         this.stopPollingInternal();
-        console.log('✅ Notification manager reconnection successful');
+        console.log('✅ Reconnection successful');
         return true;
       } else {
-        console.log('❌ Notification manager reconnection failed - staying with polling');
+        console.log('❌ Reconnection failed - staying with polling');
         return false;
       }
-      
     } catch (error) {
-      console.error('❌ Notification manager reconnection error:', error);
+      console.error('❌ Reconnection error:', error);
       return false;
     }
   }
@@ -296,21 +269,17 @@ class NotificationManagerClass implements NotificationManager {
   async stopNotificationService(): Promise<void> {
     console.log('🛑 Stopping hybrid notification service...');
     
-    // Stop realtime
     if (this.realtimeActive) {
       await realtimeService.disconnect();
       this.realtimeActive = false;
     }
     
-    // Stop polling
     this.stopPollingInternal();
     
-    // Clean up event listeners
     if (this.realtimeFailureHandler && typeof window !== 'undefined' && window.removeEventListener) {
       window.removeEventListener('realtime-failed', this.realtimeFailureHandler);
     }
     
-    // Clean up connection recovery integration
     if (this.connectionStateUnsubscribe) {
       this.connectionStateUnsubscribe();
       this.connectionStateUnsubscribe = null;
@@ -355,10 +324,8 @@ class NotificationManagerClass implements NotificationManager {
     console.log('🌙 Optimizing for background mode...');
     
     if (this.realtimeActive) {
-      // Keep realtime but reduce activity
       console.log('📡 Maintaining realtime connection in background');
     } else if (this.pollingActive) {
-      // Increase polling interval in background
       this.stopPollingInternal();
       this.startPollingInternal(this.userId!);
       console.log('⏰ Reduced polling frequency for background');
@@ -367,17 +334,15 @@ class NotificationManagerClass implements NotificationManager {
 
   async optimizeForForeground(): Promise<void> {
     console.log('☀️ Optimizing for foreground mode...');
-    this.lastAppActiveTime = Date.now(); // Track when app became active
+    this.lastAppActiveTime = Date.now();
     
     if (this.fallbackMode && this.pollingActive) {
-      // Check cooldown before attempting realtime reconnection
       const now = Date.now();
       if (now - this.lastInitializationAttempt < this.initializationCooldown) {
         console.log('⏰ Realtime reconnection cooldown active - staying with polling');
         return;
       }
       
-      // Try to reconnect to realtime
       try {
         this.lastInitializationAttempt = now;
         const realtimeSuccess = await realtimeService.initialize(this.userId!);
@@ -394,7 +359,6 @@ class NotificationManagerClass implements NotificationManager {
   }
 
   private startBackgroundOptimization(): void {
-    // Monitor app state changes
     if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof window.addEventListener === 'function') {
       const handleVisibilityChange = () => {
         if (document.hidden) {
@@ -408,10 +372,6 @@ class NotificationManagerClass implements NotificationManager {
     }
   }
 
-  // Keep existing polling methods as fallback
-  /**
-   * Public method to poll for new messages (Phase 3: Direct Wake-up)
-   */
   async pollForNewMessages(): Promise<void> {
     console.log('🔄 Polling for new messages...');
     await this.checkForNewMessages();
@@ -421,7 +381,6 @@ class NotificationManagerClass implements NotificationManager {
   private async checkForNewMessages(): Promise<void> {
     if (!this.userId) return;
     
-    // Check cooldown to prevent too frequent polling
     const now = Date.now();
     if (this.lastPollingTime && (now - this.lastPollingTime) < this.pollingCooldown) {
       console.log(`⏳ Polling cooldown active, skipping check (${Math.round((this.pollingCooldown - (now - this.lastPollingTime)) / 1000)}s remaining)`);
@@ -435,42 +394,29 @@ class NotificationManagerClass implements NotificationManager {
       for (const buddy of limitedBuddies) {
         try {
           const messages = await BuddiesService.getMessages(buddy.id, this.userId);
-          const now = Date.now();
-          const lastPollTime = this.lastPollingTime || (now - 60000); // Default to 1 minute ago if never polled
+          const lastPollTime = this.lastPollingTime || (now - 60000);
           
           const newMessages = messages.filter(msg => {
-            // Only process messages from other users
             if (msg.senderId === this.userId) return false;
             
-            // Check if message is newer than last polling time
-            const messageTime = new Date(msg.created_at || msg.timestamp).getTime();
+            const messageTime = new Date(msg.createdAt || msg.timestamp).getTime();
             const isNewByTime = messageTime > lastPollTime;
-            
-            // Also check if not already processed (fallback)
             const notInCache = !this.lastMessageIds[buddy.id]?.includes(msg.id);
-            
-            // Additional check: Don't process messages that are older than when app was last active
-            // This prevents processing messages that were already handled by FCM when app was backgrounded
-            const appActiveTime = this.lastAppActiveTime || (now - 300000); // Default to 5 minutes ago if never tracked
+            const appActiveTime = this.lastAppActiveTime || (now - 300000);
             const isRecentMessage = messageTime > appActiveTime;
+            const willProcess = isNewByTime && notInCache && isRecentMessage;
             
-            console.log(`🔍 Message filtering for ${msg.id}:`, {
-              messageTime: new Date(messageTime).toISOString(),
-              lastPollTime: new Date(lastPollTime).toISOString(),
-              appActiveTime: new Date(appActiveTime).toISOString(),
-              isNewByTime,
-              notInCache,
-              isRecentMessage,
-              willProcess: isNewByTime && notInCache && isRecentMessage
-            });
+            // Only log if message will be processed (reduces log spam)
+            if (willProcess) {
+              console.log(`🔍 Message ${msg.id} passed filter (new/time/cache)`);
+            }
             
-            return isNewByTime && notInCache && isRecentMessage;
+            return willProcess;
           });
           
           if (newMessages.length > 0) {
             console.log(`📨 Polling: Found ${newMessages.length} new messages for ${buddy.name}`);
             for (const message of newMessages) {
-              // Use the same buddy name resolution as hybrid system
               const buddyDisplayName = await this.getBuddyDisplayName(message.senderId);
               await notificationService.showMessageNotification(
                 'New Message',
@@ -481,7 +427,6 @@ class NotificationManagerClass implements NotificationManager {
               this.performanceMetrics.totalNotifications++;
             }
             
-            // Update last message IDs
             this.lastMessageIds[buddy.id] = messages
               .filter(msg => msg.senderId !== this.userId)
               .slice(-50)
@@ -492,7 +437,6 @@ class NotificationManagerClass implements NotificationManager {
         }
       }
       
-      // Update last polling time
       this.lastPollingTime = Date.now();
     } catch (error) {
       console.error('Error checking for new messages:', error);
@@ -512,7 +456,6 @@ class NotificationManagerClass implements NotificationManager {
       if (newNotes.length > 0) {
         console.log(`📝 Polling: Found ${newNotes.length} new notes`);
         
-        // Dispatch event to notify UI components
         if (typeof window !== 'undefined' && window.dispatchEvent) {
           const event = new CustomEvent('notes-updated', {
             detail: { 
@@ -533,7 +476,6 @@ class NotificationManagerClass implements NotificationManager {
           this.performanceMetrics.totalNotifications++;
         }
         
-        // Update last note IDs
         this.lastNoteIds = notes
           .filter(note => note.senderId !== this.userId)
           .slice(-50)
@@ -544,32 +486,26 @@ class NotificationManagerClass implements NotificationManager {
     }
   }
 
-  // Performance monitoring methods
   getPerformanceMetrics() {
     return { ...this.performanceMetrics };
   }
 
-  updatePerformanceMetrics(metric: string, value: number) {
-    this.performanceMetrics[metric as keyof typeof this.performanceMetrics] = value;
+  updatePerformanceMetrics(metric?: string, value?: number) {
+    if (metric && value !== undefined) {
+      this.performanceMetrics[metric as keyof typeof this.performanceMetrics] = value;
+    }
   }
 
-  // Track notification from realtime
   trackRealtimeNotification() {
     this.performanceMetrics.realtimeNotifications++;
     this.performanceMetrics.totalNotifications++;
   }
 
-  /**
-   * Enable or disable connection recovery
-   */
   setConnectionRecoveryEnabled(enabled: boolean): void {
     this.isConnectionRecoveryEnabled = enabled;
-    console.log(`🔄 Connection recovery ${enabled ? 'enabled' : 'disabled'} for notification manager`);
+    console.log(`🔄 Connection recovery ${enabled ? 'enabled' : 'disabled'}`);
   }
 
-  /**
-   * Force reconnection attempt
-   */
   async forceReconnection(): Promise<boolean> {
     if (!this.isConnectionRecoveryEnabled) {
       console.log('❌ Connection recovery is disabled');
@@ -579,9 +515,6 @@ class NotificationManagerClass implements NotificationManager {
     return await connectionRecoveryService.forceReconnection();
   }
 
-  /**
-   * Get connection recovery status
-   */
   getConnectionRecoveryStatus(): any {
     if (!this.isConnectionRecoveryEnabled) {
       return { enabled: false };
@@ -597,12 +530,12 @@ class NotificationManagerClass implements NotificationManager {
 
   // Legacy methods for backward compatibility
   startPolling(userId: string) {
-    console.log('🔄 Legacy startPolling called - starting polling directly');
+    console.log('🔄 Legacy startPolling called');
     this.startPollingInternal(userId);
   }
 
   stopPolling() {
-    console.log('🛑 Legacy stopPolling called - stopping polling directly');
+    console.log('🛑 Legacy stopPolling called');
     this.stopPollingInternal();
   }
 
@@ -612,30 +545,27 @@ class NotificationManagerClass implements NotificationManager {
 
   async triggerNotificationCheck() {
     if (!this.userId) {
-      console.warn('Cannot trigger notification check: userId is null.');
+      console.warn('Cannot trigger notification check: userId is null');
       return;
     }
     console.log('Manually triggering notification check...');
     await this.checkForNewMessages();
     await this.checkForNewNotes();
   }
-  /**
-   * Get buddy display name with caching (same logic as hybrid system)
-   */
+
   private async getBuddyDisplayName(senderId: string): Promise<string> {
     try {
-      console.log('👤 [Polling] Getting buddy display name for senderId:', senderId);
+      console.log('👤 [Polling] Getting buddy display name for:', senderId);
       
       // Check cache first
       const cachedProfile = this.userProfileCache?.get(senderId);
-      if (cachedProfile && (Date.now() - cachedProfile.timestamp) < 300000) { // 5 minutes cache
+      if (cachedProfile && (Date.now() - cachedProfile.timestamp) < 300000) {
         console.log('👤 [Polling] Using cached buddy name:', cachedProfile.name);
         return cachedProfile.name;
       }
       
-      console.log('👤 [Polling] Cache miss, fetching from database for senderId:', senderId);
+      console.log('👤 [Polling] Cache miss, fetching from database');
       
-      // Fetch from database
       const { data: userProfile, error } = await supabase
         .from('user_profiles')
         .select('display_name, username')
@@ -643,17 +573,13 @@ class NotificationManagerClass implements NotificationManager {
         .single();
       
       if (error) {
-        console.error('👤 [Polling] Database error fetching user profile:', error);
+        console.error('👤 [Polling] Database error:', error);
         return 'Buddy';
       }
       
-      console.log('👤 [Polling] User profile data:', userProfile);
-      
       const buddyDisplayName = userProfile?.display_name || userProfile?.username || 'Buddy';
-      
       console.log('👤 [Polling] Resolved buddy display name:', buddyDisplayName);
       
-      // Cache the name
       if (!this.userProfileCache) {
         this.userProfileCache = new Map();
       }
@@ -663,7 +589,6 @@ class NotificationManagerClass implements NotificationManager {
       });
       
       return buddyDisplayName;
-      
     } catch (error) {
       console.error('👤 [Polling] Error fetching buddy name:', error);
       return 'Buddy';

@@ -83,25 +83,74 @@ export class MessageRepliesService {
    * Get reply information for multiple messages at once
    */
   async getRepliesForMessages(messageIds: string[]): Promise<Record<string, ReplyInfo>> {
-    if (!messageIds.length) return {};
+    if (!messageIds || !messageIds.length) return {};
 
-    const { data, error } = await supabase
-      .from('message_replies_view')
-      .select('*')
-      .or(`reply_message_id.in.(${messageIds.join(',')}),original_message_id.in.(${messageIds.join(',')})`);
+    // Filter out any invalid/empty message IDs
+    const validMessageIds = messageIds.filter(id => id && typeof id === 'string' && id.trim().length > 0);
+    if (!validMessageIds.length) return {};
 
-    if (error) {
-      throw error;
-    }
-
+    // Batch queries if array is too large (PostgREST has limits)
+    const BATCH_SIZE = 100;
     const result: Record<string, ReplyInfo> = {};
-    data?.forEach((reply) => {
-      // Store reply info for both the reply message and the original message
-      result[reply.reply_message_id] = reply;
-      result[reply.original_message_id] = reply;
-    });
 
-    return result;
+    try {
+      // Process in batches to avoid query size limits
+      for (let i = 0; i < validMessageIds.length; i += BATCH_SIZE) {
+        const batch = validMessageIds.slice(i, i + BATCH_SIZE);
+        
+        try {
+          // Query 1: Get replies where messageIds are reply messages
+          const { data: repliesAsReplies, error: error1 } = await supabase
+            .from('message_replies_view')
+            .select('*')
+            .in('reply_message_id', batch);
+
+          if (error1) {
+            console.warn(`Error fetching replies as replies (batch ${i / BATCH_SIZE + 1}):`, error1.message || error1);
+          }
+
+          // Query 2: Get replies where messageIds are original messages
+          const { data: repliesAsOriginals, error: error2 } = await supabase
+            .from('message_replies_view')
+            .select('*')
+            .in('original_message_id', batch);
+
+          if (error2) {
+            console.warn(`Error fetching replies as originals (batch ${i / BATCH_SIZE + 1}):`, error2.message || error2);
+          }
+
+          // Merge results from both queries for this batch
+          const batchReplies = [...(repliesAsReplies || []), ...(repliesAsOriginals || [])];
+          
+          // Deduplicate by reply_id and add to result
+          batchReplies.forEach((reply) => {
+            if (reply?.reply_id && !result[reply.reply_id]) {
+              // Store reply info for both the reply message and the original message
+              if (reply.reply_message_id) {
+                result[reply.reply_message_id] = reply;
+              }
+              if (reply.original_message_id) {
+                result[reply.original_message_id] = reply;
+              }
+            }
+          });
+
+          // If both queries failed for this batch, log but continue
+          if (error1 && error2) {
+            console.warn(`Both queries failed for batch ${i / BATCH_SIZE + 1}, continuing with other batches`);
+          }
+        } catch (batchError: any) {
+          console.warn(`Error processing batch ${i / BATCH_SIZE + 1}:`, batchError?.message || batchError);
+          // Continue with next batch
+        }
+      }
+
+      return result;
+    } catch (error: any) {
+      console.error('Error in getRepliesForMessages:', error?.message || error);
+      // Return whatever we collected so far, or empty object
+      return result;
+    }
   }
 
   /**

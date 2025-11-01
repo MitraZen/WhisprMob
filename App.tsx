@@ -25,20 +25,8 @@ const AppContent: React.FC = () => {
   //   // Initial notification handling is done via notificationService.onNotification
   // }, []);
 
-  // Phase 1: Handle FCM ping messages (Proposed Design)
-  useEffect(() => {
-    const unsubscribe = messaging().onMessage(async remoteMessage => {
-      console.log('🔥 FCM message received in foreground:', remoteMessage);
-      
-      // Check if this is a ping message
-      if (remoteMessage.data?.type === 'ping') {
-        console.log('🔥 FCM ping received - handling wake-up...');
-        await notificationService.handleFCMPing();
-      }
-    });
-
-    return unsubscribe;
-  }, []);
+  // FCM handlers are now consolidated in notificationService.ts
+  // No duplicate handlers needed here - handlers are set up during FCM initialization
 
   // Phase 3: Handle direct wake-up signals (Proposed Design)
   useEffect(() => {

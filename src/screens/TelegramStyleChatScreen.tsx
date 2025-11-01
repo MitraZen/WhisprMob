@@ -69,12 +69,9 @@ const SwipeableMessage = ({
     if (event.nativeEvent.state === 5) { // END state
       const { translationX, velocityX } = event.nativeEvent;
       
-      // If swiped right enough (threshold: 50px) or fast enough (velocity > 500)
       if (translationX > 50 || velocityX > 500) {
-        // Trigger reply
         onReply(message);
         
-        // Animate reply feedback
         Animated.sequence([
           Animated.timing(replyOpacity, {
             toValue: 1,
@@ -89,7 +86,6 @@ const SwipeableMessage = ({
         ]).start();
       }
       
-      // Reset position
       Animated.spring(translateX, {
         toValue: 0,
         useNativeDriver: true,
@@ -101,7 +97,6 @@ const SwipeableMessage = ({
 
   return (
     <View style={styles.swipeContainer}>
-      {/* Reply feedback overlay */}
       <Animated.View 
         style={[
           styles.replyFeedback,
@@ -148,24 +143,16 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   
-  // Reply state
   const [repliesByMessageId, setRepliesByMessageId] = useState<Record<string, ReplyInfo>>({});
   const [replyingToMessage, setReplyingToMessage] = useState<any>(null);
-  
-  // Monitor profile view state changes
-  useEffect(() => {
-    // Profile view state monitoring removed
-  }, [showProfileView]);
   
   const scrollViewRef = useRef<ScrollView>(null);
   const processingMessages = useRef<Set<string>>(new Set());
 
-  // Load messages on component mount and when buddy changes
   useEffect(() => {
     if (buddy?.id && user?.id) {
       loadMessages();
       
-      // Mark messages as read when chat is opened
       const markAsRead = async () => {
         try {
           const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
@@ -173,7 +160,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           await CachedBuddiesService.markMessagesAsRead(buddy.id, user.id);
           console.log('✅ Messages marked as read');
           
-          // Clear notification batch for this user when chat is opened
           try {
             const { Phase3NotificationLogicService } = await import('@/services/phase3NotificationLogicService');
             const phase3Service = Phase3NotificationLogicService.getInstance();
@@ -185,7 +171,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             console.warn('⚠️ Could not clear notification batch:', batchError);
           }
           
-          // Notify parent if callback provided
           if (onMessagesRead) {
             onMessagesRead(buddy.id);
           }
@@ -194,55 +179,46 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         }
       };
       
-      // Mark as read after a short delay to ensure messages are loaded
       setTimeout(markAsRead, 500);
     }
   }, [buddy?.id, user?.id, onMessagesRead]);
 
-  // Set active chat when component mounts and clear when unmounts
   useEffect(() => {
     if (buddy?.id) {
       activeChatService.setActiveChat(buddy.id);
     }
 
-    // Cleanup: Clear active chat when component unmounts
     return () => {
       activeChatService.clearActiveChat();
     };
   }, [buddy?.id]);
 
-  // Clean up processing set periodically to prevent memory leaks
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
       processingMessages.current.clear();
-    }, 30000); // Clear every 30 seconds
+    }, 30000);
     
     return () => clearInterval(cleanupInterval);
   }, []);
 
-  // Listen for real-time message updates
   useEffect(() => {
     if (!buddy?.id || !user?.id) return;
 
     const handleRealtimeMessageUpdate = async (event: any) => {
       try {
-        // Safety check for event data
         if (!event?.detail) {
           return;
         }
         
-        // Check if this update is for the current buddy or its reciprocal
         const messageBuddyId = event.detail?.buddyId;
         if (messageBuddyId === buddy.id) {
           addNewMessageIncrementally(event.detail?.message);
           return;
         }
 
-        // Check if this is a reciprocal buddy relationship
         try {
           const { supabase } = await import('@/config/supabase');
         
-        // Get the current buddy's relationship
         const { data: currentBuddyData, error: currentError } = await supabase
           .from('buddies')
           .select('user_id, buddy_user_id')
@@ -253,7 +229,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           return;
         }
 
-        // Get the message buddy's relationship
         const { data: messageBuddyData, error: messageError } = await supabase
           .from('buddies')
           .select('user_id, buddy_user_id')
@@ -264,7 +239,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           return;
         }
 
-        // Check if they represent the same user pair (bidirectional relationship)
         const isSamePair = (
           (currentBuddyData.user_id === messageBuddyData.user_id && 
            currentBuddyData.buddy_user_id === messageBuddyData.buddy_user_id) ||
@@ -285,10 +259,11 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   const handleBuddyDeleted = (eventData: any) => {
     try {
-      // Check if the deleted buddy matches the current buddy
+      if (eventData?.type !== 'buddy-deleted') {
+        return;
+      }
+      
       if (eventData?.buddyId === buddy.id || eventData?.buddy_user_id === buddy.buddy_user_id) {
-        
-        // Show notification to user
         Alert.alert(
           'Buddy Deleted',
           'This buddy relationship has been deleted.',
@@ -296,7 +271,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             {
               text: 'OK',
               onPress: () => {
-                // Navigate back to buddies screen
                 if (onBack) {
                   onBack();
                 } else {
@@ -312,7 +286,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-    // Listen for custom events from realtime service using DeviceEventEmitter
+    DeviceEventEmitter.removeAllListeners('message-updated');
+    DeviceEventEmitter.removeAllListeners('buddy-deleted');
+
     const eventListener = (eventData: any) => {
       console.log('🔔 TelegramStyleChatScreen: Event listener triggered:', eventData);
       if (eventData?.type === 'message-updated') {
@@ -322,7 +298,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       }
     };
 
-    // Add event listener for real-time updates using DeviceEventEmitter
     const subscription = DeviceEventEmitter.addListener('message-updated', eventListener);
     const buddyDeletedSubscription = DeviceEventEmitter.addListener('buddy-deleted', eventListener);
 
@@ -334,93 +309,95 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   const loadMessages = async (isRefresh = false, isSilent = false) => {
     try {
+      // ✅ STEP 1: Try to load from cache INSTANTLY
+      const { messageCacheService } = await import('@/services/messageCacheService');
+      const cachedMessages = await messageCacheService.getMessages(buddy.id);
+      
+      if (cachedMessages && cachedMessages.length > 0) {
+        console.log('⚡ Showing cached messages instantly:', cachedMessages.length);
+        setMessages(cachedMessages);
+        setIsLoading(false);
+        
+        const messageIds = cachedMessages.map(msg => msg.id);
+        messageRepliesService.getRepliesForMessages(messageIds).then(replies => {
+          setRepliesByMessageId(replies || {});
+        }).catch(() => {
+          setRepliesByMessageId({});
+        });
+        
+        if (!isRefresh) {
+          console.log('🔄 Refreshing messages silently in background...');
+          TelegramStyleChatService.getMessages(user.id, buddy.id).then(freshMessages => {
+            messageCacheService.saveMessages(buddy.id, freshMessages);
+            
+            if (JSON.stringify(cachedMessages) !== JSON.stringify(freshMessages)) {
+              console.log('✨ Background refresh found new messages, updating UI');
+              setMessages(freshMessages);
+              
+              const freshMessageIds = freshMessages.map(msg => msg.id);
+              messageRepliesService.getRepliesForMessages(freshMessageIds).then(replies => {
+                setRepliesByMessageId(replies || {});
+              });
+            } else {
+              console.log('✓ Background refresh - no changes');
+            }
+          }).catch(err => {
+            console.warn('⚠️ Background refresh failed (not critical):', err);
+          });
+          
+          return;
+        }
+      }
+      
+      // ✅ STEP 2: No cache or forced refresh
+      if (!cachedMessages || cachedMessages.length === 0) {
+        console.log('📡 No cache found, loading from database...');
+      } else {
+        console.log('🔄 Forced refresh from database...');
+      }
+      
       if (!isSilent) {
-      setIsLoading(true);
+        setIsLoading(true);
       }
       
       const chatMessages = await TelegramStyleChatService.getMessages(user.id, buddy.id);
       
-      // Smart state update - only update if messages actually changed
-      setMessages((prevMessages) => {
-        // If lengths differ, definitely update
-        if (prevMessages.length !== chatMessages.length) return chatMessages;
-        
-        // Compare old vs new messages
-        let changed = false;
-        const messageMap = new Map<string, SimpleMessage>();
-        
-        // First, add all previous messages to the map
-        prevMessages.forEach((msg) => {
-          messageMap.set(msg.id, msg);
-        });
-        
-        // Then process new messages, updating or adding as needed
-        chatMessages.forEach((newMessage) => {
-          const existingMessage = messageMap.get(newMessage.id);
-          
-          if (!existingMessage) {
-            // New message
-            changed = true;
-            messageMap.set(newMessage.id, newMessage);
-          } else {
-            // Check if message content changed
-            const isSame = 
-              existingMessage.content === newMessage.content &&
-              existingMessage.sender_id === newMessage.sender_id &&
-              existingMessage.created_at === newMessage.created_at &&
-              existingMessage.is_read === newMessage.is_read;
-            
-            if (!isSame) {
-              changed = true;
-              messageMap.set(newMessage.id, newMessage);
-            }
-          }
-        });
-        
-        // Convert map back to array, sorted by created_at
-        const merged = Array.from(messageMap.values()).sort((a, b) => 
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-        
-        return changed ? merged : prevMessages;
-      });
+      messageCacheService.saveMessages(buddy.id, chatMessages);
+      
+      setMessages(chatMessages);
 
-      // Load replies for all messages
       try {
         const messageIds = chatMessages.map(msg => msg.id);
         const replies = await messageRepliesService.getRepliesForMessages(messageIds);
-        setRepliesByMessageId(replies);
-      } catch (error) {
-        console.error('Error loading replies:', error);
-        // Don't show error to user as messages loaded successfully
+        setRepliesByMessageId(replies || {});
+      } catch (error: any) {
+        console.warn('Error loading replies (non-critical):', error?.message || error);
+        setRepliesByMessageId({});
       }
       
     } catch (error) {
-      console.error('Error loading messages:', error);
+      console.error('❌ Error loading messages:', error);
       if (!isSilent) {
-      Alert.alert('Error', 'Failed to load messages');
+        Alert.alert('Error', 'Failed to load messages');
       }
     } finally {
       if (!isSilent) {
-      setIsLoading(false);
+        setIsLoading(false);
       }
     }
   };
 
-  const addNewMessageIncrementally = (messageData: any) => {
+  const addNewMessageIncrementally = async (messageData: any) => {
     if (!messageData || !messageData.id) {
       return;
     }
     
-    // Additional safety check - if we're already processing this message, skip it
     if (processingMessages.current.has(messageData.id)) {
       return;
     }
     
-    // Mark this message as being processed
     processingMessages.current.add(messageData.id);
     
-    // Convert the message data to SimpleMessage format
     const newMessage: SimpleMessage = {
       id: messageData.id || `temp-${Date.now()}`,
       chat_id: messageData.buddy_id || buddy?.id || 'unknown',
@@ -431,26 +408,32 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       is_read: messageData.is_read || false
     };
 
-    // Add the new message to the existing messages with duplicate check
     setMessages(prevMessages => {
-      // Check if message already exists to avoid duplicates
       const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
       if (messageExists) {
-        return prevMessages; // Return unchanged messages
+        return prevMessages;
       }
 
       const updatedMessages = [...prevMessages, newMessage];
+      
+      (async () => {
+        try {
+          const { messageCacheService } = await import('@/services/messageCacheService');
+          await messageCacheService.addMessage(buddy.id, newMessage);
+        } catch (error) {
+          console.warn('⚠️ Failed to update cache with new message:', error);
+        }
+      })();
+      
       return updatedMessages;
     });
 
-    // Auto-scroll to bottom to show the new message
     setTimeout(() => {
       if (scrollViewRef.current) {
         scrollViewRef.current.scrollToEnd({ animated: true });
       }
     }, 100);
     
-    // Clean up processing set after a delay
     setTimeout(() => {
       processingMessages.current.delete(messageData.id);
     }, 1000);
@@ -470,14 +453,11 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           style: 'destructive',
           onPress: async () => {
             try {
-              // Import BuddiesService
               const { BuddiesService } = await import('@/services/buddiesService');
               
-              // Delete the buddy relationship with cascade deletion
               const result = await BuddiesService.deleteBuddy(buddy.id, user.id);
               
               if (result && result.success) {
-                // Show success message
                 Alert.alert(
                   'Success',
                   `Buddy relationship deleted successfully. ${result.deleted_messages} messages were removed.`,
@@ -485,7 +465,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
                     {
                       text: 'OK',
                       onPress: () => {
-                        // Navigate back to buddies screen
                         if (onBack) {
                           onBack();
                         } else {
@@ -513,9 +492,8 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     if (!newMessage.trim() || !buddy?.id || !user?.id) return;
 
     const messageContent = newMessage.trim();
-    setNewMessage(''); // Clear input immediately for better UX
+    setNewMessage('');
 
-    // Create optimistic message with temporary ID
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimisticMessage: SimpleMessage = {
       id: tempId,
@@ -527,7 +505,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       is_read: true
     };
 
-    // Add optimistic message immediately
     setMessages(prev => [...prev, optimisticMessage]);
 
     try {
@@ -543,20 +520,26 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       if (messageId) {
         console.log('📤 Message sent successfully, replacing optimistic message:', tempId, '->', messageId);
         
-        // Replace the optimistic message with the real one
+        const finalMessage = { ...optimisticMessage, id: messageId };
+        
         setMessages(prev => prev.map(msg => 
-          msg.id === tempId 
-            ? { ...msg, id: messageId }
-            : msg
+          msg.id === tempId ? finalMessage : msg
         ));
+        
+        (async () => {
+          try {
+            const { messageCacheService } = await import('@/services/messageCacheService');
+            await messageCacheService.updateMessage(buddy.id, tempId, messageId);
+          } catch (error) {
+            console.warn('⚠️ Failed to update cache after send:', error);
+          }
+        })();
 
-        // Handle reply if replying to a message
         if (replyingToMessage) {
           try {
             console.log('📤 Creating reply relationship:', replyingToMessage.id, '->', messageId);
             await messageRepliesService.createReply(replyingToMessage.id, messageId);
             
-            // Update replies state
             const replyInfo = await messageRepliesService.getReplyForMessage(messageId);
             if (replyInfo) {
               setRepliesByMessageId(prev => ({
@@ -565,20 +548,16 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
               }));
             }
             
-            // Clear reply context
             setReplyingToMessage(null);
           } catch (error) {
             console.error('❌ Error creating reply:', error);
-            // Don't show error to user as message was sent successfully
           }
         }
       } else {
         console.warn('⚠️ No message ID returned from server');
-        // Remove optimistic message if no ID returned
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
       }
       
-      // Scroll to bottom
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -587,10 +566,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       console.error('❌ Error sending message:', error);
       Alert.alert('Error', 'Failed to send message');
       
-      // Remove the optimistic message on error
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
-      
-      // Restore the message content if sending failed
       setNewMessage(messageContent);
     }
   };
@@ -606,36 +582,27 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           style: 'destructive',
           onPress: async () => {
             try {
-                 // console.log('🧹 Starting chat clear for buddy:', buddy.id, 'user:', user.id);
-                 // console.log('🔍 Buddy details:', { 
-                 //   buddyId: buddy.id, 
-                 //   buddyUserId: buddy.buddyUserId, 
-                 //   buddyName: buddy.name,
-                 //   currentUserId: user.id 
-                 // });
-              
-              // Clear local state immediately for better UX
               setMessages([]);
               setRepliesByMessageId({});
               setReactionsByMessageId({});
               
-              // Clear from database - use buddyUserId, not buddy.id
+              try {
+                const { messageCacheService } = await import('@/services/messageCacheService');
+                await messageCacheService.clearCache(buddy.id);
+                console.log('🗑️ Cache cleared for buddy:', buddy.id);
+              } catch (error) {
+                console.warn('⚠️ Failed to clear cache:', error);
+              }
+              
               await TelegramStyleChatService.clearChat(user.id, buddy.buddyUserId);
               
-              // Reload messages to ensure consistency
               await loadMessages();
               
               Alert.alert('Success', 'Chat cleared successfully!');
-                 } catch (error) {
-                   console.error('❌ Error clearing chat:', error);
-                   // console.error('❌ Error details:', {
-                   //   message: error instanceof Error ? error.message : String(error),
-                   //   stack: error instanceof Error ? error.stack : undefined,
-                   //   buddyId: buddy.id,
-                   //   userId: user.id
-                   // });
-                   Alert.alert('Error', `Failed to clear chat: ${error instanceof Error ? error.message : String(error)}`);
-                 }
+            } catch (error) {
+              console.error('❌ Error clearing chat:', error);
+              Alert.alert('Error', `Failed to clear chat: ${error instanceof Error ? error.message : String(error)}`);
+            }
           },
         },
       ]
@@ -647,23 +614,18 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Get the other user's ID (not the current user)
   const getOtherUserId = () => {
     if (!buddy || !user) {
       return null;
     }
     
-    // The buddy object has buddyUserId property which contains the other user's ID
-    // This is the user ID of the person we're chatting with
     const otherUserId = buddy.buddyUserId || buddy.id;
     return otherUserId;
   };
 
-  // Get the other user's name
   const getOtherUserName = () => {
     if (!buddy) return 'Chat';
     
-    // Use the buddy's name or display name
     return buddy.name || buddy.display_name || 'Chat';
   };
 
@@ -707,15 +669,12 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
               ]}
             >
 
-              {/* Reply to label - show different info based on message type */}
               {repliesByMessageId[message.id] && (
                 <View style={styles.replyToLabel}>
                   <Text style={styles.replyToText}>
                     {message.id === repliesByMessageId[message.id].reply_message_id ? (
-                      // This is a reply message - show what it's replying to
                       `Reply to: ${repliesByMessageId[message.id].original_content.substring(0, 50)}${repliesByMessageId[message.id].original_content.length > 50 ? '...' : ''}`
                     ) : (
-                      // This is the original message - show that it has a reply
                       `Replied: ${repliesByMessageId[message.id].reply_content.substring(0, 50)}${repliesByMessageId[message.id].reply_content.length > 50 ? '...' : ''}`
                     )}
                   </Text>
@@ -739,7 +698,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             </View>
           </Pressable>
           
-          {/* Reaction pills */}
           {reactionsByMessageId[message.id] && (
             <View style={styles.reactionPillsRow}>
               {Object.entries(reactionsByMessageId[message.id]).map(([emoji, count]) => (
@@ -754,10 +712,32 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     );
   };
 
+  const [showError, setShowError] = React.useState(false);
+  
+  React.useEffect(() => {
+    if (!buddy || !user) {
+      const timer = setTimeout(() => setShowError(true), 500);
+      return () => clearTimeout(timer);
+    } else {
+      setShowError(false);
+    }
+  }, [buddy, user]);
+  
   if (!buddy || !user) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Missing buddy or user data</Text>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={[styles.errorText, { marginTop: 10, color: theme.colors.onSurface }]}>
+          {!user ? 'Loading user data...' : 'Loading chat...'}
+        </Text>
+        {showError && !buddy && onNavigate && (
+          <TouchableOpacity 
+            style={{ marginTop: 20, padding: 10, backgroundColor: theme.colors.primary, borderRadius: 8 }}
+            onPress={() => onNavigate('buddies')}
+          >
+            <Text style={{ color: 'white' }}>Go to Buddies</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -769,7 +749,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         enableKeyboardAvoid={true}
         componentType="screen"
       >
-      {/* Header */}
         <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={onBack || (() => onNavigate('buddies'))}>
           <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
@@ -801,7 +780,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Messages */}
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesContainer}
@@ -810,7 +788,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         keyboardDismissMode="interactive"
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
       >
-        {isLoading ? (
+        {isLoading && messages.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={styles.loadingText}>Loading messages...</Text>
@@ -830,7 +808,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         )}
       </ScrollView>
 
-      {/* Reply Context */}
       {replyingToMessage && (
         <View style={styles.replyContextContainer}>
           <View style={styles.replyContext}>
@@ -851,7 +828,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </View>
       )}
 
-      {/* Input */}
       <View style={styles.inputContainer}>
         <TextInput
           style={[styles.textInput, { color: getTextInputColor(theme) }]}
@@ -862,7 +838,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           multiline
           maxLength={1000}
           onFocus={() => {
-            // Scroll to bottom when input is focused
             setTimeout(() => {
               scrollViewRef.current?.scrollToEnd({ animated: true });
             }, 100);
@@ -885,7 +860,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </TouchableOpacity>
       </View>
       
-      {/* Profile Modal */}
       <EnhancedBuddyProfileView
         visible={showProfileView}
         onClose={() => setShowProfileView(false)}
@@ -893,7 +867,6 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         buddyName={getOtherUserName()}
       />
 
-      {/* Quick Reactions Picker - Custom Horizontal Layout */}
       <Modal
         visible={reactionPickerVisible}
         transparent={true}
@@ -960,7 +933,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'android' ? 4 : 4, // Reduced padding for Android
+    paddingVertical: Platform.OS === 'android' ? 4 : 4,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 0.5,
     borderBottomColor: theme.colors.border,
@@ -972,7 +945,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowOpacity: theme.isDark ? 0.3 : 0.05,
     shadowRadius: 2,
     elevation: 1,
-    // Ensure header is always visible
     zIndex: 1000,
   },
   backButton: {
@@ -985,7 +957,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   usernameButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Platform.OS === 'android' ? 2 : 4, // Reduced padding for Android
+    paddingVertical: Platform.OS === 'android' ? 2 : 4,
     paddingHorizontal: 8,
     borderRadius: 8,
     backgroundColor: theme.colors.surfaceVariant,
@@ -1008,17 +980,6 @@ const createStyles = (theme: any) => StyleSheet.create({
   deleteButton: {
     padding: 8,
     marginLeft: 8,
-  },
-  debugButton: {
-    padding: 8,
-    marginLeft: 8,
-    backgroundColor: '#007AFF',
-    borderRadius: 4,
-  },
-  debugButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   messagesContainer: {
     flex: 1,
@@ -1115,7 +1076,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    paddingBottom: 8, // ✅ Consistent minimal padding
+    paddingBottom: 8,
     backgroundColor: theme.colors.surface,
     borderTopWidth: 0.5,
     borderTopColor: theme.colors.border,
@@ -1128,14 +1089,8 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowOpacity: theme.isDark ? 0.3 : 0.05,
     shadowRadius: 2,
     elevation: 1,
-    // Ensure input is always visible above keyboard
     zIndex: 1000,
-    //position: 'relative',
   },
-  //inputContainerKeyboardVisible: {
-  //  paddingBottom: Platform.OS === 'android' ? 6 : 12, // Minimal padding when keyboard is visible
-  //  paddingTop: Platform.OS === 'android' ? 6 : 12, // Reduced top padding
-  //},
   textInput: {
     flex: 1,
     fontSize: 15,
@@ -1143,7 +1098,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     minHeight: 44,
     marginRight: 12,
     paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'android' ? 12 : 14, // Reduced padding for Android
+    paddingVertical: Platform.OS === 'android' ? 12 : 14,
     backgroundColor: theme.colors.surfaceVariant,
     borderRadius: 20,
     textAlignVertical: 'top',
@@ -1153,8 +1108,8 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   messagesContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,           // ✅ Changed from paddingVertical
-    paddingBottom: 16,      // ✅ Now this won't conflict
+    paddingTop: 8,
+    paddingBottom: 16,
     flexGrow: 1,
   },
   sendButton: {
@@ -1173,27 +1128,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.error,
     textAlign: 'center',
     marginTop: 50,
-  },
-  reactionTrigger: {
-    position: 'absolute',
-    top: 8,
-    padding: 10,
-    backgroundColor: theme.colors.error,
-    borderRadius: 20,
-    zIndex: 100,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: theme.isDark ? 0.5 : 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-    borderWidth: 2,
-    borderColor: theme.colors.surface,
-  },
-  reactionTriggerRight: {
-    right: 8,
-  },
-  reactionTriggerLeft: {
-    left: 8,
   },
   reactionPillsRow: {
     flexDirection: 'row',

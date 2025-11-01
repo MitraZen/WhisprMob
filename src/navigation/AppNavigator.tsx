@@ -216,49 +216,179 @@ const AppNavigator = () => {
       try {
         isHandling = true;
         console.log('📱 [NAV] Received navigateToChat event:', event);
-        const { buddy, buddyName } = event;
+        const { buddy, buddyId, buddyName, fromNotification } = event;
 
+        // If buddy object is already provided, navigate immediately
         if (buddy) {
-          // If buddy object is provided, navigate directly
           console.log('📱 [NAV] Navigating to chat with buddy object:', buddy);
-          navigate('chat', { buddy });
-        } else if (buddyName) {
-          // If only buddyName is provided, find the buddy first (with timeout)
-          console.log('📱 [NAV] Finding buddy by name:', buddyName);
-          try {
-            const findPromise = (async () => {
+          navigate('chat', { buddy, fromNotification: fromNotification || true });
+          return;
+        }
+
+        // Otherwise, find buddy asynchronously (non-blocking)
+        // Navigate immediately with loading state, then update when buddy is found
+        console.log('📱 [NAV] Finding buddy (non-blocking):', { buddyId, buddyName });
+        
+        const findBuddyPromise = (async () => {
+          // Wait for session to be ready (progressive delays)
+          let sessionReady = false;
+          let sessionUserId: string | null = null;
+          
+          for (let attempt = 1; attempt <= 5; attempt++) {
+            const { supabase } = await import('@/config/supabase');
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (!sessionError && session?.user) {
+              sessionReady = true;
+              sessionUserId = session.user.id;
+              break;
+            }
+            if (attempt < 5) {
+              await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100));
+            }
+          }
+
+          // Fallback to user from AuthContext if session not ready
+          let userId = sessionUserId || user?.id;
+
+          if (!userId) {
+            console.warn('📱 [NAV] No authenticated user found (session not ready and no user in context)');
+            // Still try cache lookup with buddyId/buddyName as last resort
+            if (buddyId || buddyName) {
+              console.log('📱 [NAV] Attempting cache lookup without userId as fallback');
+              userId = ''; // Will skip user_id filter in queries
+            } else {
+              return null;
+            }
+          } else if (!sessionReady) {
+            console.log('📱 [NAV] Session not ready after wait, using user from AuthContext:', userId);
+          }
+
+          let foundBuddy = null;
+
+          // Priority 1: Direct database lookup by buddyId (fastest)
+          if (buddyId && userId) {
+            try {
+              const { supabase: supabaseClient } = await import('@/config/supabase');
+              const query = supabaseClient
+                .from('buddies')
+                .select('*')
+                .eq('id', buddyId);
+              
+              // Only add user_id filter if we have userId
+              if (userId) {
+                query.eq('user_id', userId);
+              }
+              
+              const { data: buddyData, error: buddyError } = await query.single();
+
+              if (!buddyError && buddyData) {
+                // Transform database buddy to Buddy format
+                foundBuddy = {
+                  id: buddyData.id,
+                  name: buddyData.name || 'Unknown',
+                  username: buddyData.username || undefined,
+                  initials: buddyData.initials || (buddyData.name?.charAt(0).toUpperCase() || '?'),
+                  avatar: buddyData.avatar_url || undefined,
+                  lastMessage: buddyData.last_message || undefined,
+                  lastMessageTime: buddyData.last_message_time ? new Date(buddyData.last_message_time) : undefined,
+                  unreadCount: buddyData.unread_count || 0,
+                  isOnline: buddyData.is_online || false,
+                  status: (buddyData.status as 'active' | 'away' | 'busy' | 'invisible') || 'active',
+                  mood: buddyData.mood || undefined,
+                  createdAt: new Date(buddyData.created_at),
+                  updatedAt: new Date(buddyData.updated_at),
+                  buddyUserId: buddyData.buddy_user_id || buddyData.user_id || buddyData.id,
+                };
+                console.log('📱 [NAV] Found buddy via direct DB lookup:', foundBuddy);
+                return foundBuddy;
+              }
+            } catch (dbError) {
+              console.warn('📱 [NAV] Direct DB lookup failed, falling back to cache:', dbError);
+            }
+          }
+
+          // Priority 2: Cache lookup by buddyId
+          if (!foundBuddy && buddyId && userId) {
+            try {
               const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
-              const buddies = await CachedBuddiesService.getBuddies(user.id);
-              const foundBuddy = buddies.find(
+              const buddies = await CachedBuddiesService.getBuddies(userId);
+              foundBuddy = buddies.find(b => b.id === buddyId);
+              if (foundBuddy) {
+                console.log('📱 [NAV] Found buddy via cache by ID:', foundBuddy.id, foundBuddy.name);
+                return foundBuddy;
+              }
+            } catch (cacheError) {
+              console.warn('📱 [NAV] Cache lookup failed:', cacheError);
+            }
+          }
+
+          // Priority 3: Cache lookup by buddyName
+          if (!foundBuddy && buddyName && userId) {
+            try {
+              const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
+              const buddies = await CachedBuddiesService.getBuddies(userId);
+              foundBuddy = buddies.find(
                 b => b.name === buddyName || b.username === buddyName || b.displayName === buddyName
               );
-
               if (foundBuddy) {
-                console.log('📱 [NAV] Found buddy, navigating to chat:', foundBuddy);
-                navigate('chat', { buddy: foundBuddy });
-              } else {
-                console.warn('📱 [NAV] Buddy not found, navigating to buddies screen');
-                navigate('buddies');
+                console.log('📱 [NAV] Found buddy via cache by name:', foundBuddy.id, foundBuddy.name);
+                return foundBuddy;
               }
-            })();
-
-            // Add timeout to prevent hanging
-            const timeoutPromise = new Promise<void>((resolve) => {
-              setTimeout(() => {
-                console.warn('📱 [NAV] Timeout finding buddy, navigating to buddies');
-                navigate('buddies');
-                resolve();
-              }, 3000);
-            });
-
-            await Promise.race([findPromise, timeoutPromise]);
-          } catch (error) {
-            console.error('📱 [NAV] Error finding buddy:', error);
-            navigate('buddies');
+            } catch (cacheError) {
+              console.warn('📱 [NAV] Cache lookup by name failed:', cacheError);
+            }
           }
-        }
+
+          // If we still don't have a buddy but have buddyId/buddyName, log for debugging
+          if (!foundBuddy && (buddyId || buddyName)) {
+            console.warn('📱 [NAV] Could not find buddy after all attempts:', { buddyId, buddyName, userId });
+          }
+
+          return foundBuddy || null;
+        })();
+
+        // Navigate immediately with available info (non-blocking)
+        // Chat screen can handle loading state while buddy is resolved
+        navigate('chat', { 
+          buddyId, 
+          buddyName, 
+          fromNotification: fromNotification || true,
+          buddyPromise: findBuddyPromise // Pass promise for async resolution
+        });
+
+        // Update navigation when buddy is found (with timeout)
+        Promise.race([
+          findBuddyPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        ]).then((foundBuddy: any) => {
+          if (foundBuddy) {
+            console.log('📱 [NAV] Buddy found, updating navigation:', foundBuddy);
+            // Update params if still on chat screen, preserve all async resolution props
+            setCurrentParams({ 
+              buddy: foundBuddy, 
+              fromNotification: fromNotification || true,
+              buddyId: buddyId, // Preserve for future reference
+              buddyName: buddyName, // Preserve for future reference
+              // Don't preserve buddyPromise as it's already resolved
+            });
+          }
+        }).catch((error) => {
+          console.warn('📱 [NAV] Buddy lookup failed or timed out:', error);
+          // Navigation already happened with buddyId/buddyName, chat screen can handle it
+        });
+
       } catch (error) {
         console.error('📱 [NAV] Error handling notification navigation:', error);
+        // Fallback: navigate to buddies if error
+        if (event.buddyId || event.buddyName) {
+          navigate('chat', { 
+            buddyId: event.buddyId, 
+            buddyName: event.buddyName, 
+            fromNotification: true 
+          });
+        } else {
+          navigate('buddies');
+        }
       } finally {
         // Reset after a delay to allow navigation to complete
         setTimeout(() => {
@@ -348,6 +478,10 @@ const AppNavigator = () => {
           user={user}
           buddy={currentParams?.buddy}
           onBack={goBack}
+          fromNotification={currentParams?.fromNotification}
+          buddyId={currentParams?.buddyId}
+          buddyName={currentParams?.buddyName}
+          buddyPromise={currentParams?.buddyPromise}
         />
       );
       // Redirect to sign-in instead of welcome

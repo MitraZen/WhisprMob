@@ -32,6 +32,11 @@ class RealtimeService {
   private initializationPromise: Promise<boolean> | null = null; // Prevent multiple simultaneous initializations
   private recentNotifications: Set<string> = new Set(); // Track recent notifications to prevent duplicates
   private processedMessages: Set<string> = new Set(); // Track processed messages to prevent duplicates
+  private processedMessageUpdates: Map<string, number> = new Map(); // Track processed message UPDATEs (messageId-updatedAt -> timestamp) to prevent infinite loops
+  private recentEvents: Set<string> = new Set(); // Track recent events by commit_timestamp to prevent duplicate processing from Supabase re-deliveries
+  private pendingUIUpdates: Map<string, NodeJS.Timeout> = new Map(); // Track pending UI update batches per buddy (buddyId -> timeout)
+  private uiUpdateBatchDelay = 500; // Batch UI updates for 500ms to reduce spam
+  private verboseRealtime = false; // Set to true for debugging realtime events
   
   // Hybrid Notification System Properties
   private notificationCooldown = 2000; // 2 seconds cooldown for immediate notifications
@@ -239,6 +244,13 @@ class RealtimeService {
     try {
       console.log('📡 Setting up realtime subscriptions for user:', userId);
       
+      // 🚧 Prevent duplicate subscriptions - check if buddy_messages channel already exists
+      const existing = supabase.getChannels().find(ch => ch.topic === 'realtime:public:buddy_messages');
+      if (existing) {
+        console.log('⚠️ Already subscribed to buddy_messages, skipping duplicate subscription');
+        return;
+      }
+      
       // Subscribe to buddy messages
       const messagesChannel = supabase
         .channel('buddy_messages')
@@ -267,7 +279,17 @@ class RealtimeService {
             table: 'buddy_messages' 
           }, 
           (payload) => {
-            console.log('📝 Message updated via realtime:', payload);
+            // 🚧 Filter out bulk "is_read" updates to reduce log spam
+            // Only log meaningful message content updates (edits, sends), not read-status changes
+            const isReadOnlyUpdate = payload.new?.is_read && payload.old && !payload.old.is_read;
+            
+            if (!isReadOnlyUpdate) {
+              // Log meaningful updates (content changes, etc.) when verbose mode is enabled
+              if (__DEV__ && this.verboseRealtime) {
+                console.log('📝 Message updated via realtime:', payload);
+              }
+            }
+            
             this.handleMessageUpdate(payload);
           }
         )
@@ -513,22 +535,60 @@ class RealtimeService {
 
   private async handleMessageUpdate(payload: any): Promise<void> {
     try {
-      console.log('📝 handleMessageUpdate called with payload:', payload);
-      
       if (!payload || !payload.new) {
         console.warn('📝 Invalid payload structure:', payload);
         return;
       }
+
+      // ✅ CLIENT-SIDE DEDUPLICATION: Use commit_timestamp to prevent duplicate processing
+      // Supabase may re-deliver the same event during reconnections, so we deduplicate by commit_timestamp
+      const messageId = payload.new.id;
+      const commitTimestamp = payload.commit_timestamp || Date.now().toString();
+      const eventKey = `${messageId}-${commitTimestamp}`;
       
-      // Apply real-time update using the new centralized method
-      console.log('🔄 Applying real-time buddy update for message change');
-      await CachedBuddiesService.applyRealtimeUpdate('buddy', payload.new, this.userId!);
+      // Check if we've already processed this exact event (same message + same commit)
+      if (this.recentEvents.has(eventKey)) {
+        // Event already processed - skip (likely a re-delivery from Supabase reconnect)
+        return;
+      }
       
-      // Dispatch custom event to trigger UI refresh
-      console.log('🔄 Dispatching message-updated event for UI refresh');
+      // Mark event as processed and auto-cleanup after 5 seconds
+      this.recentEvents.add(eventKey);
+      setTimeout(() => this.recentEvents.delete(eventKey), 5000);
+      
+      // Legacy deduplication (kept for backward compatibility and additional safety)
+      const updatedAt = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() : Date.now();
+      const updateKey = `${messageId}-${updatedAt}`;
+      const now = Date.now();
+      const lastProcessedTime = this.processedMessageUpdates.get(updateKey);
+      
+      // ✅ CRITICAL FIX: Atomic check-and-set to prevent race conditions
+      // If we processed this exact update (same messageId AND same updatedAt) recently, skip it
+      if (lastProcessedTime && (now - lastProcessedTime < 5000)) { // 5 second deduplication window (increased)
+        // Reduced logging - only log if really needed for debugging
+        // console.log('⏭️ Skipping duplicate message update:', updateKey, 'processed', now - lastProcessedTime, 'ms ago');
+        return;
+      }
+      
+      // ✅ ATOMIC: Set timestamp BEFORE processing to prevent race conditions
+      // This ensures that concurrent updates with the same key will be blocked
+      this.processedMessageUpdates.set(updateKey, now);
+      
+      // Clean up old entries (keep only last 200 for better coverage)
+      if (this.processedMessageUpdates.size > 200) {
+        // Remove oldest 50 entries to prevent memory bloat
+        const entries = Array.from(this.processedMessageUpdates.entries());
+        entries.sort((a, b) => a[1] - b[1]); // Sort by timestamp
+        entries.slice(0, 50).forEach(([key]) => this.processedMessageUpdates.delete(key));
+      }
+      
+      // ⚠️ CRITICAL FIX: For message UPDATEs, do NOT refresh entire buddy cache
+      // This was causing infinite loops. Message updates (e.g., read status changes) 
+      // should only trigger UI updates, not full cache refreshes.
+      // The cache will be refreshed when needed (e.g., when user opens buddy list).
+      
+      // Dispatch custom event to trigger UI refresh only (batched to reduce spam)
       this.dispatchUIUpdateEvent(payload.new.buddy_id, 'message-updated', payload.new);
-      
-      console.log('✅ Message update processed with real-time update');
       
     } catch (error) {
       console.error('❌ Error processing message update:', error);
@@ -604,19 +664,39 @@ class RealtimeService {
 
   private dispatchUIUpdateEvent(buddyId: string, eventType: string, messageData?: any): void {
     try {
-      console.log(`📢 Dispatching UI event: ${eventType} for buddy: ${buddyId}`);
+      // ✅ BATCH UI UPDATES: Instead of dispatching immediately, batch multiple updates for the same buddy
+      // This prevents spam when bulk operations (e.g., marking many messages as read) trigger many events
+      const updateKey = `${buddyId}-${eventType}`;
       
-      // Use React Native's DeviceEventEmitter instead of window events
-      const { DeviceEventEmitter } = require('react-native');
-      DeviceEventEmitter.emit(eventType, { 
-        type: eventType,
-        buddyId: buddyId,
-        userId: this.userId,
-        source: 'realtime',
-        message: messageData // Include message data for message-updated events
-      });
+      // Clear existing timeout for this buddy+eventType combination
+      const existingTimeout = this.pendingUIUpdates.get(updateKey);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
       
-      console.log(`✅ UI event dispatched successfully: ${eventType}`);
+      // Set a new timeout to dispatch the batched update
+      const timeout = setTimeout(() => {
+        // Remove from pending map
+        this.pendingUIUpdates.delete(updateKey);
+        
+        // Dispatch the batched update (only one event per buddy within the batch window)
+        const { DeviceEventEmitter } = require('react-native');
+        DeviceEventEmitter.emit(eventType, { 
+          type: eventType,
+          buddyId: buddyId,
+          userId: this.userId,
+          source: 'realtime',
+          message: messageData, // Include latest message data (or null for batched read-status updates)
+          batched: true // Flag to indicate this is a batched update
+        });
+        
+        // Reduced logging - only log once per batch
+        // console.log(`✅ Batched UI event dispatched: ${eventType} for buddy: ${buddyId}`);
+      }, this.uiUpdateBatchDelay);
+      
+      // Store the timeout so we can cancel it if more updates come in
+      this.pendingUIUpdates.set(updateKey, timeout);
+      
     } catch (error) {
       console.error(`❌ Error dispatching UI event ${eventType}:`, error);
     }
@@ -685,6 +765,21 @@ class RealtimeService {
     try {
       console.log('🗑️ Processing buddy deletion notification:', JSON.stringify(payload, null, 2));
       
+      // ✅ CRITICAL: Only process DELETE events, ignore all UPDATE/INSERT events
+      // This prevents buddy-deleted from being emitted when buddies table is updated (e.g., marking messages as read)
+      // Supabase DELETE events have `old` but no `new`, UPDATE events have both `old` and `new`
+      if (payload.new) {
+        // Has `new` data - this is an UPDATE or INSERT, not a DELETE
+        console.log('⏭️ Ignoring non-DELETE buddy event (has new data)');
+        return;
+      }
+      
+      // Additional check: if eventType is specified and not DELETE, ignore
+      if (payload.eventType && payload.eventType !== 'DELETE') {
+        console.log('⏭️ Ignoring non-DELETE buddy event:', payload.eventType);
+        return;
+      }
+      
       // Handle PostgreSQL changes payload format
       if (!payload || !payload.old) {
         console.warn('⚠️ Invalid buddy deletion payload:', payload);
@@ -726,11 +821,14 @@ class RealtimeService {
       this.dispatchUIUpdateEvent(deletedBuddy.id, 'buddies-updated', deletedBuddy);
       
       // Show notification about buddy deletion
+      // Note: System notification - no buddyId needed as buddy is deleted
       console.log('🔔 Showing buddy deletion notification');
       await notificationService.showMessageNotification(
         'Buddy Deleted',
         'A buddy has been removed from your contacts',
-        'System'
+        'System',
+        undefined, // messageCount
+        undefined // buddyId - not applicable for deleted buddy
       );
       
       console.log('✅ Buddy deletion notification processed successfully');
@@ -795,6 +893,9 @@ class RealtimeService {
   private cleanup(): void {
     console.log('🧹 Cleaning up realtime subscriptions');
     
+    // ✅ CRITICAL: Remove all Supabase channels first to prevent duplicate subscriptions
+    supabase.getChannels().forEach(ch => supabase.removeChannel(ch));
+    
     this.subscriptions.forEach(subscription => {
       try {
         subscription.unsubscribe();
@@ -804,6 +905,15 @@ class RealtimeService {
     });
     
     this.subscriptions = [];
+    
+    // Clean up recent events tracking
+    this.recentEvents.clear();
+    
+    // Clean up pending UI update batches
+    this.pendingUIUpdates.forEach((timeout) => {
+      clearTimeout(timeout);
+    });
+    this.pendingUIUpdates.clear();
     
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
@@ -994,7 +1104,9 @@ class RealtimeService {
       await notificationService.showMessageNotification(
         'New Message',
         messageData.content || 'New message',
-        buddyDisplayName
+        buddyDisplayName,
+        undefined, // messageCount
+        messageData.buddy_id // Pass buddyId for faster navigation
       );
       
       console.log('✅ Immediate notification sent successfully');
@@ -1023,7 +1135,8 @@ class RealtimeService {
         'New Message',
         messageData.content || 'New message',
         buddyDisplayName,
-        'normal'
+        'normal',
+        messageData.buddy_id // Pass buddyId for faster navigation
       );
       
       console.log('✅ Message routed to batch system successfully');

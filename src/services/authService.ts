@@ -174,6 +174,35 @@ export class AuthService {
         username: profile.username, // Include the username from profile
       };
 
+      // ✅ CRITICAL FIX: Set Supabase session if tokens are present in signup response
+      // This ensures that supabase.auth.getSession() returns a valid session
+      // Without this, RLS policies fail because auth.uid() is unavailable
+      try {
+        const accessToken = authData?.access_token || authData?.session?.access_token;
+        const refreshToken = authData?.refresh_token || authData?.session?.refresh_token;
+        
+        if (accessToken && refreshToken) {
+          console.log('🔐 AuthService.signUp: Setting Supabase session...');
+          const { supabase } = await import('@/config/supabase');
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          
+          if (sessionError) {
+            console.warn('⚠️ AuthService.signUp: Failed to set Supabase session:', sessionError.message);
+            // Continue anyway - user profile is created, session might be set later
+          } else {
+            console.log('✅ AuthService.signUp: Supabase session established successfully');
+          }
+        } else {
+          console.log('ℹ️ AuthService.signUp: No tokens in signup response (email confirmation may be required)');
+        }
+      } catch (sessionError) {
+        console.error('❌ AuthService.signUp: Error setting Supabase session:', sessionError);
+        // Continue anyway - user profile is created
+      }
+
       return { user, error: null };
     } catch (error) {
       console.error('Sign up error:', error);
@@ -520,6 +549,33 @@ export class AuthService {
       // Update online status
       console.log('🔐 AuthService.signIn: Updating online status...');
       await this.updateOnlineStatus(authData.user.id, true, accessToken);
+
+      // ✅ CRITICAL FIX: Set Supabase session to establish auth context for RLS
+      // This ensures that supabase.auth.getSession() returns a valid session
+      // Without this, RLS policies fail because auth.uid() is unavailable
+      try {
+        const refreshToken = authData?.refresh_token;
+        if (refreshToken) {
+          console.log('🔐 AuthService.signIn: Setting Supabase session...');
+          const { supabase } = await import('@/config/supabase');
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          
+          if (sessionError) {
+            console.warn('⚠️ AuthService.signIn: Failed to set Supabase session:', sessionError.message);
+            // Continue anyway - user is authenticated via HTTP, session might restore later
+          } else {
+            console.log('✅ AuthService.signIn: Supabase session established successfully');
+          }
+        } else {
+          console.warn('⚠️ AuthService.signIn: No refresh token in auth response, cannot set Supabase session');
+        }
+      } catch (sessionError) {
+        console.error('❌ AuthService.signIn: Error setting Supabase session:', sessionError);
+        // Continue anyway - user is authenticated via HTTP
+      }
 
       console.log('🔐 AuthService.signIn: Sign in successful!');
       return { user, error: null };

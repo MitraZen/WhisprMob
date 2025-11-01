@@ -819,15 +819,26 @@ export class CachedBuddiesService {
           break;
 
         case 'buddy':
-          // Invalidate buddies cache to force refresh
-          QueryCache.invalidateBuddies(userId);
+          // ⚠️ CRITICAL FIX: Debounce full cache refreshes to prevent infinite loops
+          // Only refresh if we haven't refreshed in the last 2 seconds
+          const lastRefreshKey = `last_buddy_refresh_${userId}`;
+          const lastRefreshTime = (this as any)[lastRefreshKey] || 0;
+          const now = Date.now();
           
-          // Trigger a refresh to update MMKV persistence
-          this.handleRealtimeBuddyUpdate(userId).catch(error => {
-            console.error('❌ Failed to refresh buddy cache after real-time update:', error);
-          });
-          
-          console.log('✅ Buddy cache invalidated for refresh');
+          if (now - lastRefreshTime > 2000) { // 2 second debounce
+            // Invalidate buddies cache to force refresh
+            QueryCache.invalidateBuddies(userId);
+            
+            // Trigger a refresh to update MMKV persistence
+            this.handleRealtimeBuddyUpdate(userId).catch(error => {
+              console.error('❌ Failed to refresh buddy cache after real-time update:', error);
+            });
+            
+            console.log('✅ Buddy cache invalidated for refresh (debounced)');
+            (this as any)[lastRefreshKey] = now;
+          } else {
+            console.log('⏭️ Skipping cache refresh - too soon after last refresh (debounced, gap:', now - lastRefreshTime, 'ms)');
+          }
           break;
 
         case 'delete':

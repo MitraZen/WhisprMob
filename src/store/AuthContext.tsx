@@ -134,7 +134,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             onPress: () => {
               try {
                 console.log('Opening battery optimization settings...');
-                // Try to open battery optimization settings directly
                 if (NativeModules.PermissionModule) {
                   NativeModules.PermissionModule.openBatteryOptimizationSettings();
                 } else {
@@ -159,73 +158,81 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('🔐 Supabase auth state changed:', event, session?.user?.id);
       
       if (event === 'SIGNED_IN' && session?.user) {
-        console.log('🔐 User signed in via Supabase - saving FCM token');
-        try {
-          await notificationService.saveFCMTokenWhenAuthenticated(session.user.id);
-        } catch (error) {
-          console.error('❌ Error saving FCM token on auth state change:', error);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        console.log('🔐 User signed out via Supabase - clearing FCM token');
-        try {
-          // Cleanup FCMManager first
+        console.log('🔐 User signed in via Supabase - initializing FCM (non-blocking)');
+        // ✅ CRITICAL FIX: Run FCM initialization asynchronously to prevent blocking sign-in
+        // This ensures that navigation happens immediately, FCM initializes in the background
+        (async () => {
           try {
             const { fcmManager } = await import('@/services/FCMManager');
-            await fcmManager.cleanup();
-          } catch (fcmError) {
-            console.warn('⚠️ Error cleaning up FCMManager on sign out:', fcmError);
+            
+            // Add timeout to prevent hanging (10 seconds max)
+            const timeoutPromise = new Promise<{ success: boolean; error?: string }>((resolve) => 
+              setTimeout(() => resolve({ success: false, error: 'FCM initialization timeout' }), 10000)
+            );
+            
+            const result = await Promise.race([
+              fcmManager.initialize(session.user.id),
+              timeoutPromise
+            ]);
+            
+            if (result.success) {
+              console.log('✅ FCM initialized successfully (background)');
+            } else {
+              console.warn('⚠️ FCM initialization failed or timed out (non-blocking):', result.error);
+            }
+          } catch (error) {
+            console.error('❌ Error initializing FCM on sign in (non-blocking):', error);
+            // Don't throw - app continues without FCM
           }
-          
-          // Also clear via notificationService (backward compatibility)
-          await notificationService.clearFCMTokenOnLogout();
+        })();
+      } else if (event === 'SIGNED_OUT') {
+        console.log('🔐 User signed out via Supabase - cleaning up FCM');
+        try {
+          const { fcmManager } = await import('@/services/FCMManager');
+          await fcmManager.cleanup();
         } catch (error) {
-          console.error('❌ Error clearing FCM token on auth state change:', error);
+          console.error('❌ Error cleaning up FCM on sign out:', error);
         }
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        console.log('🔐 Token refreshed - ensuring FCM token is saved');
+        console.log('🔐 Token refreshed - validating FCM token');
         // Run asynchronously to prevent blocking
         (async () => {
           try {
-            // Use FCMManager if available, fallback to notificationService
-            try {
-              const { fcmManager } = await import('@/services/FCMManager');
-              await fcmManager.ensureValidTokenForUser(session.user.id);
-            } catch (fcmError) {
-              console.warn('⚠️ FCMManager not available, using notificationService:', fcmError);
-              await notificationService.saveFCMTokenWhenAuthenticated(session.user.id);
-            }
+            const { fcmManager } = await import('@/services/FCMManager');
+            await fcmManager.ensureValidTokenForUser(session.user.id);
           } catch (error) {
-            console.error('❌ Error saving FCM token on token refresh:', error);
+            console.error('❌ Error validating FCM token on token refresh:', error);
           }
         })();
       }
     });
     
-    // Cleanup subscription on unmount
     return () => {
       subscription?.unsubscribe();
     };
   }, []);
 
-  // AppState listener for hybrid notification services - Phase 2
+  // ✅ NEW: App state listener with FCM token validation
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       console.log('📱 AppState changed to:', nextAppState);
       
       if (nextAppState === 'active' && state.isAuthenticated && state.user) {
-        console.log('☀️ App became active - optimizing hybrid notification services');
+        console.log('☀️ App became active - validating FCM token and optimizing services');
         
         // Update online status when app becomes active
         await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, true);
         await BuddiesService.syncUserOnlineStatus(state.user.id, true);
         
-        // Ensure FCM token is valid when app becomes active (non-blocking)
+        // ✅ Validate FCM token when app becomes active (non-blocking)
         (async () => {
           try {
+            if (!state.user) return;
             const { fcmManager } = await import('@/services/FCMManager');
+            console.log('🔄 Validating FCM token for user:', state.user.id);
             await fcmManager.ensureValidTokenForUser(state.user.id);
-          } catch (fcmError) {
-            console.warn('⚠️ Error validating FCM token on app active:', fcmError);
+          } catch (error) {
+            console.error('❌ Error validating FCM token on app active:', error);
           }
         })();
         
@@ -235,14 +242,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const status = notificationManager.getServiceStatus();
           
           if (status.realtime || status.polling) {
-            // Service already running, optimize for foreground
             await notificationManager.optimizeForForeground();
           } else {
-            // Service not running, initialize
             await initializeNotificationServicesSafely(state.user.id);
           }
         } catch (error) {
-          console.error('❌ Error optimizing notification services for foreground:', error);
+          console.error('❌ Error optimizing notification services:', error);
         }
         
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
@@ -260,11 +265,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const status = notificationManager.getServiceStatus();
           
           if (status.realtime || status.polling) {
-            // Service running, optimize for background
             await notificationManager.optimizeForBackground();
           }
         } catch (error) {
-          console.error('❌ Error optimizing notification services for background:', error);
+          console.error('❌ Error optimizing for background:', error);
         }
       }
     };
@@ -276,33 +280,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [state.isAuthenticated, state.user]);
 
-  // Safe notification service initialization - Phase 2 Hybrid System
+  // ✅ FIXED: Removed duplicate FCM initialization
   const initializeNotificationServicesSafely = async (userId: string) => {
     try {
-      console.log('🚀 AuthContext - Initializing hybrid notification services for user:', userId);
+      console.log('🚀 AuthContext - Initializing services for user:', userId);
       
-      // Import services dynamically to avoid circular dependencies
       const { notificationManager } = await import('@/services/notificationManager');
       const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
-      const { RealtimeService } = await import('@/services/realtimeService');
       
-      // Step 1: Warm up cache from MMKV storage and preload data (instant load + background sync)
-      console.log('🔥 AuthContext - Warming up cache and preloading data...');
+      // Step 1: Warm up cache (instant load + background sync)
+      console.log('🔥 Warming up cache and preloading data...');
       await CachedBuddiesService.warmUpCache(userId);
       
-      // Step 2: Initialize realtime service (keeps cache in sync)
-      console.log('📡 AuthContext - Initializing realtime service...');
+      // Step 2: Initialize realtime service
+      console.log('📡 Initializing realtime service...');
       const { realtimeService } = await import('@/services/realtimeService');
       await realtimeService.initialize(userId);
       
       // Step 3: Start hybrid notification service (realtime + polling fallback)
+      console.log('🔔 Starting notification service...');
       await notificationManager.startNotificationService(userId);
       
-      // Step 4: Initialize FCM using FCMManager (new centralized approach)
-      // Run asynchronously without blocking to prevent app launch delay
+      // Step 4: ✅ Initialize FCM using FCMManager ONLY (removed duplicate)
+      // Run asynchronously without blocking
       (async () => {
         try {
           const { fcmManager } = await import('@/services/FCMManager');
+          
           // Add timeout to prevent hanging (5 seconds max)
           const timeoutPromise = new Promise<{ success: boolean; token?: string; error?: string }>((resolve) => 
             setTimeout(() => resolve({ success: false, error: 'FCM initialization timeout' }), 5000)
@@ -314,42 +318,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           ]);
           
           if (result.success) {
-            console.log('✅ AuthContext - FCM initialized via FCMManager');
+            console.log('✅ FCM initialized successfully via FCMManager');
           } else {
-            console.warn('⚠️ AuthContext - FCM initialization failed, falling back to notificationService:', result.error);
-            // Fallback to old method for backward compatibility
-            try {
-              const { notificationService } = await import('@/services/notificationService');
-              await notificationService.initializeFCMAfterLogin(userId);
-            } catch (fallbackError) {
-              console.error('❌ AuthContext - Fallback FCM initialization also failed:', fallbackError);
-            }
+            console.warn('⚠️ FCM initialization failed or timed out:', result.error);
+            // Don't throw - local notifications still work
           }
-        } catch (fcmError) {
-          console.warn('⚠️ AuthContext - FCMManager error, falling back to notificationService:', fcmError);
-          // Fallback to old method for backward compatibility
-          try {
-            const { notificationService } = await import('@/services/notificationService');
-            await notificationService.initializeFCMAfterLogin(userId);
-          } catch (fallbackError) {
-            console.error('❌ AuthContext - Fallback FCM initialization also failed:', fallbackError);
-          }
+        } catch (error) {
+          console.error('❌ FCM initialization error:', error);
+          // Don't throw - local notifications still work
         }
       })();
       
-      console.log('✅ AuthContext - All services initialized successfully (cache + realtime + notifications)');
+      console.log('✅ All services initialized (cache + realtime + notifications + FCM queued)');
     } catch (error) {
-      console.error('❌ AuthContext - Error initializing services:', error);
-      // Don't throw - let the app continue without these services
+      console.error('❌ Error initializing services:', error);
+      // Don't throw - let the app continue
     }
   };
 
-  // Safe notification service cleanup - Phase 2 Hybrid System
+  // ✅ FIXED: Use FCMManager for cleanup
   const stopNotificationServicesSafely = async () => {
     try {
-      console.log('🛑 AuthContext - Stopping all services');
+      console.log('🛑 Stopping all services');
       
-      // Import services dynamically
       const { notificationManager } = await import('@/services/notificationManager');
       const { realtimeService } = await import('@/services/realtimeService');
       
@@ -359,17 +350,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Disconnect realtime service
       await realtimeService.disconnect();
       
-      // Cleanup FCMManager
+      // ✅ Cleanup FCMManager
       try {
         const { fcmManager } = await import('@/services/FCMManager');
         await fcmManager.cleanup();
-      } catch (fcmError) {
-        console.warn('⚠️ Error cleaning up FCMManager:', fcmError);
+        console.log('✅ FCMManager cleaned up');
+      } catch (error) {
+        console.warn('⚠️ Error cleaning up FCMManager:', error);
       }
       
-      console.log('✅ AuthContext - All services stopped successfully');
+      console.log('✅ All services stopped');
     } catch (error) {
-      console.error('❌ AuthContext - Error stopping services:', error);
+      console.error('❌ Error stopping services:', error);
     }
   };
 
@@ -377,20 +369,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('AuthContext - Checking auth status...');
       
-      // First check local storage
+      // ✅ CRITICAL FIX: Check and restore Supabase session first
+      // Supabase automatically restores sessions from AsyncStorage when persistSession: true
+      // But we need to ensure the session is loaded before proceeding
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.warn('⚠️ AuthContext - Error getting Supabase session:', sessionError.message);
+        } else if (session?.user) {
+          console.log('✅ AuthContext - Supabase session restored:', session.user.id);
+        } else {
+          console.log('ℹ️ AuthContext - No active Supabase session found (this is OK if using custom auth)');
+        }
+      } catch (sessionCheckError) {
+        console.warn('⚠️ AuthContext - Failed to check Supabase session:', sessionCheckError);
+      }
+      
       const storedUser = await StorageService.getItem<User>('user');
       console.log('AuthContext - Stored user found:', !!storedUser);
       
       if (storedUser) {
-        // Check if biometric authentication is enabled and available
+        // Check biometric authentication
         const biometricEnabled = await BiometricService.isBiometricEnabled();
         const biometricAvailable = await BiometricService.isBiometricAvailable();
         
         if (biometricEnabled && biometricAvailable) {
-          // Prompt for biometric authentication
           const shouldAuthenticate = await BiometricService.promptBiometricAuth();
           if (!shouldAuthenticate) {
-            console.log('AuthContext - Biometric authentication cancelled by user');
+            console.log('AuthContext - Biometric authentication cancelled');
             dispatch({ type: 'SET_LOADING', payload: false });
             return;
           }
@@ -398,8 +404,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           try {
             const biometricResult = await BiometricService.authenticateWithBiometric();
             if (!biometricResult.success) {
-              console.log('AuthContext - Biometric authentication failed:', biometricResult.error);
-              // Clear stored user and require manual login
+              console.log('AuthContext - Biometric authentication failed');
               await StorageService.removeItem('user');
               dispatch({ type: 'SET_LOADING', payload: false });
               return;
@@ -407,56 +412,71 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.log('AuthContext - Biometric authentication successful');
           } catch (error) {
             console.error('AuthContext - Biometric authentication error:', error);
-            // Clear stored user and require manual login
             await StorageService.removeItem('user');
             dispatch({ type: 'SET_LOADING', payload: false });
             return;
           }
         }
         
+        // ✅ CRITICAL FIX: Wait for Supabase session to be restored if needed
+        // This is important for RLS policies to work (e.g., saving FCM tokens)
+        // Give Supabase time to restore the session from AsyncStorage (up to 2 seconds)
+        let sessionReady = false;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user && session.user.id === storedUser.id) {
+            sessionReady = true;
+            console.log('✅ AuthContext - Supabase session ready for user:', storedUser.id);
+            break;
+          }
+          // Wait 200ms between attempts (max 2 seconds total)
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        if (!sessionReady) {
+          console.warn('⚠️ AuthContext - Supabase session not restored after wait (user may be anonymous or session expired)');
+        }
+        
         // Verify user still exists in database
         const dbUser = await FlexibleDatabaseService.getUserById(storedUser.id);
         if (dbUser) {
-          // Update user's online status
+          // Update online status
           await FlexibleDatabaseService.updateUserOnlineStatus(storedUser.id, true);
-          // Sync online status to buddies table
           await BuddiesService.syncUserOnlineStatus(storedUser.id, true);
+          
           dispatch({ type: 'LOGIN_SUCCESS', payload: dbUser });
+          
           // Check profile completeness
           const complete = await FlexibleDatabaseService.isProfileComplete(dbUser.id);
           setIsProfileComplete(complete);
           
-          // Initialize notification services for existing user
+          // Initialize notification services
           await initializeNotificationServicesSafely(dbUser.id);
           
-          // Check notification permissions and prompt if needed
+          // Check notification permissions
           await checkNotificationPermissions();
           
-          // Ensure FCM is initialized for already authenticated user (app start scenario)
-          // This handles the case where user is already logged in after app update
-          // Run this asynchronously to prevent blocking app launch
+          // ✅ Ensure FCM is initialized for already authenticated user (non-blocking)
           (async () => {
             try {
               const { fcmManager } = await import('@/services/FCMManager');
               if (!fcmManager.isInitialized() || fcmManager.getCurrentUserId() !== dbUser.id) {
-                console.log('🔥 AuthContext - Initializing FCM for already authenticated user (non-blocking)');
-                // Don't await - let it run in background
+                console.log('🔥 Initializing FCM for authenticated user (non-blocking)');
                 fcmManager.initialize(dbUser.id).catch((error) => {
-                  console.warn('⚠️ Error initializing FCM (non-blocking):', error);
+                  console.warn('⚠️ Non-blocking FCM init failed:', error);
                 });
               }
-            } catch (fcmError) {
-              console.warn('⚠️ Error importing FCMManager:', fcmError);
-              // Fallback is already handled in initializeNotificationServicesSafely
+            } catch (error) {
+              console.warn('⚠️ Error checking FCM status:', error);
             }
           })();
         } else {
-          // User no longer exists in database, clear local storage
+          // User no longer exists
           await StorageService.removeItem('user');
           dispatch({ type: 'SET_LOADING', payload: false });
         }
       } else {
-        console.log('AuthContext - No stored user, setting loading to false');
+        console.log('AuthContext - No stored user');
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     } catch (error) {
@@ -471,24 +491,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const anonymousId = generateAnonymousId();
       
-             // Create user in Supabase database
-             const newUser = await FlexibleDatabaseService.createUser({
-               anonymousId,
-               mood: mood as any,
-             });
+      const newUser = await FlexibleDatabaseService.createUser({
+        anonymousId,
+        mood: mood as any,
+      });
 
       if (!newUser) {
         throw new Error('Failed to create user in database');
       }
 
-      // Store user locally
       await StorageService.setItem('user', newUser);
       dispatch({ type: 'LOGIN_SUCCESS', payload: newUser });
       
       // Initialize notification services after successful login
       await initializeNotificationServicesSafely(newUser.id);
       
-      // Check notification permissions and prompt if needed
+      // Check notification permissions
       await checkNotificationPermissions();
       
       console.log('User logged in successfully with ID:', newUser.id);
@@ -499,18 +517,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Allow email/password auth flow to set the authenticated user
   const setAuthenticatedUser = async (user: User) => {
     try {
       await StorageService.setItem('user', user);
       dispatch({ type: 'LOGIN_SUCCESS', payload: user });
+      
       const complete = await FlexibleDatabaseService.isProfileComplete(user.id);
       setIsProfileComplete(complete);
       
-      // Initialize notification services after setting authenticated user
+      // Initialize notification services
       await initializeNotificationServicesSafely(user.id);
       
-      // Check notification permissions and prompt if needed
+      // Check notification permissions
       await checkNotificationPermissions();
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
@@ -523,16 +541,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await stopNotificationServicesSafely();
       
       if (state.user) {
-        // Clear FCM token from database
-        await notificationService.clearFCMTokenOnLogout(state.user.id);
+        // ✅ Use FCMManager to clear token
+        try {
+          const { fcmManager } = await import('@/services/FCMManager');
+          await fcmManager.cleanup();
+        } catch (error) {
+          console.warn('⚠️ Error cleaning up FCM on logout:', error);
+        }
         
-        // Update user's online status to false
+        // Update online status
         await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, false);
-        // Sync online status to buddies table
         await BuddiesService.syncUserOnlineStatus(state.user.id, false);
       }
       
-      // Clear local storage
       await StorageService.removeItem('user');
       dispatch({ type: 'LOGOUT' });
       
@@ -544,30 +565,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const updateMood = async (mood: string) => {
     try {
-             if (state.user) {
-               // Update mood in database
-               const success = await FlexibleDatabaseService.updateUserMood(state.user.id, mood as any);
-               
-               if (success) {
-                 // Update local user data
-                 const updatedUser = { ...state.user, mood: mood as any };
-                 await StorageService.setItem('user', updatedUser);
-                 dispatch({ type: 'UPDATE_MOOD', payload: mood });
-               }
-             }
+      if (state.user) {
+        const success = await FlexibleDatabaseService.updateUserMood(state.user.id, mood as any);
+        
+        if (success) {
+          const updatedUser = { ...state.user, mood: mood as any };
+          await StorageService.setItem('user', updatedUser);
+          dispatch({ type: 'UPDATE_MOOD', payload: mood });
+        }
+      }
     } catch (error) {
       console.error('Update mood error:', error);
     }
   };
 
-         const testDatabaseConnection = async (): Promise<boolean> => {
-           try {
-             return await FlexibleDatabaseService.testConnection();
-           } catch (error) {
-             console.error('Database connection test error:', error);
-             return false;
-           }
-         };
+  const testDatabaseConnection = async (): Promise<boolean> => {
+    try {
+      return await FlexibleDatabaseService.testConnection();
+    } catch (error) {
+      console.error('Database connection test error:', error);
+      return false;
+    }
+  };
 
   const value: AuthContextType = {
     ...state,
@@ -591,7 +610,4 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
-// Export AuthContext for testing purposes
 export { AuthContext };
-
-

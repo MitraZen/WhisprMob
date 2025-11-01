@@ -5,10 +5,14 @@ import { USE_TELEGRAM_STYLE_CHAT, MIGRATION_STATUS } from '@/config/migrationCon
 
 interface UnifiedChatScreenProps {
   onNavigate: (screen: string) => void;
-  buddy: any;
+  buddy?: any;
   user: any;
   onBack?: () => void;
   onMessagesRead?: (buddyId: string) => void;
+  fromNotification?: boolean; // Flag to force fresh data when navigating from notification
+  buddyId?: string; // For async buddy resolution
+  buddyName?: string; // For async buddy resolution
+  buddyPromise?: Promise<any>; // Promise that resolves to buddy object
 }
 
 export const UnifiedChatScreen: React.FC<UnifiedChatScreenProps> = (props) => {

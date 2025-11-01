@@ -35,7 +35,8 @@ export class Phase3NotificationLogicService {
   private static instance: Phase3NotificationLogicService;
   private notificationBatch: NotificationBatch | null = null;
   // Per-user message accumulator - keeps all messages from each user until cleared
-  private userMessageBatches: Map<string, Array<{ content: string; timestamp: number }>> = new Map();
+  // Key is buddyName, value contains messages and buddyId
+  private userMessageBatches: Map<string, { messages: Array<{ content: string; timestamp: number }>; buddyId?: string }> = new Map();
   private buddyNameCache: BuddyNameCache = {};
   private rateLimitState: RateLimitState = {};
   private recentNotifications: Set<string> = new Set();
@@ -71,7 +72,8 @@ export class Phase3NotificationLogicService {
     title: string,
     content: string,
     buddyName: string,
-    priority: 'high' | 'normal' | 'low' = 'normal'
+    priority: 'high' | 'normal' | 'low' = 'normal',
+    buddyId?: string
   ): Promise<void> {
     console.log('🧠 Phase 3: Adding notification to batch for user:', buddyName);
 
@@ -96,15 +98,19 @@ export class Phase3NotificationLogicService {
 
     // Add message to user's persistent batch (accumulates until cleared)
     if (!this.userMessageBatches.has(buddyName)) {
-      this.userMessageBatches.set(buddyName, []);
+      this.userMessageBatches.set(buddyName, { messages: [], buddyId });
     }
     const userBatch = this.userMessageBatches.get(buddyName)!;
-    userBatch.push({
+    // Update buddyId if provided
+    if (buddyId) {
+      userBatch.buddyId = buddyId;
+    }
+    userBatch.messages.push({
       content,
       timestamp: Date.now(),
     });
 
-    console.log(`🧠 Phase 3: User ${buddyName} now has ${userBatch.length} messages in batch`);
+    console.log(`🧠 Phase 3: User ${buddyName} now has ${userBatch.messages.length} messages in batch`);
 
     // Process and update notification immediately if high priority
     if (priority === 'high') {
@@ -132,7 +138,9 @@ export class Phase3NotificationLogicService {
     }
 
     // Process each user's accumulated messages
-    for (const [buddyName, messages] of this.userMessageBatches.entries()) {
+    for (const [buddyName, batch] of this.userMessageBatches.entries()) {
+      const messages = batch.messages;
+      const buddyId = batch.buddyId;
       if (messages.length === 0) continue;
 
       if (messages.length === 1) {
@@ -140,7 +148,9 @@ export class Phase3NotificationLogicService {
         await notificationService.showMessageNotification(
           buddyName,
           messages[0].content,
-          buddyName
+          buddyName,
+          undefined, // messageCount
+          buddyId // Pass buddyId for faster navigation
         );
       } else {
         // Multiple messages - show all messages in one notification
@@ -150,7 +160,8 @@ export class Phase3NotificationLogicService {
           buddyName,
           allMessages,
           buddyName,
-          messages.length // Pass message count for notification tag
+          messages.length, // Pass message count for notification tag
+          buddyId // Pass buddyId for faster navigation
         );
       }
     }
@@ -187,11 +198,13 @@ export class Phase3NotificationLogicService {
   /**
    * Get current batch status for a user
    */
-  getUserBatchStatus(buddyName: string): { messageCount: number; messages: string[] } {
-    const messages = this.userMessageBatches.get(buddyName) || [];
+  getUserBatchStatus(buddyName: string): { messageCount: number; messages: string[]; buddyId?: string } {
+    const batch = this.userMessageBatches.get(buddyName);
+    const messages = batch?.messages || [];
     return {
       messageCount: messages.length,
       messages: messages.map(msg => msg.content),
+      buddyId: batch?.buddyId,
     };
   }
 
