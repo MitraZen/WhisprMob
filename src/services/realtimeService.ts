@@ -1180,13 +1180,9 @@ class RealtimeService {
       const latestPendingMessage = this.pendingMessages[this.pendingMessages.length - 1];
       const latestFullMessage = latestPendingMessage.fullMessage;
       
-      if (this.pendingMessages.length === 1) {
-        // Single message - use immediate notification
-        await this.sendImmediateNotification(latestFullMessage);
-      } else {
-        // Multiple messages - use batch notification
-        await this.routeToBatchSystem(latestFullMessage);
-      }
+      // ✅ FIXED: Always route through batch system to prevent duplicate notifications
+      // Even single messages go through batch system, which uses consistent notification IDs
+      await this.routeToBatchSystem(latestFullMessage);
       
       this.pendingMessages = [];
       

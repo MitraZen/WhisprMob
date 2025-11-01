@@ -1,5 +1,4 @@
 import { supabase } from '@/config/supabase';
-import { Platform } from 'react-native';
 
 export interface FCMDeliveryResult {
   success: boolean;
@@ -11,6 +10,7 @@ export interface FCMDeliveryResult {
 export interface FCMTokenInfo {
   token: string;
   userId: string;
+  deviceId: string;
   platform: string;
   lastUsed: string;
   isValid: boolean;
@@ -24,6 +24,7 @@ export class FCMReliabilityService {
 
   /**
    * Enhanced FCM notification sending with reliability features
+   * ✅ FIXED: Now sends to most recent device token only
    */
   static async sendReliableNotification(
     userId: string,
@@ -36,8 +37,8 @@ export class FCMReliabilityService {
     try {
       console.log(`🔥 [Attempt ${retryCount + 1}] Sending FCM notification to user:`, userId);
 
-      // Get and validate FCM token
-      const tokenInfo = await this.getValidFCMToken(userId);
+      // ✅ CRITICAL FIX: Get most recent valid token (not all tokens)
+      const tokenInfo = await this.getMostRecentValidToken(userId);
       if (!tokenInfo) {
         return {
           success: false,
@@ -45,6 +46,8 @@ export class FCMReliabilityService {
           retryCount
         };
       }
+
+      console.log(`🔥 Using token from device: ${tokenInfo.deviceId.substring(0, 30)}...`);
 
       // Send notification via Supabase Edge Function with timeout
       const result = await this.sendWithTimeout(
@@ -57,18 +60,18 @@ export class FCMReliabilityService {
       );
 
       if (result.success) {
-        // Update token usage timestamp
-        await this.updateTokenUsage(tokenInfo.token);
+        // Update token usage timestamp for this specific device
+        await this.updateTokenUsage(tokenInfo.token, tokenInfo.deviceId);
         console.log('🔥 FCM notification sent successfully');
         return { ...result, retryCount };
       } else {
         // Handle FCM errors
-        const shouldRetry = await this.handleFCMError(result.error, tokenInfo, userId);
+        const shouldRetry = await this.handleFCMError(result.error || 'Unknown error', tokenInfo, userId);
         
         if (shouldRetry && retryCount < this.MAX_RETRY_ATTEMPTS) {
           console.log(`🔥 Retrying FCM notification in ${this.RETRY_DELAY_MS}ms...`);
           await this.delay(this.RETRY_DELAY_MS * (retryCount + 1));
-          return this.sendReliableNotification(userId, title, body, data, retryCount + 1);
+          return this.sendReliableNotification(userId, title, body, data, retryCount + 1, checkOnlineStatus);
         }
 
         return { ...result, retryCount };
@@ -84,16 +87,17 @@ export class FCMReliabilityService {
   }
 
   /**
-   * Get valid FCM token for user with validation
+   * ✅ NEW: Get most recent valid token for user (single device)
+   * This prevents sending to multiple devices (duplicate notifications)
    */
-  private static async getValidFCMToken(userId: string): Promise<FCMTokenInfo | null> {
+  private static async getMostRecentValidToken(userId: string): Promise<FCMTokenInfo | null> {
     try {
       const { data: tokens, error } = await supabase
         .from('user_fcm_tokens')
-        .select('fcm_token, platform, updated_at, created_at')
+        .select('fcm_token, device_id, platform, updated_at, created_at')
         .eq('user_id', userId)
         .order('updated_at', { ascending: false })
-        .limit(5); // Get recent tokens
+        .limit(1); // ✅ CRITICAL: Get only most recent device
 
       if (error) {
         console.error('🔥 Error fetching FCM tokens:', error);
@@ -105,28 +109,36 @@ export class FCMReliabilityService {
         return null;
       }
 
-      // Find the most recent valid token
-      for (const token of tokens) {
-        const tokenInfo: FCMTokenInfo = {
-          token: token.fcm_token,
-          userId,
-          platform: token.platform,
-          lastUsed: token.updated_at,
-          isValid: this.isTokenValid(token.updated_at),
-          errorCount: 0
-        };
+      const token = tokens[0];
+      const tokenInfo: FCMTokenInfo = {
+        token: token.fcm_token,
+        userId,
+        deviceId: token.device_id,
+        platform: token.platform,
+        lastUsed: token.updated_at,
+        isValid: this.isTokenValid(token.updated_at),
+        errorCount: 0
+      };
 
-        if (tokenInfo.isValid) {
-          return tokenInfo;
-        }
+      if (!tokenInfo.isValid) {
+        console.warn('🔥 Most recent FCM token is expired for user:', userId);
+        return null;
       }
 
-      console.warn('🔥 No valid FCM tokens found for user:', userId);
-      return null;
+      return tokenInfo;
     } catch (error) {
-      console.error('🔥 Error in getValidFCMToken:', error);
+      console.error('🔥 Error in getMostRecentValidToken:', error);
       return null;
     }
+  }
+
+  /**
+   * ✅ DEPRECATED: Use getMostRecentValidToken instead
+   * Keeping for backward compatibility but not recommended
+   */
+  private static async getValidFCMToken(userId: string): Promise<FCMTokenInfo | null> {
+    console.warn('🔥 getValidFCMToken is deprecated - use getMostRecentValidToken');
+    return this.getMostRecentValidToken(userId);
   }
 
   /**
@@ -151,8 +163,11 @@ export class FCMReliabilityService {
     data?: { [key: string]: string },
     checkOnlineStatus: boolean = false
   ): Promise<FCMDeliveryResult> {
-    const timeoutPromise = new Promise<FCMDeliveryResult>((_, reject) => {
-      setTimeout(() => reject(new Error('FCM request timeout')), 10000); // 10 second timeout
+    const timeoutPromise = new Promise<FCMDeliveryResult>((resolve) => {
+      setTimeout(() => resolve({
+        success: false,
+        error: 'FCM request timeout'
+      }), 10000);
     });
 
     const sendPromise = supabase.functions.invoke('send-fcm-notification-v1', {
@@ -167,27 +182,35 @@ export class FCMReliabilityService {
     try {
       const result = await Promise.race([sendPromise, timeoutPromise]);
       
-      if (result.error) {
+      // Type guard: Check if result is from Supabase function (has error/data structure)
+      if ('error' in result || 'data' in result) {
+        // This is a FunctionsResponse from Supabase
+        const funcResponse = result as any;
+        
+        if (funcResponse.error) {
+          return {
+            success: false,
+            error: funcResponse.error.message || 'FCM Edge Function error',
+            fcmResponse: funcResponse.data
+          };
+        }
+
+        if (funcResponse.data?.reason === 'user_online') {
+          return {
+            success: false,
+            error: 'user_online',
+            fcmResponse: funcResponse.data
+          };
+        }
+
         return {
-          success: false,
-          error: result.error.message || 'FCM Edge Function error',
-          fcmResponse: result.data
+          success: true,
+          fcmResponse: funcResponse.data
         };
       }
-
-      // Handle server-side online status check response
-      if (result.data?.reason === 'user_online') {
-        return {
-          success: false,
-          error: 'user_online', // Special error code for online users
-          fcmResponse: result.data
-        };
-      }
-
-      return {
-        success: true,
-        fcmResponse: result.data
-      };
+      
+      // If result is already FCMDeliveryResult (from timeout), return it
+      return result as FCMDeliveryResult;
     } catch (error) {
       return {
         success: false,
@@ -206,59 +229,58 @@ export class FCMReliabilityService {
   ): Promise<boolean> {
     console.log('🔥 Handling FCM error:', error);
 
-    // Check for specific FCM error types
     if (error.includes('InvalidRegistration') || 
         error.includes('NotRegistered') ||
         error.includes('invalid_token')) {
       console.log('🔥 Invalid FCM token detected, marking as invalid');
-      await this.markTokenAsInvalid(tokenInfo.token, userId);
-      return false; // Don't retry with invalid token
+      await this.markTokenAsInvalid(tokenInfo.token, tokenInfo.deviceId, userId);
+      return false;
     }
 
     if (error.includes('timeout') || 
         error.includes('network') ||
         error.includes('connection')) {
       console.log('🔥 Network error detected, will retry');
-      return true; // Retry network errors
+      return true;
     }
 
     if (error.includes('quota') || error.includes('rate limit')) {
       console.log('🔥 Rate limit detected, will retry with delay');
-      return true; // Retry rate limit errors
+      return true;
     }
 
-    // For other errors, don't retry
     console.log('🔥 Non-retryable error:', error);
     return false;
   }
 
   /**
-   * Mark FCM token as invalid
+   * ✅ FIXED: Mark FCM token as invalid (remove specific device token)
    */
-  private static async markTokenAsInvalid(token: string, userId: string): Promise<void> {
+  private static async markTokenAsInvalid(token: string, deviceId: string, userId: string): Promise<void> {
     try {
-      // Delete invalid token
       await supabase
         .from('user_fcm_tokens')
         .delete()
         .eq('fcm_token', token)
+        .eq('device_id', deviceId)
         .eq('user_id', userId);
 
-      console.log('🔥 Invalid FCM token removed from database');
+      console.log(`🔥 Invalid FCM token removed from database for device: ${deviceId.substring(0, 30)}...`);
     } catch (error) {
       console.error('🔥 Error removing invalid token:', error);
     }
   }
 
   /**
-   * Update token usage timestamp
+   * ✅ FIXED: Update token usage timestamp for specific device
    */
-  private static async updateTokenUsage(token: string): Promise<void> {
+  private static async updateTokenUsage(token: string, deviceId: string): Promise<void> {
     try {
       await supabase
         .from('user_fcm_tokens')
         .update({ updated_at: new Date().toISOString() })
-        .eq('fcm_token', token);
+        .eq('fcm_token', token)
+        .eq('device_id', deviceId);
     } catch (error) {
       console.error('🔥 Error updating token usage:', error);
     }
@@ -266,6 +288,7 @@ export class FCMReliabilityService {
 
   /**
    * Clean up old and invalid FCM tokens
+   * ✅ ENHANCED: Now considers device_id in cleanup
    */
   static async cleanupInvalidTokens(): Promise<void> {
     try {
@@ -290,16 +313,20 @@ export class FCMReliabilityService {
   }
 
   /**
-   * Get FCM delivery statistics
+   * ✅ ENHANCED: Get FCM delivery statistics (now device-aware)
    */
   static async getDeliveryStats(userId?: string): Promise<{
     totalTokens: number;
+    totalDevices: number;
     validTokens: number;
     invalidTokens: number;
     recentActivity: number;
+    deviceBreakdown: { [platform: string]: number };
   }> {
     try {
-      let query = supabase.from('user_fcm_tokens').select('*');
+      let query = supabase
+        .from('user_fcm_tokens')
+        .select('*');
       
       if (userId) {
         query = query.eq('user_id', userId);
@@ -309,17 +336,30 @@ export class FCMReliabilityService {
 
       if (error) {
         console.error('🔥 Error fetching delivery stats:', error);
-        return { totalTokens: 0, validTokens: 0, invalidTokens: 0, recentActivity: 0 };
+        return { 
+          totalTokens: 0, 
+          totalDevices: 0,
+          validTokens: 0, 
+          invalidTokens: 0, 
+          recentActivity: 0,
+          deviceBreakdown: {}
+        };
       }
 
       const now = new Date();
-      const recentCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
+      const recentCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      // ✅ NEW: Track unique devices
+      const uniqueDevices = new Set(tokens?.map(t => t.device_id) || []);
+      const deviceBreakdown: { [platform: string]: number } = {};
 
       const stats = {
         totalTokens: tokens?.length || 0,
+        totalDevices: uniqueDevices.size,
         validTokens: 0,
         invalidTokens: 0,
-        recentActivity: 0
+        recentActivity: 0,
+        deviceBreakdown
       };
 
       tokens?.forEach(token => {
@@ -335,12 +375,23 @@ export class FCMReliabilityService {
         if (lastUsed > recentCutoff) {
           stats.recentActivity++;
         }
+
+        // Track device platform breakdown
+        const platform = token.platform || 'unknown';
+        deviceBreakdown[platform] = (deviceBreakdown[platform] || 0) + 1;
       });
 
       return stats;
     } catch (error) {
       console.error('🔥 Error in getDeliveryStats:', error);
-      return { totalTokens: 0, validTokens: 0, invalidTokens: 0, recentActivity: 0 };
+      return { 
+        totalTokens: 0,
+        totalDevices: 0, 
+        validTokens: 0, 
+        invalidTokens: 0, 
+        recentActivity: 0,
+        deviceBreakdown: {}
+      };
     }
   }
 
@@ -354,6 +405,40 @@ export class FCMReliabilityService {
       'This is a test notification to verify FCM delivery',
       { test: 'true', timestamp: new Date().toISOString() }
     );
+  }
+
+  /**
+   * ✅ NEW: Get all devices for a user (for debugging)
+   */
+  static async getUserDevices(userId: string): Promise<Array<{
+    deviceId: string;
+    deviceName?: string;
+    platform: string;
+    lastUsed: string;
+    isValid: boolean;
+  }>> {
+    try {
+      const { data: tokens, error } = await supabase
+        .from('user_fcm_tokens')
+        .select('device_id, device_name, platform, updated_at')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (error || !tokens) {
+        return [];
+      }
+
+      return tokens.map(token => ({
+        deviceId: token.device_id,
+        deviceName: token.device_name,
+        platform: token.platform,
+        lastUsed: token.updated_at,
+        isValid: this.isTokenValid(token.updated_at)
+      }));
+    } catch (error) {
+      console.error('🔥 Error getting user devices:', error);
+      return [];
+    }
   }
 
   /**

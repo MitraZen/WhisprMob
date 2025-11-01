@@ -1,11 +1,10 @@
 import messaging from '@react-native-firebase/messaging';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DeviceInfo from 'react-native-device-info';
 import { supabase } from '@/config/supabase';
 
-// ⚠️ TEMPORARY: Suppress modular API deprecation warnings until migration to v22 modular API is complete
-// TODO: Migrate to modular API when React Native Firebase v22 stable is released
-// See: https://rnfirebase.io/migrating-to-v22
+// ⚠️ TEMPORARY: Suppress modular API deprecation warnings
 if (typeof globalThis !== 'undefined') {
   (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 }
@@ -13,11 +12,9 @@ if (typeof globalThis !== 'undefined') {
 // Constants
 const APP_VERSION_KEY = '@whispr_app_version';
 const FCM_INITIALIZED_KEY = '@whispr_fcm_initialized';
-const TOKEN_REFRESH_LISTENER_KEY = '@whispr_token_refresh_listener';
+const DEVICE_ID_KEY = '@whispr_device_id';
 
-// Get app version from package.json (fallback to build.gradle version)
-// For production, this should match android/app/build.gradle versionName
-const APP_VERSION = '1.7.7'; // TODO: Automate this to read from build.gradle
+const APP_VERSION = '1.7.7';
 
 interface TokenRefreshListener {
   unsubscribe: () => void;
@@ -31,21 +28,20 @@ export interface FCMInitializationResult {
 
 /**
  * Centralized FCM Manager - Singleton Pattern
- * Handles FCM token lifecycle, app update detection, and token synchronization
+ * ✅ FIXED: Now properly handles device identification to prevent duplicate tokens
  */
 export class FCMManager {
   private static instance: FCMManager;
   private fcmToken: string | null = null;
   private currentUserId: string | null = null;
+  private deviceId: string | null = null;
   private initialized = false;
   private tokenRefreshListener: TokenRefreshListener | null = null;
   private initializationPromise: Promise<FCMInitializationResult> | null = null;
   private pendingTokenSave: { token: string; userId: string } | null = null;
   private authStateListener: { unsubscribe: () => void } | null = null;
 
-  private constructor() {
-    // Private constructor for singleton
-  }
+  private constructor() {}
 
   static getInstance(): FCMManager {
     if (!FCMManager.instance) {
@@ -55,12 +51,47 @@ export class FCMManager {
   }
 
   /**
+   * ✅ NEW: Get or generate stable device ID
+   */
+  private async getDeviceId(): Promise<string> {
+    if (this.deviceId) {
+      return this.deviceId;
+    }
+
+    try {
+      // First, try to get stored device ID
+      let storedDeviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+      
+      if (!storedDeviceId) {
+        // Generate new device ID using hardware identifiers
+        const uniqueId = await DeviceInfo.getUniqueId();
+        const installId = await DeviceInfo.getInstanceId(); // More stable than uniqueId on Android
+        
+        // Combine for stable device ID
+        storedDeviceId = `${Platform.OS}-${uniqueId}-${installId}`;
+        
+        // Store for future use
+        await AsyncStorage.setItem(DEVICE_ID_KEY, storedDeviceId);
+        console.log('🔥 FCMManager: Generated new device ID:', storedDeviceId.substring(0, 30) + '...');
+      } else {
+        console.log('🔥 FCMManager: Using stored device ID:', storedDeviceId.substring(0, 30) + '...');
+      }
+
+      this.deviceId = storedDeviceId;
+      return storedDeviceId;
+    } catch (error) {
+      console.error('❌ FCMManager: Error getting device ID:', error);
+      // Fallback to simple device ID
+      const fallbackId = `${Platform.OS}-${Date.now()}-${Math.random()}`;
+      this.deviceId = fallbackId;
+      return fallbackId;
+    }
+  }
+
+  /**
    * Initialize FCM for authenticated user
-   * Handles app update detection and token validation
-   * Returns immediately if already initialized to prevent blocking
    */
   async initialize(userId: string, forceRefresh = false): Promise<FCMInitializationResult> {
-    // If already initialized for this user, return success immediately
     if (this.initialized && this.currentUserId === userId && !forceRefresh) {
       console.log('🔥 FCMManager: Already initialized for user, skipping');
       return {
@@ -69,7 +100,6 @@ export class FCMManager {
       };
     }
 
-    // Prevent concurrent initializations
     if (this.initializationPromise) {
       console.log('🔥 FCM initialization already in progress, waiting...');
       return this.initializationPromise;
@@ -82,7 +112,6 @@ export class FCMManager {
       return result;
     } catch (error: any) {
       console.error('❌ FCMManager: Initialization error caught:', error);
-      // Return failure but don't throw to prevent blocking
       return {
         success: false,
         error: error.message || 'Unknown error',
@@ -100,23 +129,20 @@ export class FCMManager {
       console.log('🔥 FCMManager: Starting initialization for user:', userId);
       this.currentUserId = userId;
 
-      // Check if this is an app update
+      // ✅ CRITICAL: Get device ID first
+      await this.getDeviceId();
+
       const isAppUpdate = await this.detectAppUpdate();
 
-      // If app was updated or force refresh, refresh token
       if (isAppUpdate || forceRefresh) {
         console.log('🔥 FCMManager: App update detected or force refresh requested');
         await this.refreshToken(userId);
         await AsyncStorage.setItem(APP_VERSION_KEY, APP_VERSION);
       } else {
-        // Otherwise, ensure token is valid
         await this.ensureValidToken(userId);
       }
 
-      // Set up persistent token refresh listener
       this.setupTokenRefreshListener(userId);
-
-      // Set up auth state listener to save pending tokens when session is ready
       this.setupAuthStateListener();
 
       this.initialized = true;
@@ -136,16 +162,13 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Detect if app was updated by comparing stored version with current version
-   */
   private async detectAppUpdate(): Promise<boolean> {
     try {
       const storedVersion = await AsyncStorage.getItem(APP_VERSION_KEY);
       
       if (!storedVersion) {
         console.log('🔥 FCMManager: No stored version found - first launch');
-        return true; // First launch counts as "update"
+        return true;
       }
 
       const isUpdate = storedVersion !== APP_VERSION;
@@ -160,19 +183,14 @@ export class FCMManager {
       return isUpdate;
     } catch (error) {
       console.error('🔥 FCMManager: Error detecting app update:', error);
-      // On error, assume it's an update to be safe
       return true;
     }
   }
 
-  /**
-   * Refresh FCM token and sync with database
-   */
   private async refreshToken(userId: string): Promise<void> {
     try {
       console.log('🔥 FCMManager: Refreshing FCM token...');
       
-      // Request permission first
       const authStatus = await messaging().requestPermission();
       const enabled = 
         authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
@@ -182,13 +200,11 @@ export class FCMManager {
         throw new Error('FCM permission not granted');
       }
 
-      // Get fresh token
       const newToken = await this.getTokenWithRetry();
       this.fcmToken = newToken;
 
       console.log('🔥 FCMManager: New token obtained:', newToken.substring(0, 20) + '...');
 
-      // Save to database with retry
       await this.saveTokenToDatabaseWithRetry(userId, newToken);
 
       console.log('✅ FCMManager: Token refreshed and saved');
@@ -198,16 +214,11 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Ensure token is valid by comparing with database
-   */
   private async ensureValidToken(userId: string): Promise<void> {
     try {
       console.log('🔥 FCMManager: Validating token...');
 
-      // ✅ Add overall timeout for token validation (8 seconds max)
       const validationPromise = (async () => {
-        // Get current token from Firebase
         const currentToken = await this.getTokenWithRetry();
         
         if (!currentToken) {
@@ -216,10 +227,8 @@ export class FCMManager {
           return;
         }
 
-        // Get token from database (has its own 3s timeout)
         const dbToken = await this.getTokenFromDatabase(userId);
 
-        // If tokens don't match or DB has no token, refresh
         if (!dbToken || dbToken !== currentToken) {
           console.log('🔥 FCMManager: Token mismatch detected, refreshing...', {
             dbToken: dbToken ? dbToken.substring(0, 20) + '...' : 'none',
@@ -239,8 +248,6 @@ export class FCMManager {
       await Promise.race([validationPromise, timeoutPromise]);
     } catch (error: any) {
       console.warn('⚠️ FCMManager: Token validation failed or timed out:', error.message);
-      // ✅ CRITICAL FIX: Don't block on validation errors - just use current token or skip
-      // This prevents sign-in from hanging
       try {
         const currentToken = await this.getTokenWithRetry();
         if (currentToken) {
@@ -253,11 +260,7 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Set up persistent token refresh listener
-   */
   private setupTokenRefreshListener(userId: string): void {
-    // Remove existing listener if any
     if (this.tokenRefreshListener) {
       try {
         this.tokenRefreshListener.unsubscribe();
@@ -274,7 +277,6 @@ export class FCMManager {
       
       this.fcmToken = newToken;
       
-      // Save to database with retry
       if (this.currentUserId) {
         await this.saveTokenToDatabaseWithRetry(this.currentUserId, newToken);
       } else {
@@ -286,9 +288,6 @@ export class FCMManager {
     console.log('✅ FCMManager: Token refresh listener set up');
   }
 
-  /**
-   * Get FCM token with retry logic
-   */
   private async getTokenWithRetry(maxRetries = 3): Promise<string> {
     let lastError: Error | null = null;
 
@@ -304,7 +303,6 @@ export class FCMManager {
         console.warn(`🔥 FCMManager: Token retrieval attempt ${attempt}/${maxRetries} failed:`, error.message);
         
         if (attempt < maxRetries) {
-          // Exponential backoff: 1s, 2s, 4s
           const delay = Math.pow(2, attempt - 1) * 1000;
           await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -315,7 +313,7 @@ export class FCMManager {
   }
 
   /**
-   * Save token to database with retry logic and timeout protection
+   * ✅ FIXED: Save token with device ID to prevent duplicates
    */
   private async saveTokenToDatabaseWithRetry(
     userId: string,
@@ -327,11 +325,12 @@ export class FCMManager {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const platform = Platform.OS;
+        const deviceId = await this.getDeviceId();
+        const deviceName = await DeviceInfo.getDeviceName();
+        
         console.log(`🔥 FCMManager: Saving token to database (attempt ${attempt}/${maxRetries})...`);
 
-        // CRITICAL: Wait for and verify authenticated session to ensure RLS compliance
-        // RLS policy requires user_id = auth.uid()
-        // Retry up to 5 times with increasing delays to wait for session to be ready
+        // Wait for authenticated session
         let authUser = null;
         let sessionReady = false;
         
@@ -345,47 +344,41 @@ export class FCMManager {
           }
           
           if (sessionAttempt < 5) {
-            // Wait progressively longer: 200ms, 400ms, 800ms, 1600ms
             const delay = Math.pow(2, sessionAttempt) * 100;
             console.log(`🔥 FCMManager: Session not ready, waiting ${delay}ms before retry (attempt ${sessionAttempt}/5)...`);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
         
-        // ✅ CRITICAL FIX: Handle anonymous users gracefully (they don't have Supabase auth)
-        // Anonymous users are created via FlexibleDatabaseService without Supabase auth
-        // For these users, we queue the token save for when they sign up with email/password
         if (!sessionReady || !authUser) {
-          // Check if this is an anonymous user (no email means anonymous/mood-based login)
-          // Anonymous users can't save FCM tokens due to RLS, so we skip and log a warning
-          console.warn('⚠️ FCMManager: No Supabase session available - user may be anonymous (mood-based login without email/password auth)');
+          console.warn('⚠️ FCMManager: No Supabase session available - user may be anonymous');
           console.warn('⚠️ FCMManager: FCM token will be saved when user signs up with email/password');
           
-          // Queue the token save for later (when user authenticates properly)
           this.pendingTokenSave = { token, userId };
-          
-          // Don't throw error - allow app to continue (anonymous users can still use app without FCM)
           return;
         }
 
-        // Use auth.uid() instead of passed userId to ensure RLS policy compliance
         const sessionUserId = authUser.id;
         
         if (sessionUserId !== userId) {
           console.warn(`⚠️ FCMManager: User ID mismatch - using session user ${sessionUserId} instead of provided ${userId}`);
         }
 
-        console.log(`🔥 FCMManager: Using session user ID: ${sessionUserId} for token save`);
+        console.log(`🔥 FCMManager: Saving token for device: ${deviceId.substring(0, 30)}...`);
 
-        // Add timeout protection (5 seconds per attempt)
+        // ✅ CRITICAL FIX: Upsert with device_id to prevent duplicates
         const savePromise = supabase
           .from('user_fcm_tokens')
           .upsert({
-            user_id: sessionUserId, // Use session user ID to ensure RLS compliance
+            user_id: sessionUserId,
             fcm_token: token,
+            device_id: deviceId,
+            device_name: deviceName,
             platform,
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'fcm_token' });
+          }, { 
+            onConflict: 'user_id,device_id' // ✅ This prevents duplicates per device
+          });
 
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Database save timeout')), 5000)
@@ -396,41 +389,70 @@ export class FCMManager {
         if (error) throw error;
 
         console.log('✅ FCMManager: Token saved to database successfully');
+        
+        // ✅ BONUS: Clean up old tokens for this user (keep last 3 devices)
+        await this.cleanupOldTokens(sessionUserId);
+        
         return;
       } catch (error: any) {
         lastError = error;
         console.warn(`🔥 FCMManager: Database save attempt ${attempt}/${maxRetries} failed:`, error.message);
         
-        // If session issue, wait a bit longer before retry
         if (error.message.includes('Session') || error.message.includes('authenticated')) {
-          const delay = Math.pow(2, attempt) * 1000; // Longer delay for session issues
+          const delay = Math.pow(2, attempt) * 1000;
           await new Promise(resolve => setTimeout(resolve, delay));
         } else if (attempt < maxRetries) {
-          // Exponential backoff: 1s, 2s, 4s
           const delay = Math.pow(2, attempt - 1) * 1000;
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
 
-    // If session wasn't ready, queue the token save for later
     if (lastError?.message?.includes('session') || lastError?.message?.includes('Auth session')) {
       console.log('🔥 FCMManager: Queueing token save for when session is ready');
       this.pendingTokenSave = { token, userId };
-      // Will be saved when session is restored via auth state listener
-      return; // Don't log as error since we'll retry
+      return;
     }
 
-    // Don't throw - log and continue to prevent blocking app launch
     console.error('❌ FCMManager: Failed to save token to database after retries, continuing anyway:', lastError?.message);
-    // Don't throw - allow app to continue
   }
 
   /**
-   * Set up auth state listener to save pending tokens when session is restored
+   * ✅ NEW: Clean up old tokens (keep last 3 devices)
    */
+  private async cleanupOldTokens(userId: string): Promise<void> {
+    try {
+      // Get all tokens for this user, ordered by last update
+      const { data: tokens, error } = await supabase
+        .from('user_fcm_tokens')
+        .select('id, updated_at')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (error || !tokens || tokens.length <= 3) {
+        return; // Keep up to 3 devices
+      }
+
+      // Delete tokens beyond the 3 most recent
+      const tokensToDelete = tokens.slice(3).map(t => t.id);
+      
+      if (tokensToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('user_fcm_tokens')
+          .delete()
+          .in('id', tokensToDelete);
+
+        if (!deleteError) {
+          console.log(`🧹 FCMManager: Cleaned up ${tokensToDelete.length} old token(s)`);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ FCMManager: Error cleaning up old tokens:', error);
+      // Non-critical, continue
+    }
+  }
+
   private setupAuthStateListener(): void {
-    // Only set up once
     if (this.authStateListener) {
       return;
     }
@@ -439,23 +461,18 @@ export class FCMManager {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         console.log(`🔥 FCMManager: Auth state changed: ${event}, user: ${session?.user?.id || 'none'}`);
         
-        // When session is restored or user signs in, save pending token if any
         if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') && session?.user && this.pendingTokenSave) {
           console.log('🔥 FCMManager: Session available, attempting to save pending token');
           const { token, userId } = this.pendingTokenSave;
           
-          // Verify it's the same user
           if (session.user.id === userId) {
             try {
               await this.saveTokenToDatabaseWithRetry(userId, token);
-              // Clear pending save on success
               this.pendingTokenSave = null;
               console.log('✅ FCMManager: Pending token saved successfully');
             } catch (error: any) {
               console.warn('⚠️ FCMManager: Failed to save pending token:', error?.message);
-              // Keep pendingTokenSave so we can retry again if it's still a session issue
               if (!error?.message?.includes('session') && !error?.message?.includes('Auth session')) {
-                // If it's not a session issue anymore, clear the pending save
                 this.pendingTokenSave = null;
               }
             }
@@ -470,16 +487,16 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Get token from database with timeout protection
-   */
   private async getTokenFromDatabase(userId: string): Promise<string | null> {
     try {
-      // ✅ Add timeout protection to prevent hanging (3 seconds max)
+      const deviceId = await this.getDeviceId();
+      
+      // ✅ FIXED: Query by both user_id AND device_id
       const queryPromise = supabase
         .from('user_fcm_tokens')
         .select('fcm_token')
         .eq('user_id', userId)
+        .eq('device_id', deviceId)
         .single();
 
       const timeoutPromise = new Promise((_, reject) => 
@@ -490,7 +507,6 @@ export class FCMManager {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No token found - this is okay
           return null;
         }
         throw error;
@@ -503,12 +519,8 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Ensure token is valid (called on app state changes)
-   */
   async ensureValidTokenForUser(userId: string): Promise<void> {
     try {
-      // Only validate if already initialized for this user
       if (!this.initialized || this.currentUserId !== userId) {
         console.log('🔥 FCMManager: Not initialized for user, initializing...');
         await this.initialize(userId);
@@ -521,35 +533,22 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Get current FCM token
-   */
   getToken(): string | null {
     return this.fcmToken;
   }
 
-  /**
-   * Check if FCM is initialized
-   */
   isInitialized(): boolean {
     return this.initialized;
   }
 
-  /**
-   * Get current user ID
-   */
   getCurrentUserId(): string | null {
     return this.currentUserId;
   }
 
-  /**
-   * Cleanup on logout
-   */
   async cleanup(): Promise<void> {
     try {
       console.log('🔥 FCMManager: Cleaning up...');
 
-      // Remove token refresh listener
       if (this.tokenRefreshListener) {
         try {
           this.tokenRefreshListener.unsubscribe();
@@ -559,7 +558,6 @@ export class FCMManager {
         this.tokenRefreshListener = null;
       }
 
-      // Remove auth state listener
       if (this.authStateListener) {
         try {
           this.authStateListener.unsubscribe();
@@ -569,9 +567,9 @@ export class FCMManager {
         this.authStateListener = null;
       }
 
-      // Clear state
       this.fcmToken = null;
       this.currentUserId = null;
+      this.deviceId = null;
       this.initialized = false;
       this.initializationPromise = null;
       this.pendingTokenSave = null;
@@ -584,15 +582,11 @@ export class FCMManager {
     }
   }
 
-  /**
-   * Force refresh token (for manual triggers)
-   */
   async forceRefreshToken(userId: string): Promise<void> {
     console.log('🔥 FCMManager: Force refresh requested');
-    this.initialized = false; // Reset to allow re-initialization
+    this.initialized = false;
     await this.initialize(userId, true);
   }
 }
 
 export const fcmManager = FCMManager.getInstance();
-

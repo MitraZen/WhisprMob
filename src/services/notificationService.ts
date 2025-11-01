@@ -269,18 +269,20 @@ class NotificationServiceClass implements NotificationService {
     try {
       console.log('🔔 [NOTIFICATION] showMessageNotification called:', { title, message, buddyName, messageCount, buddyId });
       
-      const notificationKey = messageCount && messageCount > 1 
-        ? `batch-${buddyName}`
-        : `${title}-${buddyName}-${message.substring(0, 50)}`;
+      // ✅ FIXED: Use consistent notification key based on buddyName
+      // This ensures all notifications from the same user use the same key/id
+      // preventing duplicates when first message shows and then batch timer fires
+      const notificationKey = `batch-${buddyName}`;
       
       if (messageCount && messageCount > 1) {
         console.log('🔔 [NOTIFICATION] Batched notification - will update existing');
-      } else if (this.recentNotifications.has(notificationKey)) {
-        console.log('🔔 [NOTIFICATION] Duplicate notification prevented:', notificationKey);
-        return 'Duplicate notification prevented';
-      }
-      
-      if (!messageCount || messageCount === 1) {
+      } else {
+        // For single messages, check if we already showed a notification for this user
+        // This prevents duplicate when batch timer fires after immediate notification
+        if (this.recentNotifications.has(notificationKey)) {
+          console.log('🔔 [NOTIFICATION] Duplicate notification prevented (same user notification already shown):', notificationKey);
+          return 'Duplicate notification prevented';
+        }
         this.recentNotifications.add(notificationKey);
         setTimeout(() => {
           this.recentNotifications.delete(notificationKey);
@@ -323,9 +325,10 @@ class NotificationServiceClass implements NotificationService {
         return Math.abs(hash) || 1;
       };
       
-      const notificationId = messageCount && messageCount > 1 
-        ? getNotificationId(buddyName)
-        : Date.now() % 2147483647;
+      // ✅ FIXED: Always use consistent notification ID based on buddyName
+      // This allows notifications from the same user to update/replace each other
+      // even for single messages, preventing duplicate notifications
+      const notificationId = getNotificationId(buddyName);
       
       PushNotification.localNotification({
         id: notificationId,

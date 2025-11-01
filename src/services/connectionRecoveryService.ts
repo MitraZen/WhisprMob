@@ -350,14 +350,16 @@ class ConnectionRecoveryService {
    * Perform health check
    */
   private async performHealthCheck(): Promise<void> {
-    if (!this.connectionState.isConnected || this.connectionState.isRetrying) {
+    if (!this.connectionState.isConnected || this.connectionState.isRetrying || !this.isInitialized) {
       return;
     }
+
+    let timeoutId: NodeJS.Timeout | null = null;
 
     try {
       // Simple health check - ping a reliable endpoint
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.config.connectionTimeout);
+      timeoutId = setTimeout(() => controller.abort(), this.config.connectionTimeout);
       
       const response = await fetch('https://www.google.com/favicon.ico', {
         method: 'HEAD',
@@ -365,14 +367,37 @@ class ConnectionRecoveryService {
         cache: 'no-cache',
       });
       
-      clearTimeout(timeoutId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
       
       if (response.ok) {
         console.log('💚 Health check passed');
+        // Reset consecutive failures on successful health check
+        if (this.consecutiveFailures > 0) {
+          this.consecutiveFailures = 0;
+        }
       } else {
         throw new Error(`Health check failed: ${response.status}`);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Clean up timeout if still active
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // Don't treat timeout aborts as failures - they're expected behavior
+      if (error?.name === 'AbortError' || error?.message === 'Aborted') {
+        // Timeout occurred - this is expected for slow connections
+        // Only log if connection quality is already poor
+        if (this.connectionState.connectionQuality === 'poor') {
+          console.log('⏱️ Health check timed out (expected for poor connection)');
+        }
+        return; // Don't degrade connection quality for timeouts
+      }
+      
+      // Only log and handle actual network failures
       console.error('💔 Health check failed:', error);
       this.handleHealthCheckFailure();
     }
@@ -531,7 +556,4 @@ class ConnectionRecoveryService {
 
 // Export singleton instance
 export const connectionRecoveryService = new ConnectionRecoveryService();
-
-// Export types
-export type { ConnectionState, ConnectionRecoveryConfig, ConnectionStateChangeCallback, ReconnectionCallback };
 
