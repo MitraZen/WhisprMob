@@ -184,10 +184,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           console.log('✅ Messages marked as read');
           
           try {
-            const { Phase3NotificationLogicService } = await import('@/services/phase3NotificationLogicService');
-            const phase3Service = Phase3NotificationLogicService.getInstance();
+            const { phase3NotificationLogicService } = await import('@/services/phase3NotificationLogicService');
             if (buddy.name) {
-              phase3Service.clearUserBatch(buddy.name);
+              phase3NotificationLogicService.clearBatchForUser(buddy.name);
               console.log('🧠 Cleared notification batch for:', buddy.name);
             }
           } catch (batchError) {

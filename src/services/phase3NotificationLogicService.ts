@@ -1,72 +1,64 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState, AppStateStatus } from 'react-native';
 import { notificationService } from './notificationService';
-import { BuddiesService } from './buddiesService';
 
-interface NotificationBatch {
-  id: string;
-  notifications: Array<{
-    title: string;
-    content: string;
-    buddyName: string;
-    priority: 'high' | 'normal' | 'low';
-    timestamp: number;
-  }>;
-  createdAt: number;
-  maxAge: number;
+interface BatchedMessage {
+  messageId: string;
+  content: string;
+  timestamp: number;
+  buddyId: string;
 }
 
-interface BuddyNameCache {
-  [buddyId: string]: {
-    name: string;
-    timestamp: number;
-    expiresAt: number;
-  };
+interface UserBatch {
+  buddyName: string;
+  buddyId: string;
+  messages: BatchedMessage[];
+  timerId: NodeJS.Timeout | null;
+  lastNotificationTime: number; // Track when last notification was shown
 }
 
-interface RateLimitState {
-  [key: string]: {
-    count: number;
-    resetTime: number;
-    windowSize: number;
-  };
-}
-
-export class Phase3NotificationLogicService {
-  private static instance: Phase3NotificationLogicService;
-  private notificationBatch: NotificationBatch | null = null;
-  // Per-user message accumulator - keeps all messages from each user until cleared
-  // Key is buddyName, value contains messages and buddyId
-  private userMessageBatches: Map<string, { messages: Array<{ content: string; timestamp: number }>; buddyId?: string }> = new Map();
-  private buddyNameCache: BuddyNameCache = {};
-  private rateLimitState: RateLimitState = {};
-  private recentNotifications: Set<string> = new Set();
-  private batchTimer: NodeJS.Timeout | null = null;
-  private lastProcessTime: number = 0;
+class Phase3NotificationLogicService {
+  private static instance: Phase3NotificationLogicService | null = null;
   
-  // Configuration
-  private readonly BATCH_SIZE = 10; // Increased to allow more messages per batch
-  private readonly BATCH_DELAY = 1500; // 1.5 seconds - shorter delay for faster batching
-  private readonly CACHE_TTL = 300000; // 5 minutes
-  private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
-  private readonly RATE_LIMIT_MAX = 20; // Increased max notifications per minute per buddy
-  private readonly DEDUPLICATION_WINDOW = 5000; // 5 seconds
-  private readonly MAX_BATCH_TIME = 3000; // Maximum time to wait before processing batch (3 seconds)
+  // Set instance for initialization (used by module export)
+  static setInstance(instance: Phase3NotificationLogicService): void {
+    Phase3NotificationLogicService.instance = instance;
+  }
+  
+  private batches: Map<string, UserBatch> = new Map();
+  private batchDelay = 2000; // 2 seconds delay for batching in foreground
+  private backgroundBatchDelay = 1000; // 1 second delay in background for grouping
+  private isAppInBackground = false;
+  private appStateSubscription: any = null;
 
-  private constructor() {
-    this.loadCachedData();
-    this.startCleanupInterval();
+  constructor() {
+    console.log('🧠 Phase 3: Initializing notification logic service');
+    // Track app state changes
+    this.isAppInBackground = AppState.currentState !== 'active';
+    console.log('🧠 Phase 3: Initial app state:', this.isAppInBackground ? 'background' : 'foreground');
+    
+    // Subscribe to app state changes
+    this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
   }
 
-  static getInstance(): Phase3NotificationLogicService {
-    if (!Phase3NotificationLogicService.instance) {
-      Phase3NotificationLogicService.instance = new Phase3NotificationLogicService();
+  private handleAppStateChange = (nextAppState: AppStateStatus) => {
+    const wasInBackground = this.isAppInBackground;
+    this.isAppInBackground = nextAppState !== 'active';
+
+    console.log('🧠 Phase 3: App state changed:', {
+      nextState: nextAppState,
+      wasInBackground,
+      nowInBackground: this.isAppInBackground,
+    });
+
+    // ✅ If app goes to background, flush all pending batches immediately
+    if (!wasInBackground && this.isAppInBackground) {
+      console.log('🧠 Phase 3: App went to background - flushing all pending batches NOW');
+      this.flushAllBatches();
     }
-    return Phase3NotificationLogicService.instance;
-  }
+  };
 
   /**
-   * Phase 3: Smart Batching - Groups notifications to prevent spam
-   * Accumulates messages per user until notification is cleared/processed
+   * Backward compatibility wrapper for addToBatch (old API)
    */
   async addToBatch(
     title: string,
@@ -75,366 +67,279 @@ export class Phase3NotificationLogicService {
     priority: 'high' | 'normal' | 'low' = 'normal',
     buddyId?: string
   ): Promise<void> {
-    console.log('🧠 Phase 3: Adding notification to batch for user:', buddyName);
+    const messageId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const actualBuddyId = buddyId || `placeholder_${buddyName}`;
+    this.addNotificationToBatch(buddyName, actualBuddyId, messageId, content);
+  }
 
-    // Check rate limiting first
-    if (!this.checkRateLimit(buddyName)) {
-      console.log('🧠 Phase 3: Rate limit exceeded, skipping notification');
-      return;
-    }
-
-    // Check deduplication
-    const notificationKey = this.generateNotificationKey(title, content, buddyName);
-    if (this.isDuplicate(notificationKey)) {
-      console.log('🧠 Phase 3: Duplicate notification detected, skipping');
-      return;
-    }
-
-    // Add to recent notifications for deduplication
-    this.recentNotifications.add(notificationKey);
-    setTimeout(() => {
-      this.recentNotifications.delete(notificationKey);
-    }, this.DEDUPLICATION_WINDOW);
-
-    // Add message to user's persistent batch (accumulates until cleared)
-    if (!this.userMessageBatches.has(buddyName)) {
-      this.userMessageBatches.set(buddyName, { messages: [], buddyId });
-    }
-    const userBatch = this.userMessageBatches.get(buddyName)!;
-    // Update buddyId if provided
-    if (buddyId) {
-      userBatch.buddyId = buddyId;
-    }
-    userBatch.messages.push({
-      content,
-      timestamp: Date.now(),
+  /**
+   * Add notification to batch for a specific user
+   * ✅ FIXED: Properly batches in both foreground AND background
+   */
+  addNotificationToBatch(
+    buddyName: string,
+    buddyId: string,
+    messageId: string,
+    content: string
+  ): void {
+    console.log('🧠 Phase 3: Adding notification to batch for user:', buddyName, {
+      messageId: messageId.substring(0, 8),
+      isBackground: this.isAppInBackground,
+      appState: AppState.currentState,
     });
 
-    console.log(`🧠 Phase 3: User ${buddyName} now has ${userBatch.messages.length} messages in batch`);
+    // Get or create batch for this user
+    let batch = this.batches.get(buddyName);
 
-    // Process and update notification immediately if high priority
-    if (priority === 'high') {
-      await this.processUserBatches();
+    if (!batch) {
+      // Create new batch for this user
+      batch = {
+        buddyName,
+        buddyId,
+        messages: [],
+        timerId: null,
+        lastNotificationTime: 0,
+      };
+      this.batches.set(buddyName, batch);
+      console.log('🧠 Phase 3: Created new batch for user:', buddyName);
+    }
+
+    // Add message to batch
+    batch.messages.push({
+      messageId,
+      content,
+      timestamp: Date.now(),
+      buddyId,
+    });
+
+    console.log(`🧠 Phase 3: User ${buddyName} now has ${batch.messages.length} messages in batch`);
+
+    // Clear existing timer if any
+    if (batch.timerId) {
+      clearTimeout(batch.timerId);
+      batch.timerId = null;
+      console.log('🧠 Phase 3: Cleared existing timer');
+    }
+
+    // ✅ CRITICAL: Different behavior for background vs foreground
+    if (this.isAppInBackground) {
+      console.log('🧠 Phase 3: App in BACKGROUND - using immediate batched notification');
+      
+      // In background: Show notification immediately (with all batched messages)
+      // This updates the existing notification for this user with grouped messages
+      this.showBatchNotification(buddyName);
+      
     } else {
-      // Schedule batch processing after delay (accumulates more messages)
-      this.scheduleBatchProcessing();
+      console.log('🧠 Phase 3: App in FOREGROUND - using timer for batching');
+      
+      // In foreground: Use timer to batch messages
+      batch.timerId = setTimeout(() => {
+        console.log('🧠 Phase 3: Timer fired - processing batch for:', buddyName);
+        this.showBatchNotification(buddyName);
+      }, this.batchDelay);
+
+      console.log('🧠 Phase 3: Timer set for batch notification (2s delay)');
     }
   }
 
   /**
-   * Phase 3: Process notification batch - sends/updates notifications for all users
+   * Show batched notification for a user
+   * ✅ FIXED: Works in both foreground and background
+   * Uses same notification ID per user to update/group notifications
    */
-  private async processUserBatches(): Promise<void> {
-    if (this.userMessageBatches.size === 0) {
+  private async showBatchNotification(buddyName: string): Promise<void> {
+    console.log('🧠 Phase 3: Processing batch notification for:', buddyName);
+    
+    const batch = this.batches.get(buddyName);
+
+    if (!batch || batch.messages.length === 0) {
+      console.warn('🧠 Phase 3: No messages in batch for user:', buddyName);
       return;
     }
 
-    console.log('🧠 Phase 3: Processing user batches');
+    try {
+      const messageCount = batch.messages.length;
+      
+      console.log('🔔 Phase 3: Showing notification:', {
+        buddyName,
+        messageCount,
+        isBackground: this.isAppInBackground,
+        messages: batch.messages.map(m => m.content.substring(0, 30) + '...'),
+      });
 
-    // Clear any pending timer
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
-      this.batchTimer = null;
+      // ✅ CRITICAL: Combine messages for grouped display
+      let displayMessage: string;
+      
+      if (messageCount === 1) {
+        // Single message - show as-is
+        displayMessage = batch.messages[0].content;
+      } else {
+        // Multiple messages - show last 3 messages (or all if less than 3)
+        const messagesToShow = batch.messages.slice(-3);
+        displayMessage = messagesToShow.map(m => m.content).join('\n');
+        
+        // If there are more than 3 messages, add indicator
+        if (messageCount > 3) {
+          displayMessage = `... and ${messageCount - 3} more\n\n${displayMessage}`;
+        }
+      }
+
+      // ✅ Show notification with message count (this groups by buddyName)
+      await notificationService.showMessageNotification(
+        buddyName, // title (same for all messages from this user)
+        displayMessage, // combined messages
+        buddyName, // buddyName (used for notification ID generation)
+        messageCount, // messageCount (shows badge like "zen3 (5)")
+        batch.buddyId // buddyId
+      );
+
+      console.log('✅ Phase 3: Notification shown successfully');
+      
+      // Update last notification time
+      batch.lastNotificationTime = Date.now();
+
+      // ✅ CRITICAL: Always keep batch after showing notification
+      // This allows messages to accumulate and count to build up
+      // The batch is only cleared when user opens the chat (via clearBatchForUser)
+      console.log('🧠 Phase 3: Keeping batch for future message accumulation (will clear when user opens chat)');
+      
+      // Note: Batch will be cleared by clearBatchForUser() when:
+      // - User opens the chat screen
+      // - User taps the notification
+      
+    } catch (error) {
+      console.error('❌ Phase 3: Error showing notification:', error);
+    }
+  }
+
+  /**
+   * Flush all pending batches immediately
+   * Called when app goes to background
+   */
+  private flushAllBatches(): void {
+    console.log('🧠 Phase 3: Flushing all pending batches:', this.batches.size);
+
+    if (this.batches.size === 0) {
+      console.log('🧠 Phase 3: No batches to flush');
+      return;
     }
 
-    // Process each user's accumulated messages
-    for (const [buddyName, batch] of this.userMessageBatches.entries()) {
-      const messages = batch.messages;
-      const buddyId = batch.buddyId;
-      if (messages.length === 0) continue;
+    for (const [buddyName, batch] of this.batches.entries()) {
+      console.log('🧠 Phase 3: Flushing batch for:', buddyName, `(${batch.messages.length} messages)`);
+      
+      // Clear timer
+      if (batch.timerId) {
+        clearTimeout(batch.timerId);
+        batch.timerId = null;
+      }
 
-      if (messages.length === 1) {
-        // Single message - show normally
-        await notificationService.showMessageNotification(
-          buddyName,
-          messages[0].content,
-          buddyName,
-          undefined, // messageCount
-          buddyId // Pass buddyId for faster navigation
-        );
-      } else {
-        // Multiple messages - show all messages in one notification
-        // Format: "Msg1\nMsg2\nMsg3..."
-        const allMessages = messages.map(msg => msg.content).join('\n');
-        await notificationService.showMessageNotification(
-          buddyName,
-          allMessages,
-          buddyName,
-          messages.length, // Pass message count for notification tag
-          buddyId // Pass buddyId for faster navigation
-        );
+      // Show notification immediately
+      if (batch.messages.length > 0) {
+        this.showBatchNotification(buddyName);
       }
     }
 
-    this.lastProcessTime = Date.now();
-    console.log('✅ Phase 3: User batches processed successfully');
-    // Note: We don't clear userMessageBatches here - they accumulate until notification is dismissed/cleared
+    console.log('✅ Phase 3: All batches flushed');
   }
 
   /**
-   * Phase 3: Process old batch (legacy method - kept for compatibility)
+   * Clear batch for a specific user
+   * Used when user opens the chat
    */
-  private async processBatch(): Promise<void> {
-    // Legacy method - redirect to new processUserBatches
-    await this.processUserBatches();
+  clearBatchForUser(buddyName: string): void {
+    const batch = this.batches.get(buddyName);
+
+    if (batch) {
+      console.log('🧠 Phase 3: Clearing batch for user:', buddyName, {
+        hadMessages: batch.messages.length,
+        hadTimer: batch.timerId !== null,
+      });
+
+      if (batch.timerId) {
+        clearTimeout(batch.timerId);
+      }
+
+      this.batches.delete(buddyName);
+    }
   }
 
   /**
-   * Clear messages for a specific user (call when notification is dismissed or user opens chat)
-   */
-  clearUserBatch(buddyName: string): void {
-    console.log('🧠 Phase 3: Clearing batch for user:', buddyName);
-    this.userMessageBatches.delete(buddyName);
-  }
-
-  /**
-   * Clear all user batches
+   * Clear all batches
+   * Used on logout or cleanup
    */
   clearAllBatches(): void {
-    console.log('🧠 Phase 3: Clearing all user batches');
-    this.userMessageBatches.clear();
-  }
+    console.log('🧠 Phase 3: Clearing all batches');
 
-  /**
-   * Get current batch status for a user
-   */
-  getUserBatchStatus(buddyName: string): { messageCount: number; messages: string[]; buddyId?: string } {
-    const batch = this.userMessageBatches.get(buddyName);
-    const messages = batch?.messages || [];
-    return {
-      messageCount: messages.length,
-      messages: messages.map(msg => msg.content),
-      buddyId: batch?.buddyId,
-    };
-  }
-
-  /**
-   * Phase 3: Schedule batch processing
-   */
-  private scheduleBatchProcessing(): void {
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
-    }
-
-    this.batchTimer = setTimeout(async () => {
-      await this.processUserBatches();
-    }, this.BATCH_DELAY);
-  }
-
-  /**
-   * Phase 3: Group notifications by buddy
-   */
-  private groupNotificationsByBuddy(notifications: any[]): { [buddyName: string]: any[] } {
-    const grouped: { [buddyName: string]: any[] } = {};
-
-    for (const notification of notifications) {
-      if (!grouped[notification.buddyName]) {
-        grouped[notification.buddyName] = [];
+    for (const [buddyName, batch] of this.batches.entries()) {
+      if (batch.timerId) {
+        clearTimeout(batch.timerId);
       }
-      grouped[notification.buddyName].push(notification);
     }
 
-    return grouped;
+    this.batches.clear();
   }
 
   /**
-   * Phase 3: Rate Limiting - Prevents notification spam
+   * Get current batch status for debugging
    */
-  private checkRateLimit(buddyName: string): boolean {
-    const now = Date.now();
-    const key = `rate_limit_${buddyName}`;
-    
-    if (!this.rateLimitState[key] || now > this.rateLimitState[key].resetTime) {
-      // Reset rate limit window
-      this.rateLimitState[key] = {
-        count: 0,
-        resetTime: now + this.RATE_LIMIT_WINDOW,
-        windowSize: this.RATE_LIMIT_WINDOW,
-      };
-    }
-
-    this.rateLimitState[key].count++;
-    
-    const isAllowed = this.rateLimitState[key].count <= this.RATE_LIMIT_MAX;
-    
-    if (!isAllowed) {
-      console.log(`🧠 Phase 3: Rate limit exceeded for ${buddyName} (${this.rateLimitState[key].count}/${this.RATE_LIMIT_MAX})`);
-    }
-
-    return isAllowed;
-  }
-
-  /**
-   * Phase 3: Deduplication - Prevents duplicate notifications
-   */
-  private isDuplicate(notificationKey: string): boolean {
-    return this.recentNotifications.has(notificationKey);
-  }
-
-  /**
-   * Phase 3: Generate notification key for deduplication
-   */
-  private generateNotificationKey(title: string, content: string, buddyName: string): string {
-    return `${title}_${content}_${buddyName}`;
-  }
-
-  /**
-   * Phase 3: Generate batch ID
-   */
-  private generateBatchId(): string {
-    return `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Phase 3: Buddy Name Resolution with Caching
-   */
-  async getBuddyName(buddyId: string): Promise<string> {
-    console.log('👤 Phase 3: Getting buddy name with caching');
-
-    // Check cache first
-    const cached = this.buddyNameCache[buddyId];
-    if (cached && Date.now() < cached.expiresAt) {
-      console.log('👤 Phase 3: Using cached buddy name');
-      return cached.name;
-    }
-
-    // Fetch from service
-    try {
-      const buddyName = await BuddiesService.getBuddyName(buddyId);
-      
-      // Cache the result
-      this.buddyNameCache[buddyId] = {
-        name: buddyName,
-        timestamp: Date.now(),
-        expiresAt: Date.now() + this.CACHE_TTL,
-      };
-
-      // Save to persistent storage
-      await this.saveCachedData();
-
-      console.log('👤 Phase 3: Buddy name cached successfully');
-      return buddyName;
-    } catch (error) {
-      console.error('👤 Phase 3: Error getting buddy name:', error);
-      return 'Unknown Buddy';
-    }
-  }
-
-  /**
-   * Phase 3: Clear buddy name cache
-   */
-  clearBuddyNameCache(): void {
-    console.log('👤 Phase 3: Clearing buddy name cache');
-    this.buddyNameCache = {};
-    this.saveCachedData();
-  }
-
-  /**
-   * Phase 3: Get cache statistics
-   */
-  getCacheStats(): {
-    buddyNameCacheSize: number;
-    rateLimitEntries: number;
-    recentNotificationsSize: number;
+  getBatchStatus(): { 
+    [key: string]: { 
+      messageCount: number; 
+      hasTimer: boolean;
+      isBackground: boolean;
+      lastNotificationTime: number;
+    } 
   } {
-    return {
-      buddyNameCacheSize: Object.keys(this.buddyNameCache).length,
-      rateLimitEntries: Object.keys(this.rateLimitState).length,
-      recentNotificationsSize: this.recentNotifications.size,
-    };
-  }
+    const status: { 
+      [key: string]: { 
+        messageCount: number; 
+        hasTimer: boolean;
+        isBackground: boolean;
+        lastNotificationTime: number;
+      } 
+    } = {};
 
-  /**
-   * Phase 3: Load cached data from storage
-   */
-  private async loadCachedData(): Promise<void> {
-    try {
-      const cachedData = await AsyncStorage.getItem('phase3_notification_cache');
-      if (cachedData) {
-        const parsed = JSON.parse(cachedData);
-        this.buddyNameCache = parsed.buddyNameCache || {};
-        console.log('🧠 Phase 3: Cached data loaded successfully');
-      }
-    } catch (error) {
-      console.error('🧠 Phase 3: Error loading cached data:', error);
-    }
-  }
-
-  /**
-   * Phase 3: Save cached data to storage
-   */
-  private async saveCachedData(): Promise<void> {
-    try {
-      const dataToSave = {
-        buddyNameCache: this.buddyNameCache,
-        timestamp: Date.now(),
+    for (const [buddyName, batch] of this.batches.entries()) {
+      status[buddyName] = {
+        messageCount: batch.messages.length,
+        hasTimer: batch.timerId !== null,
+        isBackground: this.isAppInBackground,
+        lastNotificationTime: batch.lastNotificationTime,
       };
-      await AsyncStorage.setItem('phase3_notification_cache', JSON.stringify(dataToSave));
-    } catch (error) {
-      console.error('🧠 Phase 3: Error saving cached data:', error);
     }
+
+    return status;
   }
 
   /**
-   * Phase 3: Start cleanup interval
+   * Cleanup when service is destroyed
    */
-  private startCleanupInterval(): void {
-    setInterval(() => {
-      this.cleanupExpiredData();
-    }, 60000); // Cleanup every minute
-  }
-
-  /**
-   * Phase 3: Cleanup expired data
-   */
-  private cleanupExpiredData(): void {
-    const now = Date.now();
+  cleanup(): void {
+    console.log('🧠 Phase 3: Cleanup started');
     
-    // Cleanup expired buddy name cache
-    for (const [buddyId, cache] of Object.entries(this.buddyNameCache)) {
-      if (now > cache.expiresAt) {
-        delete this.buddyNameCache[buddyId];
-      }
+    // Remove app state listener
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
     }
 
-    // Cleanup expired rate limit state
-    for (const [key, state] of Object.entries(this.rateLimitState)) {
-      if (now > state.resetTime) {
-        delete this.rateLimitState[key];
-      }
-    }
-
-    console.log('🧠 Phase 3: Cleanup completed');
+    // Clear all batches and timers
+    this.clearAllBatches();
+    
+    console.log('✅ Phase 3: Cleanup completed');
   }
 
-  /**
-   * Phase 3: Force process any pending batch
-   */
-  async forceProcessBatch(): Promise<void> {
-    if (this.notificationBatch) {
-      await this.processBatch();
+  // Static method for backward compatibility with getInstance() pattern
+  static getInstance(): Phase3NotificationLogicService {
+    if (!Phase3NotificationLogicService.instance) {
+      Phase3NotificationLogicService.instance = new Phase3NotificationLogicService();
     }
-  }
-
-  /**
-   * Phase 3: Get current batch status
-   */
-  getBatchStatus(): {
-    hasBatch: boolean;
-    batchSize: number;
-    batchAge: number;
-  } {
-    if (!this.notificationBatch) {
-      return { hasBatch: false, batchSize: 0, batchAge: 0 };
-    }
-
-    return {
-      hasBatch: true,
-      batchSize: this.notificationBatch.notifications.length,
-      batchAge: Date.now() - this.notificationBatch.createdAt,
-    };
+    return Phase3NotificationLogicService.instance;
   }
 }
 
-export default Phase3NotificationLogicService;
-
+// Export both the class (for getInstance() pattern) and the instance (for direct use)
+export { Phase3NotificationLogicService };
+const instance = new Phase3NotificationLogicService();
+Phase3NotificationLogicService.setInstance(instance); // Set static instance for getInstance() calls
+export const phase3NotificationLogicService = instance;

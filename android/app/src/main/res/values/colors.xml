@@ -8,4 +8,7 @@
     <!-- Standard colors -->
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
+    
+    <!-- Notification color -->
+    <color name="notification_color">#7c3aed</color>
 </resources>

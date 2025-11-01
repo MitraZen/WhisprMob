@@ -6,7 +6,7 @@ import { CachedBuddiesService } from './cachedBuddiesService';
 import { activeChatService } from './activeChatService';
 import { fcmService } from './fcmService';
 import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
-import { Phase3NotificationLogicService } from './phase3NotificationLogicService';
+import { phase3NotificationLogicService } from './phase3NotificationLogicService';
 
 interface RealtimeSubscription {
   channel: any;
@@ -19,7 +19,7 @@ class RealtimeService {
   private userId: string | null = null;
   private isConnected = false;
   private connectionRetryCount = 0;
-  private phase3Service = Phase3NotificationLogicService.getInstance();
+  private phase3Service = phase3NotificationLogicService;
   private maxRetries = 8; // Phase 2: Increased for better resilience
   private retryDelay = 500; // Phase 2: Faster initial retry
   private maxRetryDelay = 30000; // Max 30 seconds
@@ -46,6 +46,7 @@ class RealtimeService {
   
   private connectionStateUnsubscribe: (() => void) | null = null;
   private isConnectionRecoveryEnabled = true;
+  private isCleaningUp = false; // Prevent multiple simultaneous cleanup calls
   
   // Phase 2: Performance metrics
   private performanceMetrics = {
@@ -122,6 +123,7 @@ class RealtimeService {
       this.isConnected = true;
       this.connectionRetryCount = 0;
       this.circuitBreakerOpen = false;
+      this.isCleaningUp = false; // Reset cleanup flag on successful connection
       
       const connectionTime = Date.now() - startTime;
       this.trackSuccessfulConnection(connectionTime);
@@ -176,6 +178,7 @@ class RealtimeService {
     } else if (state.isConnected && !this.isConnected && state.isRealtimeConnected) {
       console.log('🟢 Network reconnected and realtime restored');
       this.isConnected = true;
+      this.isCleaningUp = false; // Reset cleanup flag on successful reconnection
     }
   }
 
@@ -207,6 +210,7 @@ class RealtimeService {
       this.isConnected = true;
       this.connectionRetryCount = 0;
       this.circuitBreakerOpen = false;
+      this.isCleaningUp = false; // Reset cleanup flag on successful reconnection
       
       console.log('✅ Realtime reconnection successful with subscriptions restored');
       return true;
@@ -861,6 +865,12 @@ class RealtimeService {
   }
 
   private handleConnectionError(userId?: string): void {
+    // Prevent multiple simultaneous error handling (all subscriptions fail at once)
+    if (this.isCleaningUp) {
+      console.log('🔄 Cleanup already in progress, skipping duplicate error handler');
+      return;
+    }
+    
     console.error('❌ Realtime connection error occurred');
     this.connectionRetryCount++;
     
@@ -891,33 +901,45 @@ class RealtimeService {
   }
 
   private cleanup(): void {
+    // Prevent multiple simultaneous cleanup calls
+    if (this.isCleaningUp) {
+      console.log('🔄 Cleanup already in progress, skipping duplicate cleanup');
+      return;
+    }
+    
+    this.isCleaningUp = true;
     console.log('🧹 Cleaning up realtime subscriptions');
     
-    // ✅ CRITICAL: Remove all Supabase channels first to prevent duplicate subscriptions
-    supabase.getChannels().forEach(ch => supabase.removeChannel(ch));
-    
-    this.subscriptions.forEach(subscription => {
-      try {
-        subscription.unsubscribe();
-      } catch (error) {
-        console.error('Error unsubscribing from channel:', error);
+    try {
+      // ✅ CRITICAL: Remove all Supabase channels first to prevent duplicate subscriptions
+      supabase.getChannels().forEach(ch => supabase.removeChannel(ch));
+      
+      this.subscriptions.forEach(subscription => {
+        try {
+          subscription.unsubscribe();
+        } catch (error) {
+          console.error('Error unsubscribing from channel:', error);
+        }
+      });
+      
+      this.subscriptions = [];
+      
+      // Clean up recent events tracking
+      this.recentEvents.clear();
+      
+      // Clean up pending UI update batches
+      this.pendingUIUpdates.forEach((timeout) => {
+        clearTimeout(timeout);
+      });
+      this.pendingUIUpdates.clear();
+      
+      if (this.healthCheckInterval) {
+        clearInterval(this.healthCheckInterval);
+        this.healthCheckInterval = null;
       }
-    });
-    
-    this.subscriptions = [];
-    
-    // Clean up recent events tracking
-    this.recentEvents.clear();
-    
-    // Clean up pending UI update batches
-    this.pendingUIUpdates.forEach((timeout) => {
-      clearTimeout(timeout);
-    });
-    this.pendingUIUpdates.clear();
-    
-    if (this.healthCheckInterval) {
-      clearInterval(this.healthCheckInterval);
-      this.healthCheckInterval = null;
+    } finally {
+      // Reset flag after cleanup completes
+      this.isCleaningUp = false;
     }
   }
 
@@ -1131,12 +1153,11 @@ class RealtimeService {
       const buddyDisplayName = await this.getBuddyDisplayName(messageData.sender_id);
       
       // Add to Phase 3 batch system
-      await this.phase3Service.addToBatch(
-        'New Message',
-        messageData.content || 'New message',
+      this.phase3Service.addNotificationToBatch(
         buddyDisplayName,
-        'normal',
-        messageData.buddy_id // Pass buddyId for faster navigation
+        messageData.buddy_id, // buddyId
+        messageData.id, // messageId
+        messageData.content || 'New message' // content
       );
       
       console.log('✅ Message routed to batch system successfully');

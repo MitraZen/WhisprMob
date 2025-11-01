@@ -1,7 +1,8 @@
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
-import { AppRegistry } from 'react-native';
+import { AppRegistry, Platform } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
+import PushNotification from 'react-native-push-notification';
 import App from './App';
 
 // ⚠️ TEMPORARY: Suppress modular API deprecation warnings until migration to v22 modular API is complete
@@ -11,24 +12,185 @@ if (typeof globalThis !== 'undefined') {
   globalThis.RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 }
 
-// ✅ CRITICAL: Set background handler BEFORE app initialization
+// ✅ CRITICAL: Configure PushNotification and create channels BEFORE background handler
+// This ensures channels exist when background messages arrive
+if (Platform.OS === 'android') {
+  // Create notification channels for Android
+  PushNotification.createChannel(
+    {
+      channelId: 'whispr-messages',
+      channelName: 'Whispr Messages',
+      channelDescription: 'Notifications for incoming messages',
+      playSound: true,
+      soundName: 'default',
+      importance: 4, // IMPORTANCE_HIGH
+      vibrate: true,
+    },
+    (created) => console.log(`🔔 Channel 'whispr-messages' created: ${created}`)
+  );
+  
+  PushNotification.createChannel(
+    {
+      channelId: 'whispr-notes',
+      channelName: 'Whispr Notes',
+      channelDescription: 'Notifications for new notes',
+      playSound: true,
+      soundName: 'default',
+      importance: 4,
+      vibrate: true,
+    },
+    (created) => console.log(`🔔 Channel 'whispr-notes' created: ${created}`)
+  );
+}
+
+// ✅ Configure PushNotification for background context
+// This is minimal configuration - full configuration happens in notificationService
+PushNotification.configure({
+  // Background notifications don't need onRegister/onNotification callbacks
+  // Those are handled by notificationService when app is active
+  onRegister: () => {},
+  onNotification: () => {},
+  popInitialNotification: false, // Don't auto-pop - let the app handle it
+  requestPermissions: false, // Don't request here - app handles permissions
+});
+
+// ✅ CRITICAL: Set background handler AFTER channel creation
 // This must be called before AppRegistry.registerComponent
 // Background messages can arrive when app is closed/killed
 messaging().setBackgroundMessageHandler(async remoteMessage => {
-  console.log('🔥 Background FCM message:', remoteMessage);
+  console.log('🔥 Background FCM message received:', {
+    messageId: remoteMessage.messageId,
+    type: remoteMessage.data?.type,
+    hasNotification: !!remoteMessage.notification,
+  });
   
-  // Handle ping messages (wake up realtime)
-  if (remoteMessage.data?.type === 'ping') {
-    console.log('📡 FCM Ping received in background');
-    // Ping will trigger realtime reconnection when app opens
-    // No need to process here - app will handle on foreground
+  try {
+    // Handle ping messages (wake up realtime)
+    if (remoteMessage.data?.type === 'ping') {
+      console.log('📡 FCM Ping received in background - will reconnect on app open');
+      // Ping will trigger realtime reconnection when app opens
+      // No need to process here - app will handle on foreground
+      return;
+    }
+    
+    // ✅ Display notification for all other messages
+    // This ensures notifications are shown even if Android doesn't auto-display them
+    // (e.g., due to battery optimization, permission issues, or data-only messages)
+    const hasNotificationPayload = !!remoteMessage.notification;
+    const notificationTitle = remoteMessage.notification?.title || 
+                             remoteMessage.data?.title || 
+                             remoteMessage.data?.buddyName || 
+                             'New Message';
+    const notificationBody = remoteMessage.notification?.body || 
+                            remoteMessage.data?.body || 
+                            remoteMessage.data?.message || 
+                            'You have a new message';
+    
+    console.log('📱 Displaying background notification:', {
+      title: notificationTitle,
+      body: notificationBody,
+      buddyName: remoteMessage.data?.buddyName,
+      hasNotificationPayload,
+    });
+    
+    // Extract data from FCM message (buddyName, buddyId, etc.)
+    const userInfo = {
+      ...remoteMessage.data,
+      // Preserve buddyId and buddyName for navigation
+      buddyId: remoteMessage.data?.buddyId,
+      buddyName: remoteMessage.data?.buddyName,
+      messageId: remoteMessage.messageId,
+      fromBackground: true, // Flag to indicate this came from background
+    };
+    
+    // Generate notification ID based on buddy name for batching
+    // Same buddy = same ID = notification gets updated instead of creating new ones
+    const buddyName = remoteMessage.data?.buddyName || 'whispr';
+    const getNotificationId = (name) => {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        const char = name.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return Math.abs(hash) || 1;
+    };
+    const notificationId = getNotificationId(buddyName);
+    
+    // Display the notification
+    PushNotification.localNotification({
+      id: notificationId,
+      channelId: 'whispr-messages',
+      title: notificationTitle,
+      message: notificationBody,
+      tag: buddyName, // Android uses this for grouping
+      playSound: true,
+      soundName: 'default',
+      vibrate: true,
+      vibration: 300,
+      priority: 'high',
+      importance: 'high',
+      userInfo: userInfo,
+      // Android-specific options
+      ...(Platform.OS === 'android' && {
+        smallIcon: 'ic_notification',
+        largeIcon: 'ic_launcher',
+        color: '#007AFF', // Customize with your brand color
+        visibility: 'public', // Show on lock screen
+        autoCancel: true, // Auto-dismiss when tapped
+      }),
+    });
+    
+    console.log('✅ Background notification displayed successfully:', {
+      id: notificationId,
+      title: notificationTitle,
+      buddyName: buddyName,
+    });
+  } catch (error) {
+    console.error('❌ Error handling background FCM message:', error);
+    // Don't throw - we don't want to crash the background handler
+    // Try to show a basic notification as fallback
+    try {
+      PushNotification.localNotification({
+        channelId: 'whispr-messages',
+        title: 'New Message',
+        message: 'You have a new message in Whispr',
+        priority: 'high',
+        importance: 'high',
+      });
+      console.log('✅ Fallback notification displayed');
+    } catch (fallbackError) {
+      console.error('❌ Even fallback notification failed:', fallbackError);
+    }
   }
   
   // Return void (background handler requirement)
   return Promise.resolve();
 });
 
+// ✅ Handle notification opened app (when app is in killed state)
+messaging().onNotificationOpenedApp(remoteMessage => {
+  console.log('🔔 Notification opened app from background/killed state:', {
+    messageId: remoteMessage.messageId,
+    buddyName: remoteMessage.data?.buddyName,
+  });
+  
+  // This is handled by the PushNotification.configure onNotification callback
+  // which is set up in notificationService
+});
+
+// ✅ Check if app was opened from a notification (killed state)
+messaging()
+  .getInitialNotification()
+  .then(remoteMessage => {
+    if (remoteMessage) {
+      console.log('🔔 App opened from killed state by notification:', {
+        messageId: remoteMessage.messageId,
+        buddyName: remoteMessage.data?.buddyName,
+      });
+      // This is handled by the PushNotification.configure callbacks
+    }
+  });
+
 // Register app
 AppRegistry.registerComponent('WhisprMobileTemp', () => App);
-
-
