@@ -265,77 +265,93 @@ class NotificationServiceClass implements NotificationService {
     })();
   }
   
-  async showMessageNotification(title: string, message: string, buddyName: string, messageCount?: number, buddyId?: string): Promise<string> {
-    try {
-      console.log('🔔 [NOTIFICATION] showMessageNotification called:', { title, message, buddyName, messageCount, buddyId });
-      
-      // ✅ FIXED: Use consistent notification key based on buddyName
-      // This ensures all notifications from the same user use the same key/id
-      // preventing duplicates when first message shows and then batch timer fires
-      const notificationKey = `batch-${buddyName}`;
-      
-      if (messageCount && messageCount > 1) {
-        console.log('🔔 [NOTIFICATION] Batched notification - will update existing');
-      } else {
-        // For single messages, check if we already showed a notification for this user
-        // This prevents duplicate when batch timer fires after immediate notification
-        if (this.recentNotifications.has(notificationKey)) {
-          console.log('🔔 [NOTIFICATION] Duplicate notification prevented (same user notification already shown):', notificationKey);
-          return 'Duplicate notification prevented';
-        }
-        this.recentNotifications.add(notificationKey);
-        setTimeout(() => {
-          this.recentNotifications.delete(notificationKey);
-        }, 5000);
-      }
-      
-      console.log('🔔 [NOTIFICATION] Chat active state:', this.isChatActive);
-      if (this.isChatActive) {
-        console.log('🔔 [NOTIFICATION] Notification suppressed - chat is active');
-        return 'Notification suppressed - chat active';
-      }
-      
-      const hasPermission = await this.checkNotificationPermission();
-      console.log('🔔 Notification permission status:', hasPermission);
-      
-      if (!hasPermission) {
-        console.warn('🔔 [NOTIFICATION] Permission not granted - requesting');
-        const permissionGranted = await this.requestNotificationPermission();
-        if (!permissionGranted) {
-          console.warn('🔔 [NOTIFICATION] Permission still not granted');
-          return 'Notification permission not granted';
-        }
-      }
+// Replace the showMessageNotification method duplicate prevention logic (lines 272-310)
 
-      console.log('🔔 [NOTIFICATION] Showing local notification now...');
+async showMessageNotification(title: string, message: string, buddyName: string, messageCount?: number, buddyId?: string): Promise<string> {
+  try {
+    const { AppState } = require('react-native');
+    const currentAppState = AppState.currentState;
+    console.log('🔔 [NOTIFICATION] ===== showMessageNotification CALLED =====');
+    console.log('🔔 [NOTIFICATION] Timestamp:', new Date().toISOString());
+    console.log('🔔 [NOTIFICATION] AppState:', currentAppState);
+    console.log('🔔 [NOTIFICATION] Is Background?', currentAppState !== 'active');
+    console.log('🔔 [NOTIFICATION] Parameters:', { title, message: message.substring(0, 50), buddyName, messageCount, buddyId });
+    
+    // ✅ FIXED: Content-based duplicate prevention instead of user-based
+    // This allows multiple messages from the same user to show/update
+    const contentKey = `${buddyName}-${message.substring(0, 30)}`;
+    
+    if (messageCount && messageCount > 1) {
+      // Batched notification - ALWAYS show (it updates existing notification)
+      console.log('🔔 [NOTIFICATION] Batched notification - will UPDATE existing notification');
+    } else {
+      // Single message - prevent EXACT duplicates only (same user + same content)
+      if (this.recentNotifications.has(contentKey)) {
+        console.log('🔔 [NOTIFICATION] Exact duplicate prevented:', contentKey);
+        return 'Duplicate notification prevented';
+      }
       
-      const displayTitle = messageCount && messageCount > 1 
-        ? `${buddyName} (${messageCount} messages)`
-        : buddyName;
-      
-      const displayMessage = message;
-      
-      const getNotificationId = (name: string): number => {
-        let hash = 0;
-        for (let i = 0; i < name.length; i++) {
-          const char = name.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
-          hash = hash & hash;
-        }
-        return Math.abs(hash) || 1;
-      };
-      
-      // ✅ FIXED: Always use consistent notification ID based on buddyName
-      // This allows notifications from the same user to update/replace each other
-      // even for single messages, preventing duplicate notifications
-      const notificationId = getNotificationId(buddyName);
-      
+      // Track this specific message content
+      this.recentNotifications.add(contentKey);
+      setTimeout(() => {
+        this.recentNotifications.delete(contentKey);
+      }, 3000); // 3 second window for content-based duplicates
+    }
+    
+    console.log('🔔 [NOTIFICATION] Chat active state:', this.isChatActive);
+    if (this.isChatActive) {
+      console.log('🔔 [NOTIFICATION] Notification suppressed - chat is active');
+      return 'Notification suppressed - chat active';
+    }
+    
+    const hasPermission = await this.checkNotificationPermission();
+    console.log('🔔 Notification permission status:', hasPermission);
+    
+    if (!hasPermission) {
+      console.warn('🔔 [NOTIFICATION] Permission not granted - requesting');
+      const permissionGranted = await this.requestNotificationPermission();
+      if (!permissionGranted) {
+        console.warn('🔔 [NOTIFICATION] Permission still not granted');
+        return 'Notification permission not granted';
+      }
+    }
+
+    console.log('🔔 [NOTIFICATION] Showing local notification now...');
+    
+    // Format title with message count
+    const displayTitle = messageCount && messageCount > 1 
+      ? `${buddyName} (${messageCount} messages)`
+      : buddyName;
+    
+    const displayMessage = message;
+    
+    // Generate consistent notification ID based on buddy name
+    const getNotificationId = (name: string): number => {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        const char = name.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return Math.abs(hash) || 1;
+    };
+    
+    // ✅ Always use same notification ID for same user (enables updates/grouping)
+    const notificationId = getNotificationId(buddyName);
+    
+    console.log('🔔 [NOTIFICATION] About to call PushNotification.localNotification...');
+    console.log('🔔 [NOTIFICATION] Notification ID:', notificationId);
+    console.log('🔔 [NOTIFICATION] Channel ID: whispr-messages');
+    console.log('🔔 [NOTIFICATION] Title:', displayTitle);
+    console.log('🔔 [NOTIFICATION] Message:', displayMessage.substring(0, 100));
+    
+    try {
       PushNotification.localNotification({
         id: notificationId,
         channelId: 'whispr-messages',
         title: displayTitle,
         message: displayMessage,
-        tag: buddyName,
+        tag: buddyName, // Android groups by tag
         playSound: true,
         soundName: 'default',
         vibrate: true,
@@ -347,19 +363,24 @@ class NotificationServiceClass implements NotificationService {
         userInfo: { 
           id: notificationId,
           buddyName: buddyName,
-          buddyId: buddyId, // ✅ Include buddyId for faster lookup
+          buddyId: buddyId,
           messageCount: messageCount || 1,
           isBatched: messageCount && messageCount > 1
         },
       });
 
+      console.log('🔔 [NOTIFICATION] ✅ PushNotification.localNotification call completed!');
       console.log('🔔 [NOTIFICATION] Notification sent successfully!', { notificationId, tag: buddyName });
       return 'Message notification sent successfully';
-    } catch (error) {
-      console.error('Error sending message notification:', error);
-      throw error;
+    } catch (notificationError) {
+      console.error('🔔 [NOTIFICATION] ❌ Error in PushNotification.localNotification:', notificationError);
+      throw notificationError;
     }
+  } catch (error) {
+    console.error('Error sending message notification:', error);
+    throw error;
   }
+}
 
   async showNoteNotification(title: string, content: string): Promise<string> {
     try {

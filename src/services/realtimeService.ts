@@ -6,7 +6,9 @@ import { CachedBuddiesService } from './cachedBuddiesService';
 import { activeChatService } from './activeChatService';
 import { fcmService } from './fcmService';
 import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
+//import { diagnoseBackgroundNotifications, instrumentMessageHandler } from './backgroundDiagnostic';
 import { phase3NotificationLogicService } from './phase3NotificationLogicService';
+
 
 interface RealtimeSubscription {
   channel: any;
@@ -249,10 +251,21 @@ class RealtimeService {
       console.log('📡 Setting up realtime subscriptions for user:', userId);
       
       // 🚧 Prevent duplicate subscriptions - check if buddy_messages channel already exists
+      // But allow reconnection if subscription was in error state
       const existing = supabase.getChannels().find(ch => ch.topic === 'realtime:public:buddy_messages');
       if (existing) {
-        console.log('⚠️ Already subscribed to buddy_messages, skipping duplicate subscription');
-        return;
+        console.log('⚠️ Already subscribed to buddy_messages channel');
+        // Check if the channel is in error state - if so, unsubscribe and recreate
+        const channelState = existing.state;
+        console.log('⚠️ Existing channel state:', channelState);
+        if (channelState === 'errored' || channelState === 'closed') {
+          console.log('🔄 Existing channel is in error/closed state - cleaning up and recreating...');
+          await existing.unsubscribe();
+          // Continue with new subscription
+        } else {
+          console.log('⚠️ Channel exists and is active, skipping duplicate subscription');
+          return;
+        }
       }
       
       // Subscribe to buddy messages
@@ -265,6 +278,9 @@ class RealtimeService {
             table: 'buddy_messages' 
           }, 
           (payload) => {
+            console.log('🚨 ===== REALTIME EVENT FIRED =====');
+            console.log('🚨 Event timestamp:', new Date().toISOString());
+            console.log('🚨 AppState:', require('react-native').AppState.currentState);
             console.log('📨 New message received via realtime:', payload);
             console.log('📨 Payload details:', {
               hasNew: !!payload.new,
@@ -301,7 +317,21 @@ class RealtimeService {
           console.log('📡 Buddy messages subscription status:', status);
           if (status === 'CHANNEL_ERROR') {
             console.error('❌ Buddy messages subscription error - switching to polling');
-            this.handleConnectionError(userId);
+            console.error('❌ Subscription error details - will attempt reconnection');
+            // Don't immediately call handleConnectionError - let connection recovery service handle it
+            // But log that we need to reconnect
+            setTimeout(() => {
+              if (this.userId) {
+                console.log('🔄 Attempting to re-establish buddy_messages subscription...');
+                this.attemptReconnection().catch(err => {
+                  console.error('❌ Failed to re-establish subscription:', err);
+                });
+              }
+            }, 2000); // Wait 2 seconds before retry
+          } else if (status === 'SUBSCRIBED') {
+            console.log('✅ Buddy messages subscription is now SUBSCRIBED and active');
+          } else if (status === 'CLOSED') {
+            console.warn('⚠️ Buddy messages subscription CLOSED');
           }
         });
 
@@ -358,7 +388,12 @@ class RealtimeService {
           console.log('Database notification subscription status:', status);
           if (status === 'CHANNEL_ERROR') {
             console.error('❌ Database notification subscription error');
-            this.handleConnectionError(userId);
+            console.error('❌ This is a backup channel - messages may not be received');
+            // Log but don't trigger full error handling - this is a backup channel
+          } else if (status === 'SUBSCRIBED') {
+            console.log('✅ Database notification subscription is now SUBSCRIBED and active (backup channel)');
+          } else if (status === 'CLOSED') {
+            console.warn('⚠️ Database notification subscription CLOSED');
           }
         });
 
@@ -413,7 +448,10 @@ class RealtimeService {
 
   private async handleNewMessage(payload: any): Promise<void> {
     try {
-      console.log('Phase 2: handleNewMessage called with payload:', JSON.stringify(payload, null, 2));
+      console.log('🚨 ===== MESSAGE RECEIVED - STARTING PROCESSING =====');
+      console.log('🚨 Timestamp:', new Date().toISOString());
+      console.log('🚨 AppState:', require('react-native').AppState.currentState);
+      console.log('🚨 Phase 2: handleNewMessage called with payload:', JSON.stringify(payload, null, 2));
       
       if (!payload || !payload.new) {
         console.warn('Invalid payload structure:', payload);
@@ -476,12 +514,16 @@ class RealtimeService {
       }
       
       // Check if this message is for the current user by verifying buddy relationship
-      console.log('Checking if message is for current user...');
+      console.log('🚨 Checking if message is for current user...');
+      console.log('🚨 Realtime connection status:', this.isConnected);
+      console.log('🚨 Current userId:', this.userId);
+      console.log('🚨 Message buddy_id:', payload.new.buddy_id);
+      console.log('🚨 Message sender_id:', payload.new.sender_id);
       const isForCurrentUser = await this.isMessageForCurrentUser(payload.new.buddy_id);
-      console.log('Message for current user check result:', isForCurrentUser);
+      console.log('🚨 Message for current user check result:', isForCurrentUser);
       
       if (!isForCurrentUser) {
-        console.log('Message not for current user, ignoring:', payload.new.buddy_id);
+        console.log('🚨 Message not for current user, ignoring:', payload.new.buddy_id);
         return;
       }
       
@@ -510,8 +552,10 @@ class RealtimeService {
             console.log('🔕 Skipping notification - user is actively viewing this chat');
           } else {
             console.log('🔔 Showing notification - user is NOT actively viewing this chat');
+            console.log('🚨 About to call handleHybridNotificationRouting...');
             // 🔄 Hybrid Notification Routing
             await this.handleHybridNotificationRouting(payload.new);
+            console.log('🚨 handleHybridNotificationRouting completed');
             
             // Add to recent notifications to prevent duplicates
             this.recentNotifications.add(notificationKey);
@@ -1079,6 +1123,11 @@ class RealtimeService {
    */
   private async handleHybridNotificationRouting(messageData: any): Promise<void> {
     try {
+      console.log('🚨 ===== handleHybridNotificationRouting CALLED =====');
+      console.log('🚨 Timestamp:', new Date().toISOString());
+      console.log('🚨 AppState:', require('react-native').AppState.currentState);
+      console.log('🚨 Message data:', JSON.stringify(messageData, null, 2));
+      
       const now = Date.now();
       const messageId = messageData.id;
       const buddyId = messageData.buddy_id;
@@ -1091,7 +1140,9 @@ class RealtimeService {
       this.dispatchUIUpdateEvent(messageData.buddy_id, 'message-updated', messageData);
       
       // Route to batch system which will group messages from the same user
+      console.log('🚨 About to call routeToBatchSystem...');
       await this.routeToBatchSystem(messageData);
+      console.log('🚨 routeToBatchSystem completed');
       
       this.lastNotificationTime = now;
       
@@ -1143,6 +1194,9 @@ class RealtimeService {
    */
   private async routeToBatchSystem(messageData: any): Promise<void> {
     try {
+      console.log('🚨 ===== routeToBatchSystem CALLED =====');
+      console.log('🚨 Timestamp:', new Date().toISOString());
+      console.log('🚨 AppState:', require('react-native').AppState.currentState);
       console.log('📦 Routing to batch notification system');
       
       // Force immediate cache update and UI refresh
@@ -1152,7 +1206,15 @@ class RealtimeService {
       // Get buddy name
       const buddyDisplayName = await this.getBuddyDisplayName(messageData.sender_id);
       
-      // Add to Phase 3 batch system
+      // Right before calling phase3NotificationLogicService.addNotificationToBatch
+      //instrumentMessageHandler(
+      //  buddyDisplayName,
+      //  messageData.buddy_id,
+      //  messageData.id,
+      //  messageData.content || 'New message'
+      //);
+      
+      // Then call Phase 3 as normal
       this.phase3Service.addNotificationToBatch(
         buddyDisplayName,
         messageData.buddy_id, // buddyId

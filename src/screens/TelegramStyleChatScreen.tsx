@@ -43,6 +43,254 @@ interface SimpleMessage {
   is_read: boolean;
 }
 
+// MessageBubble Component with Microinteractions
+interface MessageBubbleProps {
+  message: SimpleMessage;
+  isSent: boolean;
+  styles: any;
+  theme: any;
+  formatTime: (date: string) => string;
+  repliesByMessageId?: Record<string, ReplyInfo>;
+}
+
+const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
+  message,
+  isSent,
+  styles,
+  theme,
+  formatTime,
+  repliesByMessageId,
+}) => {
+  // All hooks must be called in the same order every render
+  // Initialize all refs unconditionally
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const checkmarkAnim = useRef(new Animated.Value(0)).current;
+  const checkmarkScaleAnim = useRef(new Animated.Value(0)).current;
+  const prevReadStatusRef = useRef<boolean | undefined>(undefined);
+  const messageIdRef = useRef<string | null>(null);
+  
+  // Pop-in animation when message appears
+  useEffect(() => {
+    // Only animate if this is a new message (different ID)
+    if (message.id && message.id !== messageIdRef.current) {
+      messageIdRef.current = message.id;
+      
+      // Reset animations for new message
+      scaleAnim.setValue(0.8);
+      opacityAnim.setValue(0);
+      
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 8,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.id]);
+
+  // Animate checkmark appearance when status changes
+  useEffect(() => {
+    // Always run this effect, but only animate if conditions are met
+    if (isSent && message.is_read !== undefined) {
+      // Show checkmark with fade-in
+      Animated.spring(checkmarkAnim, {
+        toValue: 1,
+        friction: 7,
+        tension: 40,
+        useNativeDriver: true,
+      }).start();
+      
+      // If status changed from sent to read, add a scale animation
+      const prevReadStatus = prevReadStatusRef.current;
+      if (prevReadStatus !== undefined && !prevReadStatus && message.is_read) {
+        Animated.sequence([
+          Animated.spring(checkmarkScaleAnim, {
+            toValue: 1.2,
+            friction: 5,
+            tension: 40,
+            useNativeDriver: true,
+          }),
+          Animated.spring(checkmarkScaleAnim, {
+            toValue: 1,
+            friction: 7,
+            tension: 40,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      } else {
+        // Ensure scale is set to 1 if not animating
+        checkmarkScaleAnim.setValue(1);
+      }
+      
+      prevReadStatusRef.current = message.is_read;
+    } else {
+      // For non-sent messages or undefined read status, hide checkmark
+      checkmarkAnim.setValue(0);
+      checkmarkScaleAnim.setValue(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.is_read, isSent]);
+
+  return (
+    <Animated.View 
+      style={[
+        styles.messageBubble,
+        isSent ? styles.sentBubble : styles.receivedBubble,
+        {
+          transform: [{ scale: scaleAnim }],
+          opacity: opacityAnim,
+        },
+      ]}
+    >
+      {repliesByMessageId?.[message.id] && (
+        <View style={styles.replyToLabel}>
+          <Text style={styles.replyToText}>
+            {message.id === repliesByMessageId[message.id].reply_message_id ? (
+              `Reply to: ${repliesByMessageId[message.id].original_content.substring(0, 50)}${repliesByMessageId[message.id].original_content.length > 50 ? '...' : ''}`
+            ) : (
+              `Replied: ${repliesByMessageId[message.id].reply_content.substring(0, 50)}${repliesByMessageId[message.id].reply_content.length > 50 ? '...' : ''}`
+            )}
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.messageContentContainer}>
+        <Text style={[
+          styles.messageText,
+          isSent ? styles.sentMessageText : styles.receivedMessageText
+        ]}>
+          {message.content}
+        </Text>
+        
+        <View style={[
+          styles.messageFooter,
+          isSent ? styles.sentMessageFooter : styles.receivedMessageFooter
+        ]}>
+          {!isSent && (
+            <Text style={[
+              styles.messageTimeInline,
+              styles.receivedMessageTime
+            ]}>
+              {formatTime(message.created_at)}
+            </Text>
+          )}
+          
+          {/* For sent messages, show time and status on the right */}
+          {isSent && (
+            <>
+              <Text style={[
+                styles.messageTimeInline,
+                styles.sentMessageTime
+              ]}>
+                {formatTime(message.created_at)}
+              </Text>
+              <Animated.View 
+                style={[
+                  styles.statusContainer,
+                  { 
+                    opacity: checkmarkAnim,
+                    transform: [{ scale: checkmarkScaleAnim }]
+                  }
+                ]}
+              >
+                {(() => {
+                  // Message Status Indicators:
+                  // - No tick = Message is still sending (temporary message)
+                  // - Single tick (✓) = Delivered (message reached recipient's device, but not read yet)
+                  // - Double tick (✓✓) = Read (recipient has read the message)
+                  
+                  // Check if message is a temporary one (still sending)
+                  const isTemporaryMessage = message.id.startsWith('temp-');
+                  
+                  // If temporary (sending), show nothing (no status indicator yet)
+                  if (isTemporaryMessage) {
+                    return null;
+                  }
+                  
+                  // For real messages in database:
+                  // Single tick = Delivered (is_read = false)
+                  // Double tick = Read (is_read = true)
+                  return message.is_read ? (
+                    <Text style={styles.readIndicator}>✓✓</Text>
+                  ) : (
+                    <Text style={styles.sentIndicator}>✓</Text>
+                  );
+                })()}
+              </Animated.View>
+            </>
+          )}
+        </View>
+      </View>
+    </Animated.View>
+  );
+};
+
+// Memoize to prevent unnecessary re-renders and ensure stable hook order
+const MessageBubble = React.memo(MessageBubbleComponent);
+
+// Typing Indicator Component
+interface TypingIndicatorProps {
+  buddyName: string;
+  styles: any;
+  theme: any;
+}
+
+const TypingIndicator: React.FC<TypingIndicatorProps> = ({ buddyName, styles, theme }) => {
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animate = (dot: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, {
+            toValue: -10,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    animate(dot1, 0);
+    animate(dot2, 150);
+    animate(dot3, 300);
+
+    return () => {
+      dot1.stopAnimation();
+      dot2.stopAnimation();
+      dot3.stopAnimation();
+    };
+  }, []);
+
+  return (
+    <View style={styles.typingContainer}>
+      <Text style={styles.typingText}>{buddyName} is typing</Text>
+      <View style={styles.typingDots}>
+        <Animated.View style={[styles.typingDot, { transform: [{ translateY: dot1 }] }]} />
+        <Animated.View style={[styles.typingDot, { transform: [{ translateY: dot2 }] }]} />
+        <Animated.View style={[styles.typingDot, { transform: [{ translateY: dot3 }] }]} />
+      </View>
+    </View>
+  );
+};
+
 // Swipeable Message Component
 const SwipeableMessage = ({ 
   message, 
@@ -150,8 +398,23 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
   
+  // Typing indicator state
+  const [isBuddyTyping, setIsBuddyTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingEmitRef = useRef<number>(0);
+  const typingChannelRef = useRef<any>(null);
+  
+  // Scroll tracking and new message banner state
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const scrollPositionRef = useRef(0);
+  const messagesEndRef = useRef(0);
+  
   const scrollViewRef = useRef<ScrollView>(null);
   const processingMessages = useRef<Set<string>>(new Set());
+  const lastAutoScrollTimeRef = useRef<number>(0);
+  const autoScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Filter messages based on search query
   const filteredMessages = useMemo(() => {
@@ -212,8 +475,25 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
     return () => {
       activeChatService.clearActiveChat();
+      // Stop typing when leaving chat
+      if (typingChannelRef.current && user?.id) {
+        typingChannelRef.current.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: {
+            userId: user.id,
+            isTyping: false,
+          },
+        }).catch(() => {
+          // Ignore errors on cleanup
+        });
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      setIsBuddyTyping(false);
     };
-  }, [buddy?.id]);
+  }, [buddy?.id, user?.id]);
 
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
@@ -222,6 +502,115 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     
     return () => clearInterval(cleanupInterval);
   }, []);
+
+  // Detect new messages when user is scrolled up and manage ref tracking
+  useEffect(() => {
+    // When user is scrolled up and new messages arrive, show banner
+    if (isUserScrolling && messages.length > messagesEndRef.current) {
+      const newCount = messages.length - messagesEndRef.current;
+      setHasNewMessages(true);
+      setNewMessageCount(newCount);
+    } 
+    // When user is at bottom, update ref and clear banner
+    else if (!isUserScrolling) {
+      setHasNewMessages(false);
+      setNewMessageCount(0);
+      messagesEndRef.current = messages.length;
+    }
+    // When messages first load (initial load), initialize ref
+    else if (messagesEndRef.current === 0 && messages.length > 0) {
+      messagesEndRef.current = messages.length;
+    }
+  }, [messages.length, isUserScrolling]);
+
+  // Set up typing indicator realtime channel
+  useEffect(() => {
+    if (!buddy?.id || !user?.id) return;
+
+    const setupTypingChannel = async () => {
+      try {
+        const { supabase } = await import('@/config/supabase');
+        const channelName = `typing:${buddy.id}`;
+        
+        const channel = supabase.channel(channelName)
+          .on('broadcast', { event: 'typing' }, (payload: any) => {
+            const { userId, isTyping } = payload.payload || {};
+            
+            // Only show typing indicator if it's from the buddy (not self)
+            if (userId !== user.id && isTyping) {
+              setIsBuddyTyping(true);
+              
+              // Auto-hide after 3 seconds of no updates
+              if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+              }
+              typingTimeoutRef.current = setTimeout(() => {
+                setIsBuddyTyping(false);
+              }, 3000);
+            } else if (userId !== user.id && !isTyping) {
+              setIsBuddyTyping(false);
+            }
+          })
+          .subscribe();
+
+        typingChannelRef.current = channel;
+
+        return () => {
+          if (channel) {
+            channel.unsubscribe();
+          }
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+          }
+        };
+      } catch (error) {
+        console.error('Error setting up typing channel:', error);
+      }
+    };
+
+    const cleanup = setupTypingChannel();
+    
+    return () => {
+      cleanup.then(fn => fn && fn());
+    };
+  }, [buddy?.id, user?.id]);
+
+  // Emit typing status when user types
+  const handleTextChange = (text: string) => {
+    setNewMessage(text);
+    
+    const now = Date.now();
+    // Throttle typing emissions to every 500ms
+    if (now - lastTypingEmitRef.current > 500) {
+      emitTypingStatus(true);
+      lastTypingEmitRef.current = now;
+    }
+
+    // Clear typing status after 2 seconds of inactivity
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    typingTimeoutRef.current = setTimeout(() => {
+      emitTypingStatus(false);
+    }, 2000);
+  };
+
+  const emitTypingStatus = async (isTyping: boolean) => {
+    if (!buddy?.id || !user?.id || !typingChannelRef.current) return;
+    
+    try {
+      await typingChannelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: {
+          userId: user.id,
+          isTyping: isTyping,
+        },
+      });
+    } catch (error) {
+      console.error('Error emitting typing status:', error);
+    }
+  };
 
   useEffect(() => {
     if (!buddy?.id || !user?.id) return;
@@ -326,6 +715,11 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     return () => {
       subscription.remove();
       buddyDeletedSubscription.remove();
+      // Cleanup auto-scroll timeout on unmount
+      if (autoScrollTimeoutRef.current) {
+        clearTimeout(autoScrollTimeoutRef.current);
+        autoScrollTimeoutRef.current = null;
+      }
     };
   }, [buddy?.id, user?.id]);
 
@@ -352,7 +746,16 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           TelegramStyleChatService.getMessages(user.id, buddy.id).then(freshMessages => {
             messageCacheService.saveMessages(buddy.id, freshMessages);
             
-            if (JSON.stringify(cachedMessages) !== JSON.stringify(freshMessages)) {
+            // ✅ PERFORMANCE FIX: Compare message IDs instead of JSON.stringify
+            // JSON.stringify on large arrays (435+ messages) is extremely expensive and causes freeze
+            const cachedIds = new Set(cachedMessages.map(msg => msg.id));
+            const freshIds = new Set(freshMessages.map(msg => msg.id));
+            
+            // Quick comparison: different count or missing IDs
+            const hasChanges = cachedIds.size !== freshIds.size || 
+                               freshMessages.some(msg => !cachedIds.has(msg.id));
+            
+            if (hasChanges) {
               console.log('✨ Background refresh found new messages, updating UI');
               setMessages(freshMessages);
               
@@ -430,6 +833,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       is_read: messageData.is_read || false
     };
 
+    // Check if message is from current user (they sent it themselves)
+    const isFromCurrentUser = newMessage.sender_id === user?.id;
+
     setMessages(prevMessages => {
       const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
       if (messageExists) {
@@ -450,9 +856,22 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       return updatedMessages;
     });
 
+    // Scroll behavior:
+    // 1. If user sent their own message → Always scroll (they want to see what they sent)
+    // 2. If message is from buddy AND user is scrolled up → Don't scroll (show banner instead)
+    // 3. If message is from buddy AND user is at bottom → Auto-scroll to show new message
     setTimeout(() => {
       if (scrollViewRef.current) {
-        scrollViewRef.current.scrollToEnd({ animated: true });
+        if (isFromCurrentUser) {
+          // User sent their own message - always scroll to see it
+          scrollViewRef.current.scrollToEnd({ animated: true });
+        } else if (!isUserScrolling) {
+          // Message from buddy, but user is at bottom - auto-scroll
+          scrollViewRef.current.scrollToEnd({ animated: true });
+        } else {
+          // Message from buddy, user is scrolled up - don't scroll, banner will show
+          console.log('📍 User is scrolled up - not auto-scrolling, banner will show for new message');
+        }
       }
     }, 100);
     
@@ -515,6 +934,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
     const messageContent = newMessage.trim();
     setNewMessage('');
+    
+    // Stop typing indicator when message is sent
+    emitTypingStatus(false);
 
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimisticMessage: SimpleMessage = {
@@ -524,7 +946,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       content: messageContent,
       message_type: 'text',
       created_at: new Date().toISOString(),
-      is_read: true
+      is_read: false // Start as delivered (not read yet)
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
@@ -581,7 +1003,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       }
       
       setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+        scrollToBottom(true);
       }, 100);
       
     } catch (error) {
@@ -636,6 +1058,41 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Helper function to format date headers
+  const formatDateHeader = (timestamp: string): string => {
+    const date = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    today.setHours(0, 0, 0, 0);
+    yesterday.setHours(0, 0, 0, 0);
+    date.setHours(0, 0, 0, 0);
+    
+    if (date.getTime() === today.getTime()) {
+      return 'Today';
+    } else if (date.getTime() === yesterday.getTime()) {
+      return 'Yesterday';
+    } else if (date.getFullYear() === today.getFullYear()) {
+      return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+  };
+
+  // Helper function to determine if date header should be shown
+  const shouldShowDateHeader = (currentMessage: SimpleMessage, previousMessage: SimpleMessage | null): boolean => {
+    if (!previousMessage) return true;
+    
+    const currentDate = new Date(currentMessage.created_at);
+    const previousDate = new Date(previousMessage.created_at);
+    
+    currentDate.setHours(0, 0, 0, 0);
+    previousDate.setHours(0, 0, 0, 0);
+    
+    return currentDate.getTime() !== previousDate.getTime();
+  };
+
   const getOtherUserId = () => {
     if (!buddy || !user) {
       return null;
@@ -651,86 +1108,107 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     return buddy.name || buddy.display_name || 'Chat';
   };
 
-  const renderMessage = (message: SimpleMessage) => {
+  // Check if user is near bottom (within 100px)
+  const checkIsNearBottom = (scrollPosition: number, contentHeight: number, scrollViewHeight: number): boolean => {
+    return contentHeight - scrollPosition - scrollViewHeight < 100;
+  };
+
+  // Scroll handler to detect if user is scrolled away from bottom
+  const handleScroll = (event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const scrollPosition = contentOffset.y;
+    const scrollViewHeight = layoutMeasurement.height;
+    const contentHeight = contentSize.height;
+    
+    const isNearBottom = checkIsNearBottom(scrollPosition, contentHeight, scrollViewHeight);
+    
+    setIsUserScrolling(!isNearBottom);
+    scrollPositionRef.current = scrollPosition;
+    
+    if (isNearBottom) {
+      setHasNewMessages(false);
+      setNewMessageCount(0);
+      messagesEndRef.current = messages.length;
+    }
+  };
+
+  // Function to scroll to bottom and clear new message indicator
+  const scrollToBottom = (animated: boolean = true) => {
+    if (scrollViewRef.current) {
+      scrollViewRef.current.scrollToEnd({ animated });
+      setIsUserScrolling(false);
+      setHasNewMessages(false);
+      setNewMessageCount(0);
+      messagesEndRef.current = messages.length;
+    }
+  };
+
+  const renderMessage = (message: SimpleMessage, index: number) => {
     const isFromCurrentUser = message.sender_id === user.id;
+    const previousMessage = index > 0 ? filteredMessages[index - 1] : null;
+    const showDateHeader = shouldShowDateHeader(message, previousMessage);
     
     return (
-      <SwipeableMessage
-        message={message}
-        isFromCurrentUser={isFromCurrentUser}
-        onReply={(msg) => {
-          console.log('Swipe reply triggered for message:', msg.id);
-          setReplyingToMessage(msg);
-        }}
-      >
-        <View
-          style={[
-            styles.messageContainer,
-            isFromCurrentUser ? styles.sentMessage : styles.receivedMessage,
-          ]}
+      <View key={message.id || `message-${index}`}>
+        {showDateHeader && (
+          <View style={styles.dateHeaderContainer}>
+            <View style={styles.dateHeaderBadge}>
+              <Text style={styles.dateHeaderText}>
+                {formatDateHeader(message.created_at)}
+              </Text>
+            </View>
+          </View>
+        )}
+        
+        <SwipeableMessage
+          message={message}
+          isFromCurrentUser={isFromCurrentUser}
+          onReply={(msg) => {
+            console.log('Swipe reply triggered for message:', msg.id);
+            setReplyingToMessage(msg);
+          }}
         >
-          <Pressable
-            delayLongPress={500}
-            pressRetentionOffset={{ top: 20, left: 20, right: 20, bottom: 20 }}
-            onLongPress={() => {
-              console.log('Long press detected for message:', message.id);
-              setReactionPickerMessageId(message.id);
-              setReactionPickerVisible(true);
-            }}
-            onPressIn={() => {
-              console.log('press-in on bubble', message.id);
-            }}
-            android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
+          <View
+            style={[
+              styles.messageContainer,
+              isFromCurrentUser ? styles.sentMessage : styles.receivedMessage,
+            ]}
           >
-            <View
-              style={[
-                styles.messageBubble,
-                isFromCurrentUser
-                  ? styles.sentBubble
-                  : styles.receivedBubble,
-              ]}
+            <Pressable
+              delayLongPress={500}
+              pressRetentionOffset={{ top: 20, left: 20, right: 20, bottom: 20 }}
+              onLongPress={() => {
+                console.log('Long press detected for message:', message.id);
+                setReactionPickerMessageId(message.id);
+                setReactionPickerVisible(true);
+              }}
+              onPressIn={() => {
+                console.log('press-in on bubble', message.id);
+              }}
+              android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
             >
-
-              {repliesByMessageId[message.id] && (
-                <View style={styles.replyToLabel}>
-                  <Text style={styles.replyToText}>
-                    {message.id === repliesByMessageId[message.id].reply_message_id ? (
-                      `Reply to: ${repliesByMessageId[message.id].original_content.substring(0, 50)}${repliesByMessageId[message.id].original_content.length > 50 ? '...' : ''}`
-                    ) : (
-                      `Replied: ${repliesByMessageId[message.id].reply_content.substring(0, 50)}${repliesByMessageId[message.id].reply_content.length > 50 ? '...' : ''}`
-                    )}
-                  </Text>
-                </View>
-              )}
-
-                <View style={styles.messageContentContainer}>
-                  <Text style={[
-                    styles.messageText,
-                    isFromCurrentUser ? styles.sentMessageText : styles.receivedMessageText
-                  ]}>
-                    {message.content}
-                    <Text style={[
-                      styles.messageTimeInline,
-                      isFromCurrentUser ? styles.sentMessageTime : styles.receivedMessageTime
-                    ]}>
-                      {'  '}{formatTime(message.created_at)}
-                    </Text>
-                  </Text>
-                </View>
-            </View>
-          </Pressable>
-          
-          {reactionsByMessageId[message.id] && (
-            <View style={styles.reactionPillsRow}>
-              {Object.entries(reactionsByMessageId[message.id]).map(([emoji, count]) => (
-                <View key={`${message.id}-${emoji}`} style={styles.reactionPill}>
-                  <Text style={styles.reactionPillText}>{`${emoji} ${count}`}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      </SwipeableMessage>
+              <MessageBubble
+                message={message}
+                isSent={isFromCurrentUser}
+                styles={styles}
+                theme={theme}
+                formatTime={formatTime}
+                repliesByMessageId={repliesByMessageId}
+              />
+            </Pressable>
+            
+            {reactionsByMessageId[message.id] && (
+              <View style={styles.reactionPillsRow}>
+                {Object.entries(reactionsByMessageId[message.id]).map(([emoji, count]) => (
+                  <View key={`${message.id}-${emoji}`} style={styles.reactionPill}>
+                    <Text style={styles.reactionPillText}>{`${emoji} ${count}`}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </SwipeableMessage>
+      </View>
     );
   };
 
@@ -852,7 +1330,60 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         contentContainerStyle={styles.messagesContent}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={(contentWidth, contentHeight) => {
+          // onContentSizeChange fires when content size changes (new message added)
+          // CRITICAL: Use scrollPositionRef (updated in handleScroll) instead of state
+          // This prevents race conditions where state hasn't updated yet when onContentSizeChange fires
+          if (!scrollViewRef.current) return;
+          
+          // Debounce: Prevent rapid successive scrolls when multiple messages arrive quickly
+          const now = Date.now();
+          const timeSinceLastScroll = now - lastAutoScrollTimeRef.current;
+          if (timeSinceLastScroll < 200) {
+            // Too soon since last scroll - cancel previous timeout if exists
+            if (autoScrollTimeoutRef.current) {
+              clearTimeout(autoScrollTimeoutRef.current);
+            }
+          }
+          
+          // Use the last known scroll position from handleScroll (most recent)
+          const currentScrollPosition = scrollPositionRef.current;
+          
+          // Estimate if user is near bottom based on scroll position
+          // If scrollPosition is close to contentHeight, user is at bottom
+          // Add a safety buffer - if scroll position is within 300px of content height, consider it "near bottom"
+          // Note: This is an approximation, the exact check happens in handleScroll
+          const estimatedDistanceFromBottom = contentHeight - currentScrollPosition;
+          const isLikelyNearBottom = estimatedDistanceFromBottom < 300; // 300px buffer for safety
+          
+          // CRITICAL FIX: Only auto-scroll if BOTH conditions are true:
+          // 1. Scroll position suggests user is near bottom, AND
+          // 2. State confirms user is not scrolling (double-check)
+          // This prevents unwanted scrolling when user is reading old messages
+          if (isLikelyNearBottom && !isUserScrolling) {
+            // Clear any pending scroll timeout
+            if (autoScrollTimeoutRef.current) {
+              clearTimeout(autoScrollTimeoutRef.current);
+            }
+            
+            // Small delay to let React state settle and prevent race conditions
+            autoScrollTimeoutRef.current = setTimeout(() => {
+              // Final check before scrolling - state must still say user is at bottom
+              if (scrollViewRef.current && !isUserScrolling) {
+                scrollViewRef.current.scrollToEnd({ animated: true });
+                lastAutoScrollTimeRef.current = Date.now();
+              }
+              autoScrollTimeoutRef.current = null;
+            }, 100); // Increased delay to 100ms for better state sync
+          } else {
+            // User is scrolled up OR state says they're scrolling - don't auto-scroll
+            if (isLikelyNearBottom && isUserScrolling) {
+              console.log('📍 onContentSizeChange: User scrolled up (state check), not auto-scrolling');
+            }
+          }
+        }}
       >
         {isLoading && messages.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -872,13 +1403,24 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             <Text style={styles.emptySubtext}>Start a conversation!</Text>
           </View>
         ) : (
-          filteredMessages.map((message, index) => (
-            <View key={message.id || `message-${index}`}>
-              {renderMessage(message)}
-            </View>
-          ))
+          filteredMessages.map((message, index) => renderMessage(message, index))
         )}
       </ScrollView>
+
+      {hasNewMessages && (
+        <Animated.View style={styles.newMessageBanner}>
+          <TouchableOpacity
+            style={styles.newMessageButton}
+            onPress={() => scrollToBottom(true)}
+            activeOpacity={0.8}
+          >
+            <Icon name="arrow-down" size={16} color="white" style={styles.newMessageIcon} />
+            <Text style={styles.newMessageText}>
+              {newMessageCount === 1 ? '1 new message' : `${newMessageCount} new messages`}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
 
       {replyingToMessage && (
         <View style={styles.replyContextContainer}>
@@ -900,18 +1442,30 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </View>
       )}
 
+      {isBuddyTyping && (
+        <TypingIndicator 
+          buddyName={getOtherUserName()}
+          styles={styles}
+          theme={theme}
+        />
+      )}
+
       <View style={styles.inputContainer}>
         <TextInput
           style={[styles.textInput, { color: getTextInputColor(theme) }]}
           value={newMessage}
-          onChangeText={setNewMessage}
+          onChangeText={handleTextChange}
           placeholder="Type a message..."
           placeholderTextColor={getPlaceholderTextColor(theme)}
           multiline
           maxLength={1000}
           onFocus={() => {
+            // When user focuses input, scroll to bottom if they're not actively scrolled up
+            // This helps them see the context when typing, but respects their scroll position
             setTimeout(() => {
-              scrollViewRef.current?.scrollToEnd({ animated: true });
+              if (!isUserScrolling && scrollViewRef.current) {
+                scrollViewRef.current.scrollToEnd({ animated: true });
+              }
             }, 100);
           }}
           blurOnSubmit={false}
@@ -1170,6 +1724,18 @@ const createStyles = (theme: any) => StyleSheet.create({
   receivedMessageText: {
     color: theme.colors.onSurface,
   },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  sentMessageFooter: {
+    justifyContent: 'flex-end',
+  },
+  receivedMessageFooter: {
+    justifyContent: 'flex-start',
+  },
   messageTimeInline: {
     fontSize: 11,
     opacity: 0.7,
@@ -1180,6 +1746,23 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   receivedMessageTime: {
     color: theme.colors.onSurfaceVariant,
+  },
+  statusContainer: {
+    marginLeft: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sentIndicator: {
+    fontSize: 12,
+    color: theme.colors.onPrimary,
+    opacity: 0.8,
+    fontWeight: '500',
+  },
+  readIndicator: {
+    fontSize: 12,
+    color: theme.colors.onPrimary,
+    opacity: 1,
+    fontWeight: '600',
   },
   inputContainer: {
     flexDirection: 'row',
@@ -1360,6 +1943,81 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 13,
     color: theme.colors.onSurfaceVariant,
     fontStyle: 'italic',
+  },
+  dateHeaderContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dateHeaderBadge: {
+    backgroundColor: theme.colors.surfaceVariant,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 12,
+    shadowColor: theme.colors.text,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: theme.isDark ? 0.3 : 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  dateHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.onSurfaceVariant,
+    letterSpacing: 0.3,
+  },
+  newMessageBanner: {
+    position: 'absolute',
+    bottom: 80,
+    alignSelf: 'center',
+    zIndex: 1000,
+  },
+  newMessageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 24,
+    shadowColor: theme.colors.text,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  newMessageIcon: {
+    marginRight: 8,
+  },
+  newMessageText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  typingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: theme.colors.surface,
+    borderTopWidth: 0.5,
+    borderTopColor: theme.colors.border,
+  },
+  typingText: {
+    fontSize: 13,
+    color: theme.colors.onSurfaceVariant,
+    marginRight: 8,
+    fontStyle: 'italic',
+  },
+  typingDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.onSurfaceVariant,
+    opacity: 0.7,
   },
   swipeContainer: {
     position: 'relative',

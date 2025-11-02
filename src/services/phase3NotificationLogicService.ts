@@ -13,30 +13,26 @@ interface UserBatch {
   buddyId: string;
   messages: BatchedMessage[];
   timerId: NodeJS.Timeout | null;
-  lastNotificationTime: number; // Track when last notification was shown
+  lastNotificationTime: number;
 }
 
 class Phase3NotificationLogicService {
   private static instance: Phase3NotificationLogicService | null = null;
   
-  // Set instance for initialization (used by module export)
   static setInstance(instance: Phase3NotificationLogicService): void {
     Phase3NotificationLogicService.instance = instance;
   }
   
   private batches: Map<string, UserBatch> = new Map();
   private batchDelay = 2000; // 2 seconds delay for batching in foreground
-  private backgroundBatchDelay = 1000; // 1 second delay in background for grouping
   private isAppInBackground = false;
   private appStateSubscription: any = null;
 
   constructor() {
     console.log('🧠 Phase 3: Initializing notification logic service');
-    // Track app state changes
     this.isAppInBackground = AppState.currentState !== 'active';
     console.log('🧠 Phase 3: Initial app state:', this.isAppInBackground ? 'background' : 'foreground');
     
-    // Subscribe to app state changes
     this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
   }
 
@@ -50,16 +46,12 @@ class Phase3NotificationLogicService {
       nowInBackground: this.isAppInBackground,
     });
 
-    // ✅ If app goes to background, flush all pending batches immediately
     if (!wasInBackground && this.isAppInBackground) {
       console.log('🧠 Phase 3: App went to background - flushing all pending batches NOW');
-      this.flushAllBatches();
+      this.flushAllBatchesSync();
     }
   };
 
-  /**
-   * Backward compatibility wrapper for addToBatch (old API)
-   */
   async addToBatch(
     title: string,
     content: string,
@@ -73,8 +65,8 @@ class Phase3NotificationLogicService {
   }
 
   /**
-   * Add notification to batch for a specific user
-   * ✅ FIXED: Properly batches in both foreground AND background
+   * ✅ CRITICAL FIX: Synchronous notification in background
+   * NO async/await, NO timers - direct synchronous call to notification service
    */
   addNotificationToBatch(
     buddyName: string,
@@ -88,11 +80,10 @@ class Phase3NotificationLogicService {
       appState: AppState.currentState,
     });
 
-    // Get or create batch for this user
+    // Get or create batch
     let batch = this.batches.get(buddyName);
 
     if (!batch) {
-      // Create new batch for this user
       batch = {
         buddyName,
         buddyId,
@@ -101,7 +92,13 @@ class Phase3NotificationLogicService {
         lastNotificationTime: 0,
       };
       this.batches.set(buddyName, batch);
-      console.log('🧠 Phase 3: Created new batch for user:', buddyName);
+      console.log('🧠 Phase 3: Created NEW batch for user:', buddyName);
+    } else {
+      console.log('🧠 Phase 3: Using EXISTING batch for user:', buddyName, {
+        existingMessageCount: batch.messages.length,
+        hasActiveTimer: batch.timerId !== null,
+        lastNotificationTime: batch.lastNotificationTime ? new Date(batch.lastNotificationTime).toISOString() : 'never'
+      });
     }
 
     // Add message to batch
@@ -114,41 +111,45 @@ class Phase3NotificationLogicService {
 
     console.log(`🧠 Phase 3: User ${buddyName} now has ${batch.messages.length} messages in batch`);
 
-    // Clear existing timer if any
+    // Clear existing timer (this allows messages to accumulate)
     if (batch.timerId) {
+      console.log('🧠 Phase 3: Clearing existing timer to allow more messages to accumulate');
       clearTimeout(batch.timerId);
       batch.timerId = null;
-      console.log('🧠 Phase 3: Cleared existing timer');
     }
 
-    // ✅ CRITICAL: Different behavior for background vs foreground
+    // ✅ CRITICAL: In background, call notification service SYNCHRONOUSLY
     if (this.isAppInBackground) {
-      console.log('🧠 Phase 3: App in BACKGROUND - using immediate batched notification');
+      console.log('🧠 Phase 3: 🚨 APP IN BACKGROUND - showing notification SYNCHRONOUSLY');
+      console.log('🧠 Phase 3: Current batch size BEFORE notification:', batch.messages.length);
       
-      // In background: Show notification immediately (with all batched messages)
-      // This updates the existing notification for this user with grouped messages
-      this.showBatchNotification(buddyName);
+      // ✅ Call synchronously without await to prevent blocking
+      // NOTE: Batch already has the new message added (line 99-104), so messageCount will be correct
+      this.showBatchNotificationSync(buddyName);
       
     } else {
-      console.log('🧠 Phase 3: App in FOREGROUND - using timer for batching');
+      console.log('🧠 Phase 3: App in FOREGROUND - using timer to batch messages');
+      console.log('🧠 Phase 3: Current batch size:', batch.messages.length);
+      console.log('🧠 Phase 3: Setting timer for', this.batchDelay, 'ms - messages will accumulate until timer fires');
       
-      // In foreground: Use timer to batch messages
       batch.timerId = setTimeout(() => {
-        console.log('🧠 Phase 3: Timer fired - processing batch for:', buddyName);
-        this.showBatchNotification(buddyName);
+        console.log('🧠 Phase 3: Timer fired for:', buddyName);
+        const batchAtTimerFire = this.batches.get(buddyName);
+        if (batchAtTimerFire) {
+          console.log('🧠 Phase 3: Batch size at timer fire:', batchAtTimerFire.messages.length);
+        }
+        this.showBatchNotificationSync(buddyName);
       }, this.batchDelay);
-
-      console.log('🧠 Phase 3: Timer set for batch notification (2s delay)');
     }
   }
 
   /**
-   * Show batched notification for a user
-   * ✅ FIXED: Works in both foreground and background
-   * Uses same notification ID per user to update/group notifications
+   * ✅ CRITICAL FIX: Synchronous notification display
+   * Calls notification service without async/await to work in background
    */
-  private async showBatchNotification(buddyName: string): Promise<void> {
-    console.log('🧠 Phase 3: Processing batch notification for:', buddyName);
+  private showBatchNotificationSync(buddyName: string): void {
+    console.log('🧠 Phase 3: ===== Processing batch notification SYNC =====');
+    console.log('🧠 Phase 3: Buddy:', buddyName);
     
     const batch = this.batches.get(buddyName);
 
@@ -160,64 +161,86 @@ class Phase3NotificationLogicService {
     try {
       const messageCount = batch.messages.length;
       
-      console.log('🔔 Phase 3: Showing notification:', {
+      console.log('🧠 Phase 3: Batch details:', {
         buddyName,
         messageCount,
         isBackground: this.isAppInBackground,
+        messageIds: batch.messages.map(m => m.messageId.substring(0, 8)),
         messages: batch.messages.map(m => m.content.substring(0, 30) + '...'),
       });
+      
+      console.log('🔔 Phase 3: About to call notificationService.showMessageNotification with messageCount:', messageCount);
 
-      // ✅ CRITICAL: Combine messages for grouped display
+      // Build display message
       let displayMessage: string;
       
       if (messageCount === 1) {
-        // Single message - show as-is
         displayMessage = batch.messages[0].content;
       } else {
-        // Multiple messages - show last 3 messages (or all if less than 3)
         const messagesToShow = batch.messages.slice(-3);
         displayMessage = messagesToShow.map(m => m.content).join('\n');
         
-        // If there are more than 3 messages, add indicator
         if (messageCount > 3) {
           displayMessage = `... and ${messageCount - 3} more\n\n${displayMessage}`;
         }
       }
 
-      // ✅ Show notification with message count (this groups by buddyName)
-      await notificationService.showMessageNotification(
-        buddyName, // title (same for all messages from this user)
-        displayMessage, // combined messages
-        buddyName, // buddyName (used for notification ID generation)
-        messageCount, // messageCount (shows badge like "zen3 (5)")
-        batch.buddyId // buddyId
-      );
-
-      console.log('✅ Phase 3: Notification shown successfully');
+      // ✅ CRITICAL: Double-check messageCount before calling notification service
+      // This ensures we're passing the correct count even if batch was modified
+      const actualBatchSize = batch.messages.length;
+      if (messageCount !== actualBatchSize) {
+        console.warn('⚠️ Phase 3: messageCount mismatch!', {
+          calculated: messageCount,
+          actualBatchSize,
+          'using': actualBatchSize
+        });
+      }
+      const finalMessageCount = actualBatchSize; // Use actual batch size for safety
       
-      // Update last notification time
+      // ✅ CRITICAL: Call notification service without await
+      // Fire-and-forget to prevent async blocking in background
+      console.log('🔔 Phase 3: Calling notificationService.showMessageNotification with:', {
+        title: buddyName,
+        message: displayMessage.substring(0, 50),
+        buddyName,
+        messageCount: finalMessageCount,
+        buddyId: batch.buddyId,
+        batchSizeAtCallTime: batch.messages.length
+      });
+      
+      notificationService.showMessageNotification(
+        buddyName,
+        displayMessage,
+        buddyName,
+        finalMessageCount, // ✅ Use actual batch size
+        batch.buddyId
+      ).then(() => {
+        console.log('✅ Phase 3: Notification shown successfully with messageCount:', finalMessageCount);
+      }).catch((error) => {
+        console.error('❌ Phase 3: Error showing notification:', error);
+      });
+
       batch.lastNotificationTime = Date.now();
 
-      // ✅ CRITICAL: Always keep batch after showing notification
-      // This allows messages to accumulate and count to build up
-      // The batch is only cleared when user opens the chat (via clearBatchForUser)
-      console.log('🧠 Phase 3: Keeping batch for future message accumulation (will clear when user opens chat)');
+      // ✅ CRITICAL FIX: Keep batch for BOTH foreground and background
+      // This allows messages to continue accumulating even after showing a notification
+      // Batch is only cleared when user opens the chat (via clearBatchForUser)
+      console.log('🧠 Phase 3: Keeping batch after showing notification (messages can continue accumulating)');
+      console.log('🧠 Phase 3: Batch will be cleared when user opens chat or manually cleared');
       
-      // Note: Batch will be cleared by clearBatchForUser() when:
-      // - User opens the chat screen
-      // - User taps the notification
+      // Don't clear the batch - keep it for future message accumulation
+      // The batch is only cleared explicitly via clearBatchForUser when user opens the chat
       
     } catch (error) {
-      console.error('❌ Phase 3: Error showing notification:', error);
+      console.error('❌ Phase 3: Error in sync notification:', error);
     }
   }
 
   /**
-   * Flush all pending batches immediately
-   * Called when app goes to background
+   * ✅ Synchronous flush for background transition
    */
-  private flushAllBatches(): void {
-    console.log('🧠 Phase 3: Flushing all pending batches:', this.batches.size);
+  private flushAllBatchesSync(): void {
+    console.log('🧠 Phase 3: Flushing all batches SYNC:', this.batches.size);
 
     if (this.batches.size === 0) {
       console.log('🧠 Phase 3: No batches to flush');
@@ -225,27 +248,21 @@ class Phase3NotificationLogicService {
     }
 
     for (const [buddyName, batch] of this.batches.entries()) {
-      console.log('🧠 Phase 3: Flushing batch for:', buddyName, `(${batch.messages.length} messages)`);
+      console.log('🧠 Phase 3: Flushing batch SYNC for:', buddyName);
       
-      // Clear timer
       if (batch.timerId) {
         clearTimeout(batch.timerId);
         batch.timerId = null;
       }
 
-      // Show notification immediately
       if (batch.messages.length > 0) {
-        this.showBatchNotification(buddyName);
+        this.showBatchNotificationSync(buddyName);
       }
     }
 
-    console.log('✅ Phase 3: All batches flushed');
+    console.log('✅ Phase 3: All batches flushed SYNC');
   }
 
-  /**
-   * Clear batch for a specific user
-   * Used when user opens the chat
-   */
   clearBatchForUser(buddyName: string): void {
     const batch = this.batches.get(buddyName);
 
@@ -263,10 +280,6 @@ class Phase3NotificationLogicService {
     }
   }
 
-  /**
-   * Clear all batches
-   * Used on logout or cleanup
-   */
   clearAllBatches(): void {
     console.log('🧠 Phase 3: Clearing all batches');
 
@@ -279,9 +292,6 @@ class Phase3NotificationLogicService {
     this.batches.clear();
   }
 
-  /**
-   * Get current batch status for debugging
-   */
   getBatchStatus(): { 
     [key: string]: { 
       messageCount: number; 
@@ -311,25 +321,19 @@ class Phase3NotificationLogicService {
     return status;
   }
 
-  /**
-   * Cleanup when service is destroyed
-   */
   cleanup(): void {
     console.log('🧠 Phase 3: Cleanup started');
     
-    // Remove app state listener
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;
     }
 
-    // Clear all batches and timers
     this.clearAllBatches();
     
     console.log('✅ Phase 3: Cleanup completed');
   }
 
-  // Static method for backward compatibility with getInstance() pattern
   static getInstance(): Phase3NotificationLogicService {
     if (!Phase3NotificationLogicService.instance) {
       Phase3NotificationLogicService.instance = new Phase3NotificationLogicService();
@@ -338,8 +342,7 @@ class Phase3NotificationLogicService {
   }
 }
 
-// Export both the class (for getInstance() pattern) and the instance (for direct use)
 export { Phase3NotificationLogicService };
 const instance = new Phase3NotificationLogicService();
-Phase3NotificationLogicService.setInstance(instance); // Set static instance for getInstance() calls
+Phase3NotificationLogicService.setInstance(instance);
 export const phase3NotificationLogicService = instance;

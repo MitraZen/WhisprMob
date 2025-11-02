@@ -430,6 +430,10 @@ export class BuddiesService {
       
       console.log('🔍 Querying messages for buddy IDs:', buddyIds);
       
+      // ✅ PERFORMANCE FIX: Add limit to prevent fetching thousands of messages at once
+      // Fetch last 500 messages max (configurable) to prevent UI freeze
+      const MESSAGE_FETCH_LIMIT = 500;
+      
       const { data: messages, error } = await supabase
         .from('buddy_messages')
         .select(`
@@ -443,7 +447,13 @@ export class BuddiesService {
           updated_at
         `)
         .in('buddy_id', buddyIds)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(MESSAGE_FETCH_LIMIT);
+      
+      // Reverse to get ascending order after limiting
+      if (messages) {
+        messages.reverse();
+      }
       
       if (error) {
         console.error('❌ Direct table query error:', error);

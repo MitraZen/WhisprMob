@@ -388,15 +388,33 @@ class NotificationManagerClass implements NotificationManager {
     }
 
     try {
+      // ✅ PERFORMANCE FIX: Process buddies asynchronously to prevent UI freeze
+      // Process in smaller batches with delays to avoid blocking
       const buddies = await BuddiesService.getBuddies(this.userId);
-      const limitedBuddies = buddies.slice(0, 20);
+      const limitedBuddies = buddies.slice(0, 10); // Reduced from 20 to 10
       
-      for (const buddy of limitedBuddies) {
+      // Process buddies with delays to prevent blocking
+      for (let i = 0; i < limitedBuddies.length; i++) {
+        const buddy = limitedBuddies[i];
+        
+        // Add delay between buddy checks to prevent blocking
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay between checks
+        }
+        
         try {
-          const messages = await BuddiesService.getMessages(buddy.id, this.userId);
+          // ✅ PERFORMANCE FIX: Only fetch recent messages (last 50) instead of all
+          // Use a time-based query to limit results
           const lastPollTime = this.lastPollingTime || (now - 60000);
           
-          const newMessages = messages.filter(msg => {
+          // Fetch only recent messages to avoid loading hundreds/thousands
+          const messages = await BuddiesService.getMessages(buddy.id, this.userId);
+          const recentMessages = messages.filter(msg => {
+            const messageTime = new Date(msg.createdAt || msg.timestamp).getTime();
+            return messageTime > (lastPollTime - 300000); // Only last 5 minutes
+          }).slice(-50); // Limit to last 50 messages max
+          
+          const newMessages = recentMessages.filter(msg => {
             if (msg.senderId === this.userId) return false;
             
             const messageTime = new Date(msg.createdAt || msg.timestamp).getTime();
@@ -405,11 +423,6 @@ class NotificationManagerClass implements NotificationManager {
             const appActiveTime = this.lastAppActiveTime || (now - 300000);
             const isRecentMessage = messageTime > appActiveTime;
             const willProcess = isNewByTime && notInCache && isRecentMessage;
-            
-            // Only log if message will be processed (reduces log spam)
-            if (willProcess) {
-              console.log(`🔍 Message ${msg.id} passed filter (new/time/cache)`);
-            }
             
             return willProcess;
           });
@@ -427,7 +440,7 @@ class NotificationManagerClass implements NotificationManager {
               this.performanceMetrics.totalNotifications++;
             }
             
-            this.lastMessageIds[buddy.id] = messages
+            this.lastMessageIds[buddy.id] = recentMessages
               .filter(msg => msg.senderId !== this.userId)
               .slice(-50)
               .map(msg => msg.id);

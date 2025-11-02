@@ -16,6 +16,7 @@ export type { Buddy, BuddyMessage, WhisprNote };
  */
 export class CachedBuddiesService {
   private static clearedChats = new Set<string>(); // Track cleared chats globally
+  private static processedMessageIds = new Set<string>(); // Track processed message IDs to prevent duplicates
   
   /**
    * Get buddies with caching
@@ -115,6 +116,20 @@ export class CachedBuddiesService {
       console.error('❌ Error fetching messages:', error);
       // Return empty array on error to prevent crashes
       return [];
+    }
+  }
+
+  /**
+   * Clean up old processed message IDs to prevent memory leaks
+   */
+  private static cleanProcessedMessages(): void {
+    // Keep only last 50 message IDs
+    const ids = Array.from(this.processedMessageIds);
+    if (ids.length > 50) {
+      const toKeep = ids.slice(-50);
+      this.processedMessageIds.clear();
+      toKeep.forEach(id => this.processedMessageIds.add(id));
+      console.log(`🧹 Cleaned processed messages, kept ${toKeep.length} recent IDs`);
     }
   }
 
@@ -730,13 +745,28 @@ export class CachedBuddiesService {
 
       switch (type) {
         case 'message':
-          // SIMPLIFIED: Always add message to cache without duplicate checking
+          // ✅ CRITICAL FIX: Check FIRST if message has already been processed
+          const messageId = payload.id;
+          
+          if (this.processedMessageIds.has(messageId)) {
+            console.log(`⏭️ CachedBuddiesService: Message ${messageId.substring(0, 8)} already cached, skipping duplicate`);
+            return; // STOP HERE - don't cache duplicates!
+          }
+          
+          // Mark as processed IMMEDIATELY to prevent concurrent duplicate processing
+          this.processedMessageIds.add(messageId);
+          
+          // Clean old entries periodically (every 100 messages)
+          if (this.processedMessageIds.size > 100) {
+            this.cleanProcessedMessages();
+          }
+          
           const messageBuddyId = payload.buddy_id;
           const senderId = payload.sender_id;
           const receiverId = payload.receiver_id || userId;
           
           console.log('🔄 CachedBuddiesService: Processing message for caching:', {
-            messageId: payload.id,
+            messageId: payload.id.substring(0, 8),
             messageBuddyId,
             senderId,
             receiverId,
