@@ -1,4 +1,10 @@
-import { NativeModules, Platform, Alert } from 'react-native';
+import { 
+  NativeModules, 
+  Platform, 
+  Alert, 
+  Linking,
+  PermissionsAndroid 
+} from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
 const { PermissionModule } = NativeModules;
@@ -12,36 +18,103 @@ export interface PermissionStatus {
   phone: boolean;
 }
 
+export type PermissionType = keyof PermissionStatus;
+
+interface PermissionConfig {
+  title: string;
+  message: string;
+  androidPermission?: string;
+}
+
 class PermissionService {
+  private readonly APP_PACKAGE_NAME = 'com.whisprmobiletemp'; // Make configurable if needed
+  
+  private readonly permissionConfigs: Record<PermissionType, PermissionConfig> = {
+    notifications: {
+      title: 'Notification Permission',
+      message: 'Whispr needs notification permission to send you important updates and messages.',
+      androidPermission: 'android.permission.POST_NOTIFICATIONS',
+    },
+    storage: {
+      title: 'Storage Permission',
+      message: 'Whispr needs storage permission to save your data and media files.',
+    },
+    camera: {
+      title: 'Camera Permission',
+      message: 'Whispr needs camera permission to take photos and share them.',
+    },
+    location: {
+      title: 'Location Permission',
+      message: 'Whispr needs location permission to help you find nearby users.',
+    },
+    contacts: {
+      title: 'Contact Permission',
+      message: 'Whispr needs contact permission to help you connect with friends.',
+    },
+    phone: {
+      title: 'Phone Permission',
+      message: 'Whispr needs phone permission to verify your account.',
+    },
+  };
+
+  /**
+   * Check if the native permission module is available
+   */
+  private isPermissionModuleAvailable(): boolean {
+    if (!PermissionModule) {
+      console.warn('PermissionModule not available - ensure native module is properly linked');
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Get default permission status (all false)
+   */
+  private getDefaultPermissionStatus(): PermissionStatus {
+    return {
+      notifications: false,
+      storage: false,
+      camera: false,
+      location: false,
+      contacts: false,
+      phone: false,
+    };
+  }
+
   /**
    * Check all permission statuses
    */
   async getAllPermissionStatus(): Promise<PermissionStatus> {
+    if (!this.isPermissionModuleAvailable()) {
+      return this.getDefaultPermissionStatus();
+    }
+
     try {
-      if (!PermissionModule) {
-        console.warn('PermissionModule not available');
-        return {
-          notifications: false,
-          storage: false,
-          camera: false,
-          location: false,
-          contacts: false,
-          phone: false,
-        };
-      }
-      
       const status = await PermissionModule.getAllPermissionStatus();
       return status;
     } catch (error) {
       console.error('Error checking permission status:', error);
-      return {
-        notifications: false,
-        storage: false,
-        camera: false,
-        location: false,
-        contacts: false,
-        phone: false,
-      };
+      return this.getDefaultPermissionStatus();
+    }
+  }
+
+  /**
+   * Generic permission checker
+   */
+  private async checkPermission(
+    methodName: string,
+    permissionType: PermissionType
+  ): Promise<boolean> {
+    if (!this.isPermissionModuleAvailable()) {
+      return false;
+    }
+
+    try {
+      return await PermissionModule[methodName]();
+    } catch (error) {
+      console.error(`Error checking ${permissionType} permissions:`, error);
+      return false;
     }
   }
 
@@ -49,120 +122,90 @@ class PermissionService {
    * Check notification permissions
    */
   async checkNotificationPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) return false;
-      return await PermissionModule.checkNotificationPermissions();
-    } catch (error) {
-      console.error('Error checking notification permissions:', error);
-      return false;
-    }
+    return this.checkPermission('checkNotificationPermissions', 'notifications');
   }
 
   /**
    * Check storage permissions
    */
   async checkStoragePermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) return false;
-      return await PermissionModule.checkStoragePermissions();
-    } catch (error) {
-      console.error('Error checking storage permissions:', error);
-      return false;
-    }
+    return this.checkPermission('checkStoragePermissions', 'storage');
   }
 
   /**
    * Check camera permissions
    */
   async checkCameraPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) return false;
-      return await PermissionModule.checkCameraPermissions();
-    } catch (error) {
-      console.error('Error checking camera permissions:', error);
-      return false;
-    }
+    return this.checkPermission('checkCameraPermissions', 'camera');
   }
 
   /**
    * Check location permissions
    */
   async checkLocationPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) return false;
-      return await PermissionModule.checkLocationPermissions();
-    } catch (error) {
-      console.error('Error checking location permissions:', error);
-      return false;
-    }
+    return this.checkPermission('checkLocationPermissions', 'location');
   }
 
   /**
    * Check contact permissions
    */
   async checkContactPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) return false;
-      return await PermissionModule.checkContactPermissions();
-    } catch (error) {
-      console.error('Error checking contact permissions:', error);
-      return false;
-    }
+    return this.checkPermission('checkContactPermissions', 'contacts');
   }
 
   /**
    * Check phone permissions
    */
   async checkPhonePermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) return false;
-      return await PermissionModule.checkPhonePermissions();
-    } catch (error) {
-      console.error('Error checking phone permissions:', error);
-      return false;
-    }
+    return this.checkPermission('checkPhonePermissions', 'phone');
   }
 
   /**
-   * Request notification permissions
+   * Request notification permissions with proper Android 13+ handling
    */
   async requestNotificationPermissions(): Promise<boolean> {
     try {
       if (Platform.OS === 'android') {
-        // For Android 13+ (API 33+), we need to request POST_NOTIFICATIONS permission
-        // For older versions, permissions are handled by the manifest
-        const androidVersion = Platform.Version;
+        const androidVersion = Platform.Version as number;
         
         if (androidVersion >= 33) {
-          // Android 13+ requires runtime permission request
-          console.log('Android 13+ detected - attempting permission request');
+          // Android 13+ requires POST_NOTIFICATIONS permission
+          console.log('Android 13+ detected - requesting POST_NOTIFICATIONS');
           
           try {
-            // Try to request permissions using PushNotification
-            const permissions = await PushNotification.requestPermissions();
-            console.log('Android notification permissions result:', permissions);
-            
-            if (permissions?.alert) {
+            const granted = await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+              {
+                title: this.permissionConfigs.notifications.title,
+                message: this.permissionConfigs.notifications.message,
+                buttonPositive: 'Allow',
+                buttonNegative: 'Deny',
+              }
+            );
+
+            if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+              console.log('Notification permission granted');
               return true;
+            } else if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+              console.log('Notification permission permanently denied');
+              this.showPermissionDeniedDialog('notifications');
+              return false;
             } else {
-              // Permission denied - show instructions
-              this.showNotificationPermissionInstructions();
+              console.log('Notification permission denied');
               return false;
             }
           } catch (error) {
-            console.error('Error requesting Android notification permissions:', error);
-            // Fallback: show instructions for manual setup
-            this.showNotificationPermissionInstructions();
+            console.error('Error requesting notification permission:', error);
             return false;
           }
         } else {
-          // For Android < 13, permissions are handled by manifest
-          console.log('Android < 13 detected - checking notification permissions');
+          // Android < 13 - permissions handled by manifest
+          console.log('Android < 13 - checking notification status');
           return await this.checkNotificationPermissions();
         }
       } else {
-        // For iOS, request permissions
-        console.log('iOS detected - requesting notification permissions');
+        // iOS - request permissions through push notification
+        console.log('iOS - requesting notification permissions');
         try {
           const permissions = await PushNotification.requestPermissions();
           console.log('iOS notification permissions result:', permissions);
@@ -173,7 +216,39 @@ class PermissionService {
         }
       }
     } catch (error) {
-      console.error('Error requesting notification permissions:', error);
+      console.error('Error in requestNotificationPermissions:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Generic permission requester using native module
+   */
+  private async requestPermissionViaModule(
+    methodName: string,
+    permissionType: PermissionType
+  ): Promise<boolean> {
+    if (!this.isPermissionModuleAvailable()) {
+      Alert.alert('Error', 'Permission module not available');
+      return false;
+    }
+
+    try {
+      const granted = await PermissionModule[methodName]();
+      
+      if (!granted) {
+        // Check if we should show rationale
+        const shouldShow = await this.shouldShowRequestRationale(permissionType);
+        if (!shouldShow) {
+          // Permission permanently denied
+          this.showPermissionDeniedDialog(permissionType);
+        }
+      }
+      
+      return granted;
+    } catch (error) {
+      console.error(`Error requesting ${permissionType} permissions:`, error);
+      Alert.alert('Error', `Failed to request ${permissionType} permissions`);
       return false;
     }
   }
@@ -182,98 +257,46 @@ class PermissionService {
    * Request storage permissions
    */
   async requestStoragePermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) {
-        Alert.alert('Error', 'Permission module not available');
-        return false;
-      }
-      
-      return await PermissionModule.requestStoragePermissions();
-    } catch (error) {
-      console.error('Error requesting storage permissions:', error);
-      Alert.alert('Error', 'Failed to request storage permissions');
-      return false;
-    }
+    return this.requestPermissionViaModule('requestStoragePermissions', 'storage');
   }
 
   /**
    * Request camera permissions
    */
   async requestCameraPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) {
-        Alert.alert('Error', 'Permission module not available');
-        return false;
-      }
-      
-      return await PermissionModule.requestCameraPermissions();
-    } catch (error) {
-      console.error('Error requesting camera permissions:', error);
-      Alert.alert('Error', 'Failed to request camera permissions');
-      return false;
-    }
+    return this.requestPermissionViaModule('requestCameraPermissions', 'camera');
   }
 
   /**
    * Request location permissions
    */
   async requestLocationPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) {
-        Alert.alert('Error', 'Permission module not available');
-        return false;
-      }
-      
-      return await PermissionModule.requestLocationPermissions();
-    } catch (error) {
-      console.error('Error requesting location permissions:', error);
-      Alert.alert('Error', 'Failed to request location permissions');
-      return false;
-    }
+    return this.requestPermissionViaModule('requestLocationPermissions', 'location');
   }
 
   /**
    * Request contact permissions
    */
   async requestContactPermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) {
-        Alert.alert('Error', 'Permission module not available');
-        return false;
-      }
-      
-      return await PermissionModule.requestContactPermissions();
-    } catch (error) {
-      console.error('Error requesting contact permissions:', error);
-      Alert.alert('Error', 'Failed to request contact permissions');
-      return false;
-    }
+    return this.requestPermissionViaModule('requestContactPermissions', 'contacts');
   }
 
   /**
    * Request phone permissions
    */
   async requestPhonePermissions(): Promise<boolean> {
-    try {
-      if (!PermissionModule) {
-        Alert.alert('Error', 'Permission module not available');
-        return false;
-      }
-      
-      return await PermissionModule.requestPhonePermissions();
-    } catch (error) {
-      console.error('Error requesting phone permissions:', error);
-      Alert.alert('Error', 'Failed to request phone permissions');
-      return false;
-    }
+    return this.requestPermissionViaModule('requestPhonePermissions', 'phone');
   }
 
   /**
    * Check if we should show request rationale for a permission
    */
-  async shouldShowRequestRationale(permissionType: keyof PermissionStatus): Promise<boolean> {
+  async shouldShowRequestRationale(permissionType: PermissionType): Promise<boolean> {
+    if (!this.isPermissionModuleAvailable()) {
+      return false;
+    }
+
     try {
-      if (!PermissionModule) return false;
       return await PermissionModule.shouldShowRequestRationale(permissionType);
     } catch (error) {
       console.error('Error checking request rationale:', error);
@@ -282,24 +305,34 @@ class PermissionService {
   }
 
   /**
-   * Request a specific permission with user-friendly messaging
+   * Show dialog when permission is permanently denied
    */
-  async requestPermissionWithDialog(permissionType: keyof PermissionStatus): Promise<boolean> {
-    const permissionMessages: { [key: string]: string } = {
-      notifications: 'Whispr needs notification permission to send you important updates and messages.',
-      storage: 'Whispr needs storage permission to save your data and media files.',
-      camera: 'Whispr needs camera permission to take photos and share them.',
-      location: 'Whispr needs location permission to help you find nearby users.',
-      contacts: 'Whispr needs contact permission to help you connect with friends.',
-      phone: 'Whispr needs phone permission to verify your account.',
-    };
+  private showPermissionDeniedDialog(permissionType: PermissionType): void {
+    const config = this.permissionConfigs[permissionType];
+    
+    Alert.alert(
+      'Permission Required',
+      `${config.message}\n\nThis permission has been denied. Please enable it in settings.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => this.openAppPermissionsSettings(),
+        },
+      ]
+    );
+  }
 
-    const message = permissionMessages[permissionType] || `Whispr needs ${permissionType} permission.`;
+  /**
+   * Request a specific permission with user-friendly dialog
+   */
+  async requestPermissionWithDialog(permissionType: PermissionType): Promise<boolean> {
+    const config = this.permissionConfigs[permissionType];
 
     return new Promise((resolve) => {
       Alert.alert(
         'Permission Required',
-        message,
+        config.message,
         [
           {
             text: 'Cancel',
@@ -309,8 +342,9 @@ class PermissionService {
           {
             text: 'Grant Permission',
             onPress: async () => {
-              let granted = false;
               try {
+                let granted = false;
+
                 switch (permissionType) {
                   case 'notifications':
                     granted = await this.requestNotificationPermissions();
@@ -337,10 +371,12 @@ class PermissionService {
                 }
 
                 if (granted) {
-                  Alert.alert('Success', `${permissionType} permission granted!`);
-                } else {
-                  Alert.alert('Permission Denied', `${permissionType} permission was denied. You can enable it later in settings.`);
+                  Alert.alert(
+                    'Success',
+                    `${config.title.replace(' Permission', '')} permission granted!`
+                  );
                 }
+
                 resolve(granted);
               } catch (error) {
                 console.error(`Error requesting ${permissionType} permission:`, error);
@@ -355,49 +391,160 @@ class PermissionService {
   }
 
   /**
-   * Check if notification permissions are granted (Android specific)
+   * Open app permissions settings page
    */
-  async checkAndroidNotificationPermissions(): Promise<boolean> {
-    try {
-      if (Platform.OS !== 'android') return true;
-      
-      // For Android, we can check if the permission is granted
-      // This is a simplified check - in a real app you might want to use
-      // react-native-permissions library for more robust permission handling
-      return true; // Assume granted if we reach this point
-    } catch (error) {
-      console.error('Error checking Android notification permissions:', error);
-      return false;
+  openAppPermissionsSettings(): void {
+    console.log('Opening app permissions settings...');
+
+    if (Platform.OS === 'android') {
+      // Try native method first (if implemented)
+      if (
+        this.isPermissionModuleAvailable() &&
+        typeof PermissionModule.openAppPermissionsSettings === 'function'
+      ) {
+        console.log('Using native openAppPermissionsSettings method');
+        try {
+          PermissionModule.openAppPermissionsSettings();
+          return;
+        } catch (error) {
+          console.error('Native method failed:', error);
+        }
+      }
+
+      // Fallback: Use Linking.openSettings()
+      console.log('Using Linking.openSettings() fallback');
+      Linking.openSettings()
+        .then(() => console.log('Successfully opened settings'))
+        .catch((error) => {
+          console.error('Failed to open settings:', error);
+          this.showManualSettingsInstructions();
+        });
+    } else {
+      // iOS
+      Linking.openSettings().catch((error) => {
+        console.error('Error opening iOS settings:', error);
+        Alert.alert('Error', 'Unable to open device settings');
+      });
     }
   }
 
   /**
-   * Show instructions for manually enabling notification permissions
+   * Show manual instructions for accessing settings
    */
-  showNotificationPermissionInstructions(): void {
+  private showManualSettingsInstructions(): void {
     Alert.alert(
-      'Enable Notifications',
-      'To receive notifications for new messages:\n\n' +
-      '📱 MANUAL STEPS:\n' +
-      '1. Go to Settings > Apps > Whispr\n' +
-      '2. Tap "Permissions" or "App permissions"\n' +
-      '3. Enable "Notifications"\n' +
-      '4. Go to Settings > Apps > Whispr > Notifications\n' +
-      '5. Enable "Allow notifications"\n' +
-      '6. Enable "Show on lock screen"\n\n' +
-      '🔧 OR USE ADB COMMAND:\n' +
-      'Run: adb shell pm grant com.whisprmobiletemp android.permission.POST_NOTIFICATIONS\n\n' +
-      'After enabling, restart the app to activate notifications.',
-      [
-        { text: 'OK', style: 'default' },
-        { text: 'Open Settings', style: 'default', onPress: () => {
-          // Try to open app settings
-          console.log('Opening app settings...');
-        }}
-      ]
+      'Unable to Open Settings',
+      'Please manually navigate to:\n\nSettings → Apps → Whispr → Permissions',
+      [{ text: 'OK' }]
     );
+  }
+
+  /**
+   * Request multiple permissions at once
+   */
+  async requestMultiplePermissions(
+    permissions: PermissionType[]
+  ): Promise<Record<PermissionType, boolean>> {
+    const results: Partial<Record<PermissionType, boolean>> = {};
+
+    for (const permission of permissions) {
+      try {
+        switch (permission) {
+          case 'notifications':
+            results[permission] = await this.requestNotificationPermissions();
+            break;
+          case 'storage':
+            results[permission] = await this.requestStoragePermissions();
+            break;
+          case 'camera':
+            results[permission] = await this.requestCameraPermissions();
+            break;
+          case 'location':
+            results[permission] = await this.requestLocationPermissions();
+            break;
+          case 'contacts':
+            results[permission] = await this.requestContactPermissions();
+            break;
+          case 'phone':
+            results[permission] = await this.requestPhonePermissions();
+            break;
+        }
+      } catch (error) {
+        console.error(`Error requesting ${permission}:`, error);
+        results[permission] = false;
+      }
+    }
+
+    return results as Record<PermissionType, boolean>;
+  }
+
+  /**
+   * Check if all required permissions are granted
+   */
+  async areAllPermissionsGranted(permissions: PermissionType[]): Promise<boolean> {
+    const status = await this.getAllPermissionStatus();
+    return permissions.every((permission) => status[permission]);
+  }
+
+  /**
+   * Developer utility: Log ADB command for granting permissions
+   * (Only for development/debugging)
+   */
+  logADBCommand(permissionType: PermissionType): void {
+    if (__DEV__) {
+      const config = this.permissionConfigs[permissionType];
+      if (config.androidPermission) {
+        console.log(
+          `\n🔧 ADB Command:\nadb shell pm grant ${this.APP_PACKAGE_NAME} ${config.androidPermission}\n`
+        );
+      }
+    }
+  }
+
+  /**
+   * Open battery optimization settings
+   */
+  async openBatteryOptimizationSettings(): Promise<void> {
+    if (Platform.OS !== 'android') {
+      console.log('Battery optimization is Android-only');
+      return;
+    }
+
+    if (!this.isPermissionModuleAvailable()) {
+      Alert.alert('Error', 'Permission module not available');
+      return;
+    }
+
+    try {
+      await PermissionModule.openBatteryOptimizationSettings();
+    } catch (error) {
+      console.error('Error opening battery optimization settings:', error);
+      // Fallback to general settings
+      Linking.openSettings().catch((err) => {
+        console.error('Failed to open settings:', err);
+      });
+    }
+  }
+
+  /**
+   * Check if battery optimization is ignored for this app (Android only)
+   */
+  async isBatteryOptimizationIgnored(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true; // Not applicable on iOS
+    }
+
+    if (!this.isPermissionModuleAvailable()) {
+      return false;
+    }
+
+    try {
+      return await PermissionModule.isBatteryOptimizationIgnored();
+    } catch (error) {
+      console.error('Error checking battery optimization:', error);
+      return false;
+    }
   }
 }
 
 export default new PermissionService();
-

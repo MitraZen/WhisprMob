@@ -1,14 +1,14 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AppState, AppStateStatus, Alert, Platform, NativeModules } from 'react-native';
+import { AppState, AppStateStatus, Alert, Platform } from 'react-native';
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { BuddiesService } from '@/services/buddiesService';
-import { notificationService } from '@/services/notificationService';
 import BiometricService from '@/services/biometricService';
 import { supabase } from '@/config/supabase';
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PermissionService from '@/services/permissionService';
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -69,57 +69,116 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const [isProfileComplete, setIsProfileComplete] = React.useState<boolean | undefined>(undefined);
+  const [hasRequestedPermissions, setHasRequestedPermissions] = React.useState(false);
 
-  // Check and prompt for notification permissions using native OS permission dialog
-  const checkNotificationPermissions = async () => {
+  /**
+   * Request notification permissions on app launch
+   * Shows immediately for first-time users
+   */
+  const requestNotificationPermissionOnLaunch = async () => {
     try {
-      const prompted = await AsyncStorage.getItem('notifPrompted');
-      if (prompted) {
-        console.log('🔔 Notification permission already requested before');
+      // Check if we've ever asked for notification permission
+      const hasAskedBefore = await AsyncStorage.getItem('notificationPermissionAsked');
+      
+      if (hasAskedBefore) {
+        console.log('🔔 Notification permission already asked before - skipping prompt');
+        
+        // Still check if permission is granted and save FCM token if user is authenticated
+        const authStatus = await messaging().hasPermission();
+        const isAuthorized = 
+          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+          
+        if (isAuthorized && state.user?.id) {
+          await saveFCMToken(state.user.id);
+        }
         return;
       }
 
-      console.log('🔔 Requesting OS-level notification permission...');
-
-      const authStatus = await messaging().requestPermission();
-      const enabled =
+      // First time - check current permission status
+      const authStatus = await messaging().hasPermission();
+      const isAuthorized = 
         authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
-      if (enabled) {
-        console.log('✅ Notification permission granted by user');
-        const token = await messaging().getToken();
-        console.log('🔑 FCM Token:', token);
-
-        // Save token to database if user is authenticated
-        // FCMManager.initialize() handles token saving internally
+      if (isAuthorized) {
+        console.log('🔔 Notification permission already granted');
+        await AsyncStorage.setItem('notificationPermissionAsked', 'true');
+        
         if (state.user?.id) {
-          try {
-            const { fcmManager } = await import('@/services/FCMManager');
-            await fcmManager.initialize(state.user.id);
-            console.log('✅ FCM token saved via FCMManager');
-          } catch (error) {
-            console.warn('⚠️ Failed to save FCM token after permission:', error);
-          }
+          await saveFCMToken(state.user.id);
         }
-
-        // Show battery optimization prompt after notification permission
-        setTimeout(() => {
-          showBatteryOptimizationPrompt();
-        }, 1000);
-      } else {
-        console.log('🚫 Notification permission denied by user');
+        return;
       }
 
-      await AsyncStorage.setItem('notifPrompted', 'true');
+      // Request permission using native dialog
+      console.log('🔔 Requesting notification permission on app launch...');
+      const granted = await PermissionService.requestNotificationPermissions();
+
+      // Mark that we've asked
+      await AsyncStorage.setItem('notificationPermissionAsked', 'true');
+
+      if (granted) {
+        console.log('✅ Notification permission granted on launch');
+        
+        // Save FCM token if user is authenticated
+        if (state.user?.id) {
+          await saveFCMToken(state.user.id);
+        }
+
+        // Show battery optimization prompt after a delay (only if permission granted)
+        setTimeout(() => {
+          showBatteryOptimizationPrompt();
+        }, 2000); // 2 second delay
+      } else {
+        console.log('🚫 Notification permission denied on launch');
+      }
     } catch (error) {
-      console.error('❌ Error checking/requesting notification permissions:', error);
+      console.error('❌ Error requesting notification permission on launch:', error);
     }
   };
 
-  // Show battery optimization prompt for better experience
-  const showBatteryOptimizationPrompt = () => {
-    if (Platform.OS === 'android') {
+  /**
+   * Save FCM token for authenticated user
+   */
+  const saveFCMToken = async (userId: string) => {
+    try {
+      const token = await messaging().getToken();
+      console.log('🔑 FCM Token:', token);
+      
+      const { fcmManager } = await import('@/services/FCMManager');
+      await fcmManager.initialize(userId);
+      console.log('✅ FCM token saved via FCMManager');
+    } catch (error) {
+      console.warn('⚠️ Failed to save FCM token:', error);
+    }
+  };
+
+  /**
+   * Show battery optimization prompt for better notification delivery
+   */
+  const showBatteryOptimizationPrompt = async () => {
+    if (Platform.OS !== 'android') return;
+
+    try {
+      // Check if we've already shown battery optimization prompt
+      const hasShownBatteryPrompt = await AsyncStorage.getItem('batteryOptimizationPromptShown');
+      
+      if (hasShownBatteryPrompt) {
+        console.log('🔋 Battery optimization prompt already shown before - skipping');
+        return;
+      }
+
+      // Check if battery optimization is already disabled
+      const isIgnored = await PermissionService.isBatteryOptimizationIgnored?.() ?? false;
+      
+      if (isIgnored) {
+        console.log('🔋 Battery optimization already disabled - skipping prompt');
+        await AsyncStorage.setItem('batteryOptimizationPromptShown', 'true');
+        return;
+      }
+
+      // Show the prompt
       Alert.alert(
         'Optimize Battery Settings',
         'For the best Whispr experience, please disable battery optimization. This ensures you receive notifications promptly and messages are delivered reliably.\n\nWould you like to adjust your battery settings?',
@@ -127,47 +186,155 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           {
             text: 'Maybe Later',
             style: 'cancel',
-            onPress: () => {
+            onPress: async () => {
               console.log('User skipped battery optimization');
+              // Don't mark as shown so we can ask again later
             }
           },
           {
             text: 'Open Settings',
-            onPress: () => {
+            onPress: async () => {
               try {
                 console.log('Opening battery optimization settings...');
-                if (NativeModules.PermissionModule) {
-                  NativeModules.PermissionModule.openBatteryOptimizationSettings();
-                } else {
-                  console.warn('PermissionModule not available');
-                }
+                await PermissionService.openBatteryOptimizationSettings?.();
+                console.log('✅ Battery optimization settings opened');
+                
+                // Mark as shown
+                await AsyncStorage.setItem('batteryOptimizationPromptShown', 'true');
               } catch (error) {
-                console.error('Error opening battery settings:', error);
+                console.error('❌ Error opening battery settings:', error);
               }
             }
           }
         ],
         { cancelable: true }
       );
+    } catch (error) {
+      console.error('❌ Error showing battery optimization prompt:', error);
     }
   };
 
+  /**
+   * Initialize notification services and check permissions
+   */
+  const initializeNotificationServices = async (userId: string) => {
+    try {
+      console.log('🚀 AuthContext - Initializing services for user:', userId);
+      
+      const { notificationManager } = await import('@/services/notificationManager');
+      const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
+      
+      // Step 1: Warm up cache (instant load + background sync)
+      console.log('🔥 Warming up cache and preloading data...');
+      await CachedBuddiesService.warmUpCache(userId);
+      
+      // Step 2: Initialize realtime service
+      console.log('📡 Initializing realtime service...');
+      const { realtimeService } = await import('@/services/realtimeService');
+      await realtimeService.initialize(userId);
+      
+      // Step 3: Start hybrid notification service (realtime + polling fallback)
+      console.log('🔔 Starting notification service...');
+      await notificationManager.startNotificationService(userId);
+      
+      // Step 4: Initialize FCM (non-blocking)
+      (async () => {
+        try {
+          const { fcmManager } = await import('@/services/FCMManager');
+          
+          const timeoutPromise = new Promise<{ success: boolean; error?: string }>((resolve) => 
+            setTimeout(() => resolve({ success: false, error: 'FCM initialization timeout' }), 10000)
+          );
+          
+          const result = await Promise.race([
+            fcmManager.initialize(userId),
+            timeoutPromise
+          ]);
+          
+          if (result.success) {
+            console.log('✅ FCM initialized successfully via FCMManager');
+          } else {
+            console.warn('⚠️ FCM initialization failed or timed out:', result.error);
+          }
+        } catch (error) {
+          console.error('❌ FCM initialization error:', error);
+        }
+      })();
+      
+      console.log('✅ All services initialized');
+    } catch (error) {
+      console.error('❌ Error initializing services:', error);
+    }
+  };
+
+  /**
+   * Stop notification services
+   */
+  const stopNotificationServices = async () => {
+    try {
+      console.log('🛑 Stopping all services');
+      
+      const { notificationManager } = await import('@/services/notificationManager');
+      const { realtimeService } = await import('@/services/realtimeService');
+      
+      await notificationManager.stopNotificationService();
+      await realtimeService.disconnect();
+      
+      try {
+        const { fcmManager } = await import('@/services/FCMManager');
+        await fcmManager.cleanup();
+        console.log('✅ FCMManager cleaned up');
+      } catch (error) {
+        console.warn('⚠️ Error cleaning up FCMManager:', error);
+      }
+      
+      console.log('✅ All services stopped');
+    } catch (error) {
+      console.error('❌ Error stopping services:', error);
+    }
+  };
+
+  // ============================================================
+  // INITIALIZATION ON APP START
+  // ============================================================
+  
   useEffect(() => {
-    checkAuthStatus();
+    const initializeApp = async () => {
+      // Clear session flag on app start
+      try {
+        await AsyncStorage.removeItem('notifPromptedThisSession');
+        console.log('🔔 Cleared notifPromptedThisSession flag on app start');
+      } catch (error) {
+        console.error('Error clearing notifPromptedThisSession:', error);
+      }
+      
+      // Check auth status first
+      await checkAuthStatus();
+      
+      // Request notification permission on launch (only for first-time users)
+      if (!hasRequestedPermissions) {
+        setHasRequestedPermissions(true);
+        
+        // Small delay to ensure app is fully loaded
+        setTimeout(() => {
+          requestNotificationPermissionOnLaunch();
+        }, 1000);
+      }
+    };
     
-    // Set up Supabase auth state change listener for FCM token management
+    initializeApp();
+    
+    // Set up Supabase auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔐 Supabase auth state changed:', event, session?.user?.id);
       
       if (event === 'SIGNED_IN' && session?.user) {
         console.log('🔐 User signed in via Supabase - initializing FCM (non-blocking)');
-        // ✅ CRITICAL FIX: Run FCM initialization asynchronously to prevent blocking sign-in
-        // This ensures that navigation happens immediately, FCM initializes in the background
+        
         (async () => {
           try {
             const { fcmManager } = await import('@/services/FCMManager');
             
-            // Add timeout to prevent hanging (10 seconds max)
             const timeoutPromise = new Promise<{ success: boolean; error?: string }>((resolve) => 
               setTimeout(() => resolve({ success: false, error: 'FCM initialization timeout' }), 10000)
             );
@@ -184,7 +351,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
           } catch (error) {
             console.error('❌ Error initializing FCM on sign in (non-blocking):', error);
-            // Don't throw - app continues without FCM
           }
         })();
       } else if (event === 'SIGNED_OUT') {
@@ -197,7 +363,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
         console.log('🔐 Token refreshed - validating FCM token');
-        // Run asynchronously to prevent blocking
+        
         (async () => {
           try {
             const { fcmManager } = await import('@/services/FCMManager');
@@ -214,7 +380,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, []);
 
-  // ✅ NEW: App state listener with FCM token validation
+  // ============================================================
+  // APP STATE LISTENER
+  // ============================================================
+  
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       console.log('📱 AppState changed to:', nextAppState);
@@ -226,7 +395,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await FlexibleDatabaseService.updateUserOnlineStatus(state.user.id, true);
         await BuddiesService.syncUserOnlineStatus(state.user.id, true);
         
-        // ✅ Validate FCM token when app becomes active (non-blocking)
+        // Validate FCM token when app becomes active (non-blocking)
         (async () => {
           try {
             if (!state.user) return;
@@ -246,7 +415,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (status.realtime || status.polling) {
             await notificationManager.optimizeForForeground();
           } else {
-            await initializeNotificationServicesSafely(state.user.id);
+            await initializeNotificationServices(state.user.id);
           }
         } catch (error) {
           console.error('❌ Error optimizing notification services:', error);
@@ -282,98 +451,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [state.isAuthenticated, state.user]);
 
-  // ✅ FIXED: Removed duplicate FCM initialization
-  const initializeNotificationServicesSafely = async (userId: string) => {
-    try {
-      console.log('🚀 AuthContext - Initializing services for user:', userId);
-      
-      const { notificationManager } = await import('@/services/notificationManager');
-      const { CachedBuddiesService } = await import('@/services/cachedBuddiesService');
-      
-      // Step 1: Warm up cache (instant load + background sync)
-      console.log('🔥 Warming up cache and preloading data...');
-      await CachedBuddiesService.warmUpCache(userId);
-      
-      // Step 2: Initialize realtime service
-      console.log('📡 Initializing realtime service...');
-      const { realtimeService } = await import('@/services/realtimeService');
-      await realtimeService.initialize(userId);
-      
-      // Step 3: Start hybrid notification service (realtime + polling fallback)
-      console.log('🔔 Starting notification service...');
-      await notificationManager.startNotificationService(userId);
-      
-      // Step 4: ✅ Initialize FCM using FCMManager ONLY (removed duplicate)
-      // Run asynchronously without blocking
-      (async () => {
-        try {
-          const { fcmManager } = await import('@/services/FCMManager');
-          
-          // Add timeout to prevent hanging (5 seconds max)
-          const timeoutPromise = new Promise<{ success: boolean; token?: string; error?: string }>((resolve) => 
-            setTimeout(() => resolve({ success: false, error: 'FCM initialization timeout' }), 5000)
-          );
-          
-          const result = await Promise.race([
-            fcmManager.initialize(userId),
-            timeoutPromise
-          ]);
-          
-          if (result.success) {
-            console.log('✅ FCM initialized successfully via FCMManager');
-          } else {
-            console.warn('⚠️ FCM initialization failed or timed out:', result.error);
-            // Don't throw - local notifications still work
-          }
-        } catch (error) {
-          console.error('❌ FCM initialization error:', error);
-          // Don't throw - local notifications still work
-        }
-      })();
-      
-      console.log('✅ All services initialized (cache + realtime + notifications + FCM queued)');
-    } catch (error) {
-      console.error('❌ Error initializing services:', error);
-      // Don't throw - let the app continue
-    }
-  };
-
-  // ✅ FIXED: Use FCMManager for cleanup
-  const stopNotificationServicesSafely = async () => {
-    try {
-      console.log('🛑 Stopping all services');
-      
-      const { notificationManager } = await import('@/services/notificationManager');
-      const { realtimeService } = await import('@/services/realtimeService');
-      
-      // Stop hybrid notification service
-      await notificationManager.stopNotificationService();
-      
-      // Disconnect realtime service
-      await realtimeService.disconnect();
-      
-      // ✅ Cleanup FCMManager
-      try {
-        const { fcmManager } = await import('@/services/FCMManager');
-        await fcmManager.cleanup();
-        console.log('✅ FCMManager cleaned up');
-      } catch (error) {
-        console.warn('⚠️ Error cleaning up FCMManager:', error);
-      }
-      
-      console.log('✅ All services stopped');
-    } catch (error) {
-      console.error('❌ Error stopping services:', error);
-    }
-  };
+  // ============================================================
+  // AUTH FUNCTIONS
+  // ============================================================
 
   const checkAuthStatus = async () => {
     try {
       console.log('AuthContext - Checking auth status...');
       
-      // ✅ CRITICAL FIX: Check and restore Supabase session first
-      // Supabase automatically restores sessions from AsyncStorage when persistSession: true
-      // But we need to ensure the session is loaded before proceeding
+      // Check and restore Supabase session
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) {
@@ -381,7 +467,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } else if (session?.user) {
           console.log('✅ AuthContext - Supabase session restored:', session.user.id);
         } else {
-          console.log('ℹ️ AuthContext - No active Supabase session found (this is OK if using custom auth)');
+          console.log('ℹ️ AuthContext - No active Supabase session found');
         }
       } catch (sessionCheckError) {
         console.warn('⚠️ AuthContext - Failed to check Supabase session:', sessionCheckError);
@@ -420,9 +506,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         }
         
-        // ✅ CRITICAL FIX: Wait for Supabase session to be restored if needed
-        // This is important for RLS policies to work (e.g., saving FCM tokens)
-        // Give Supabase time to restore the session from AsyncStorage (up to 2 seconds)
+        // Wait for Supabase session to be restored
         let sessionReady = false;
         for (let attempt = 0; attempt < 10; attempt++) {
           const { data: { session } } = await supabase.auth.getSession();
@@ -431,12 +515,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.log('✅ AuthContext - Supabase session ready for user:', storedUser.id);
             break;
           }
-          // Wait 200ms between attempts (max 2 seconds total)
           await new Promise(resolve => setTimeout(resolve, 200));
         }
         
         if (!sessionReady) {
-          console.warn('⚠️ AuthContext - Supabase session not restored after wait (user may be anonymous or session expired)');
+          console.warn('⚠️ AuthContext - Supabase session not restored after wait');
         }
         
         // Verify user still exists in database
@@ -453,12 +536,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setIsProfileComplete(complete);
           
           // Initialize notification services
-          await initializeNotificationServicesSafely(dbUser.id);
+          await initializeNotificationServices(dbUser.id);
           
-          // Check notification permissions
-          await checkNotificationPermissions();
-          
-          // ✅ Ensure FCM is initialized for already authenticated user (non-blocking)
+          // Ensure FCM is initialized (non-blocking)
           (async () => {
             try {
               const { fcmManager } = await import('@/services/FCMManager');
@@ -506,10 +586,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       dispatch({ type: 'LOGIN_SUCCESS', payload: newUser });
       
       // Initialize notification services after successful login
-      await initializeNotificationServicesSafely(newUser.id);
-      
-      // Check notification permissions
-      await checkNotificationPermissions();
+      await initializeNotificationServices(newUser.id);
       
       console.log('User logged in successfully with ID:', newUser.id);
     } catch (error) {
@@ -528,10 +605,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsProfileComplete(complete);
       
       // Initialize notification services
-      await initializeNotificationServicesSafely(user.id);
-      
-      // Check notification permissions
-      await checkNotificationPermissions();
+      await initializeNotificationServices(user.id);
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
     }
@@ -540,10 +614,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async () => {
     try {
       // Stop notification services before logout
-      await stopNotificationServicesSafely();
+      await stopNotificationServices();
       
       if (state.user) {
-        // ✅ Use FCMManager to clear token
         try {
           const { fcmManager } = await import('@/services/FCMManager');
           await fcmManager.cleanup();

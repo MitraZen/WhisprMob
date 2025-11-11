@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform, Modal } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Animated, Platform, Modal, Linking, AppState, AppStateStatus } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
-import { notificationService } from '@/services/notificationService';
+import { notificationService, setAppNotificationEnabled as setAppNotificationState, getAppNotificationEnabled } from '@/services/notificationService';
 import PermissionService from '../services/permissionService';
 import PermissionInitializer from '../services/permissionInitializer';
 import { AdminService } from '@/services/adminService'; // Import admin service
@@ -29,17 +29,58 @@ interface SettingsScreenProps {
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user }) => {
   const { theme, isDark, toggleTheme } = useTheme();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
   const [isAdmin, setIsAdmin] = useState(false); // Add admin state
+  const [showNotificationDialog, setShowNotificationDialog] = useState(false);
+  const [appNotificationEnabled, setAppNotificationEnabled] = useState(true);
+  const appState = useRef(AppState.currentState);
+  const [appStateVisible, setAppStateVisible] = useState(appState.current);
+  const permissionCheckTriggered = useRef(false);
   // Test states removed for production build
   
   // Debug code removed for production build
   
   const styles = createStyles(theme);
+
+  const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+    if (
+      appState.current.match(/inactive|background/) &&
+      nextAppState === 'active' &&
+      permissionCheckTriggered.current
+    ) {
+      // User returned from settings, check if permissions changed
+      console.log('App became active after opening settings - checking permissions');
+      
+      // Wait a bit for permissions to be updated
+      setTimeout(async () => {
+        const previousPermissions = await PermissionService.getAllPermissionStatus();
+        await loadPermissionStatus();
+        await loadAppNotificationState();
+        
+        const currentPermissions = await PermissionService.getAllPermissionStatus();
+        
+        // Check if any permissions changed
+        const permissionsChanged = 
+          previousPermissions.notifications !== currentPermissions.notifications ||
+          previousPermissions.location !== currentPermissions.location ||
+          previousPermissions.camera !== currentPermissions.camera ||
+          previousPermissions.storage !== currentPermissions.storage;
+        
+        if (permissionsChanged) {
+          ThemedAlertLegacy.alert('Success', 'Permissions updated successfully');
+        }
+        
+        // Reset the flag
+        permissionCheckTriggered.current = false;
+      }, 500);
+    }
+    
+    appState.current = nextAppState;
+    setAppStateVisible(nextAppState);
+  };
 
   useEffect(() => {
     // Animate screen entrance
@@ -64,13 +105,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
 
         // Check biometric authentication status
         checkBiometricStatus();
+
+        // Load app notification state
+        loadAppNotificationState();
+
+        // Set up AppState listener to detect when user returns from settings
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
+        
+        return () => {
+          subscription?.remove();
+        };
       }, []);
+
+  const loadAppNotificationState = async () => {
+    try {
+      // Load app-level notification state from AsyncStorage
+      const appNotificationsEnabled = await getAppNotificationEnabled();
+      setAppNotificationEnabled(appNotificationsEnabled);
+      
+      // Also check system-level permissions
+      const currentPermissions = await PermissionService.getAllPermissionStatus();
+      // If system permissions are denied, disable the toggle
+      if (!currentPermissions.notifications && appNotificationsEnabled) {
+        // System permission denied but app-level is enabled - disable app-level
+        await setAppNotificationState(false);
+        setAppNotificationEnabled(false);
+      }
+    } catch (error) {
+      console.error('Error loading app notification state:', error);
+      // Default to enabled on error
+      setAppNotificationEnabled(true);
+    }
+  };
 
   const loadPermissionStatus = async () => {
     try {
       const currentPermissions = await PermissionService.getAllPermissionStatus();
-      // Update notification toggle based on actual permission status
-      setNotificationsEnabled(currentPermissions.notifications);
       // Update location toggle based on actual permission status
       setLocationEnabled(currentPermissions.location);
     } catch (error) {
@@ -100,22 +170,45 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     }
   };
 
-  const handleNotificationToggle = async (value: boolean) => {
-    setNotificationsEnabled(value);
+  const handleAppNotificationToggle = async (value: boolean) => {
+    setAppNotificationEnabled(value);
     try {
       if (value) {
+        // Enable notifications - request permission first
         const granted = await PermissionService.requestNotificationPermissions();
         if (!granted) {
-          // If permission was denied, revert the toggle
-          setNotificationsEnabled(false);
+          setAppNotificationEnabled(false);
+          Alert.alert(
+            'Permission Required',
+            'Please allow notification permissions to enable notifications.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() }
+            ]
+          );
+          return;
         }
+        
+        // Save app-level notification state
+        await setAppNotificationState(true);
+        console.log('✅ App-level notifications enabled');
+      } else {
+        // Disable notifications - save state to AsyncStorage
+        await setAppNotificationState(false);
+        console.log('🔕 App-level notifications disabled');
       }
     } catch (error) {
-      console.error('Error toggling notifications:', error);
+      console.error('Error toggling app notifications:', error);
+      setAppNotificationEnabled(!value);
       Alert.alert('Error', 'Failed to update notification settings');
-      // Revert the toggle on error
-      setNotificationsEnabled(!value);
     }
+  };
+
+  const handleOpenDeviceSettings = () => {
+    Linking.openSettings().catch((error) => {
+      console.error('Error opening settings:', error);
+      Alert.alert('Error', 'Unable to open device settings');
+    });
   };
 
   const handleLocationToggle = async (value: boolean) => {
@@ -226,13 +319,53 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
 
   const handleRequestPermissions = async () => {
     try {
-      // Get current user ID from auth context
-      const currentUserId = user?.id || 'anonymous';
-      await PermissionInitializer.initializePermissions(currentUserId);
-      await loadPermissionStatus();
-      ThemedAlertLegacy.alert('Success', 'Permissions updated successfully');
+      // Show dialog with instructions
+      Alert.alert(
+        'Manage Permissions',
+        'This will open the App permissions page for Whispr where you can enable or disable individual permissions.\n\nAfter updating permissions, return to the app.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'App permissions',
+            onPress: () => {
+              console.log('🔧 User clicked "App permissions" button');
+              // Set flag to check permissions when app becomes active
+              permissionCheckTriggered.current = true;
+              
+              // Open app info page which shows Permissions prominently
+              if (Platform.OS === 'android') {
+                console.log('🔧 Calling PermissionService.openAppPermissionsSettings()...');
+                try {
+                  PermissionService.openAppPermissionsSettings();
+                  console.log('🔧 PermissionService.openAppPermissionsSettings() called');
+                } catch (error) {
+                  console.error('❌ Error in openAppPermissionsSettings:', error);
+                  // Direct fallback - try Linking.openSettings directly
+                  console.log('🔄 Trying Linking.openSettings() directly...');
+                  Linking.openSettings()
+                    .then(() => console.log('✅ Linking.openSettings() succeeded'))
+                    .catch((err) => {
+                      console.error('❌ Linking.openSettings() failed:', err);
+                      Alert.alert('Error', 'Unable to open device settings');
+                    });
+                }
+              } else {
+                // iOS - open general settings
+                Linking.openSettings().catch((error) => {
+                  console.error('Error opening settings:', error);
+                  Alert.alert('Error', 'Unable to open device settings');
+                });
+              }
+            },
+          },
+        ]
+      );
     } catch (error) {
-      ThemedAlertLegacy.alert('Error', 'Failed to request permissions');
+      console.error('Error opening permission settings:', error);
+      Alert.alert('Error', 'Failed to open permission settings');
     }
   };
 
@@ -246,17 +379,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     {
       id: 'notifications',
       title: 'Notification Settings',
-      subtitle: 'Manage push notifications and alerts',
+      subtitle: 'Allow Whispr to send you notifications',
       icon: 'notifications-outline',
-      onPress: () => notificationService.testNotification(),
-      rightComponent: (
-        <Switch
-          value={notificationsEnabled}
-          onValueChange={handleNotificationToggle}
-          trackColor={{ false: theme.colors.border, true: theme.colors.primary + '40' }}
-          thumbColor={notificationsEnabled ? theme.colors.onPrimary : theme.colors.onSurfaceVariant}
-        />
-      ),
+      onPress: () => setShowNotificationDialog(true),
       color: theme.colors.primary
     },
     {
@@ -436,6 +561,92 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
 
       <NavigationMenu currentScreen="settings" onNavigate={onNavigate} />
 
+      {/* Notification Settings Dialog */}
+      <Modal
+        visible={showNotificationDialog}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowNotificationDialog(false)}
+        onShow={() => {
+          // Refresh notification state when dialog opens
+          loadAppNotificationState();
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <Animated.View 
+            style={[
+              styles.modalContent,
+              { transform: [{ translateY: slideAnim }] }
+            ]}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Notification Settings</Text>
+              <TouchableOpacity
+                onPress={() => setShowNotificationDialog(false)}
+                style={styles.modalCloseButton}
+              >
+                <Icon name="close" size={24} color={theme.colors.onSurface} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            <View style={styles.modalBody}>
+              {/* App-level Notifications Toggle */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Icon 
+                    name="notifications-outline" 
+                    size={24} 
+                    color={theme.colors.primary} 
+                    style={styles.settingIcon}
+                  />
+                  <View style={styles.settingTextContainer}>
+                    <Text style={styles.settingTitle}>Notifications</Text>
+                    <Text style={styles.settingDescription}>
+                      Enable or disable notifications for Whispr
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={appNotificationEnabled}
+                  onValueChange={handleAppNotificationToggle}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary + '40' }}
+                  thumbColor={appNotificationEnabled ? theme.colors.primary : theme.colors.onSurfaceVariant}
+                />
+              </View>
+
+              {/* Divider */}
+              <View style={styles.divider} />
+
+              {/* Device Settings Toggle */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Icon 
+                    name="settings-outline" 
+                    size={24} 
+                    color={theme.colors.primary} 
+                    style={styles.settingIcon}
+                  />
+                  <View style={styles.settingTextContainer}>
+                    <Text style={styles.settingTitle}>Notification Settings</Text>
+                    <Text style={styles.settingDescription}>
+                      Open device settings to configure notification preferences
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={handleOpenDeviceSettings}
+                  style={styles.settingsButton}
+                >
+                  <Icon name="chevron-forward" size={20} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
+
       {/* Test modals removed for production build */}
     </Animated.View>
   );
@@ -530,12 +741,31 @@ const createStyles = (theme: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  closeButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: borderRadius.xl,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    ...theme.shadows.lg,
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    padding: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -544,10 +774,48 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.onSurface,
     fontWeight: 'bold',
   },
-  closeButton: {
-    padding: spacing.sm,
+  modalCloseButton: {
+    padding: spacing.xs,
     borderRadius: borderRadius.full,
-    backgroundColor: theme.colors.surfaceVariant,
+  },
+  modalBody: {
+    padding: spacing.lg,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  settingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  settingIcon: {
+    marginRight: spacing.md,
+  },
+  settingTextContainer: {
+    flex: 1,
+  },
+  settingTitle: {
+    ...theme.typography.titleMedium,
+    color: theme.colors.onSurface,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  settingDescription: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.onSurfaceVariant,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginVertical: spacing.md,
+  },
+  settingsButton: {
+    padding: spacing.sm,
   },
 });
 

@@ -1,7 +1,8 @@
-import { Platform, Alert, DeviceEventEmitter } from 'react-native';
+import { Platform, Alert, DeviceEventEmitter, Linking } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 import messaging from '@react-native-firebase/messaging';
 import { supabase } from '@/config/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ⚠️ TEMPORARY: Suppress modular API deprecation warnings until migration to v22 modular API is complete
 // TODO: Migrate to modular API when React Native Firebase v22 stable is released
@@ -29,12 +30,56 @@ class NotificationServiceClass implements NotificationService {
   private isChatActive = false;
   private fcmToken: string | null = null;
   private fcmHandlersSetup = false;
+  private static readonly APP_NOTIFICATIONS_ENABLED_KEY = 'appNotificationsEnabled';
   
   constructor() {
     // ✅ Only set up local notifications, not FCM
     this.configurePushNotifications();
     // ❌ REMOVED: FCM initialization - now handled by FCMManager only
     // Don't call initializePermissions here - permissions requested on demand
+  }
+
+  /**
+   * Check if app-level notifications are enabled
+   * Returns true by default (if not set, assume enabled)
+   */
+  private async isAppNotificationEnabled(): Promise<boolean> {
+    try {
+      const value = await AsyncStorage.getItem(NotificationServiceClass.APP_NOTIFICATIONS_ENABLED_KEY);
+      // Default to true if not set (backward compatibility)
+      return value === null ? true : value === 'true';
+    } catch (error) {
+      console.error('Error checking app notification state:', error);
+      // Default to true on error
+      return true;
+    }
+  }
+
+  /**
+   * Set app-level notification enabled state
+   */
+  static async setAppNotificationEnabled(enabled: boolean): Promise<void> {
+    try {
+      await AsyncStorage.setItem(NotificationServiceClass.APP_NOTIFICATIONS_ENABLED_KEY, enabled.toString());
+      console.log(`🔔 App-level notifications ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Error setting app notification state:', error);
+    }
+  }
+
+  /**
+   * Get app-level notification enabled state
+   */
+  static async getAppNotificationEnabled(): Promise<boolean> {
+    try {
+      const value = await AsyncStorage.getItem(NotificationServiceClass.APP_NOTIFICATIONS_ENABLED_KEY);
+      // Default to true if not set (backward compatibility)
+      return value === null ? true : value === 'true';
+    } catch (error) {
+      console.error('Error getting app notification state:', error);
+      // Default to true on error
+      return true;
+    }
   }
   
   setChatActive(isActive: boolean) {
@@ -269,6 +314,13 @@ class NotificationServiceClass implements NotificationService {
 
 async showMessageNotification(title: string, message: string, buddyName: string, messageCount?: number, buddyId?: string): Promise<string> {
   try {
+    // Check if app-level notifications are enabled
+    const appNotificationsEnabled = await this.isAppNotificationEnabled();
+    if (!appNotificationsEnabled) {
+      console.log('🔕 [NOTIFICATION] App-level notifications are disabled - skipping notification');
+      return 'App-level notifications disabled';
+    }
+
     const { AppState } = require('react-native');
     const currentAppState = AppState.currentState;
     console.log('🔔 [NOTIFICATION] ===== showMessageNotification CALLED =====');
@@ -418,6 +470,13 @@ async showMessageNotification(title: string, message: string, buddyName: string,
   
   async showGeneralNotification(title: string, content: string): Promise<string> {
     try {
+      // Check if app-level notifications are enabled
+      const appNotificationsEnabled = await this.isAppNotificationEnabled();
+      if (!appNotificationsEnabled) {
+        console.log('🔕 [NOTIFICATION] App-level notifications are disabled - skipping notification');
+        return 'App-level notifications disabled';
+      }
+
       PushNotification.localNotification({
         channelId: 'whispr-messages',
         title: title,
@@ -453,6 +512,13 @@ async showMessageNotification(title: string, message: string, buddyName: string,
   
   async testNotification(): Promise<string> {
     try {
+      // Check if app-level notifications are enabled
+      const appNotificationsEnabled = await this.isAppNotificationEnabled();
+      if (!appNotificationsEnabled) {
+        console.log('🔕 [NOTIFICATION] App-level notifications are disabled - skipping test notification');
+        return 'App-level notifications disabled';
+      }
+
       let token = null;
       try {
         token = await this.getFCMToken();
@@ -476,7 +542,25 @@ async showMessageNotification(title: string, message: string, buddyName: string,
       });
       
       console.log('Test notification sent');
-      Alert.alert('Test Notification', `Test notification sent! FCM Token: ${token ? 'Available' : 'Not Available (Local Only)'}`);
+      const statusMessage = token 
+        ? 'Notifications are enabled. You will receive push notifications from Whispr.' 
+        : 'Notifications may not be fully enabled. Please check your device settings to allow Whispr to send you notifications.';
+      Alert.alert(
+        'Allow Whispr to Send you Notifications?',
+        statusMessage,
+        [
+          { text: 'OK', style: 'default' },
+          ...(token ? [] : [{ 
+            text: 'Open Settings', 
+            onPress: () => {
+              // On Android, this will open app settings where user can enable notifications
+              if (Platform.OS === 'android') {
+                Linking.openSettings();
+              }
+            }
+          }])
+        ]
+      );
       return 'Test notification sent successfully';
     } catch (error) {
       console.error('Error sending test notification:', error);
@@ -487,3 +571,7 @@ async showMessageNotification(title: string, message: string, buddyName: string,
 }
 
 export const notificationService = new NotificationServiceClass();
+
+// Export static methods for app-level notification control
+export const setAppNotificationEnabled = NotificationServiceClass.setAppNotificationEnabled;
+export const getAppNotificationEnabled = NotificationServiceClass.getAppNotificationEnabled;

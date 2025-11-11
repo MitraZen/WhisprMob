@@ -20,8 +20,8 @@ interface WhisprNotesScreenProps {
 }
 
 export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate, user }) => {
-  const { theme } = useTheme();
-  const styles = createStyles(theme);
+  const { theme, isDark } = useTheme();
+  const styles = createStyles(theme, isDark);
   const [notes, setNotes] = useState<WhisprNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -606,7 +606,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   );
 };
 
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   container: { 
     flex: 1, 
   },
@@ -633,16 +633,16 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.1)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: theme.colors.border,
     backdropFilter: 'blur(10px)',
     zIndex: 1,
   },
   backButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: theme.colors.surfaceVariant,
     backdropFilter: 'blur(10px)',
   },
   headerTitle: {
@@ -838,7 +838,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   emptyContainer: { alignItems: 'center', marginTop: spacing.xl },
   emptyIcon: { fontSize: 60 },
-  emptyText: { fontSize: 18, fontWeight: '600', marginTop: spacing.md },
+  emptyText: { fontSize: 18, fontWeight: '600', marginTop: spacing.md, color: theme.colors.onSurface },
   emptySubtext: { fontSize: 14, color: theme.colors.onSurfaceVariant },
   demarcationContainer: {
     flexDirection: 'row',

@@ -14,20 +14,20 @@ export const GradientBackground: React.FC<GradientBackgroundProps> = ({
   style, 
   variant = 'default' 
 }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const getGradientColors = () => {
     switch (variant) {
       case 'subtle':
-        return theme.isDark 
+        return isDark 
           ? ['#1e293b', '#334155', '#475569'] 
           : ['#f8fafc', '#f1f5f9', '#e2e8f0'];
       case 'vibrant':
-        return theme.isDark 
+        return isDark 
           ? ['#0f172a', '#1e293b', '#334155'] 
           : ['#f0f9ff', '#e0f2fe', '#bae6fd'];
       default: // 'default'
-        return theme.isDark 
+        return isDark 
           ? ['#1a1a2e', '#16213e', '#0f3460'] 
           : ['#f8fafc', '#e2e8f0', '#cbd5e1'];
     }

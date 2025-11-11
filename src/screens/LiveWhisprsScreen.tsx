@@ -22,8 +22,8 @@ interface LiveWhisprsScreenProps {
 }
 
 const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => {
-  const { theme } = useTheme();
-  const styles = createStyles(theme);
+  const { theme, isDark } = useTheme();
+  const styles = createStyles(theme, isDark);
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState<DistanceFilter>('50km');
 
@@ -62,7 +62,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       />
       
       {/* Header with Back Button */}
-      <View style={[styles.header, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
+      <View style={[styles.header, { backgroundColor: isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.1)' }]}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => onNavigate('buddies')}
@@ -77,7 +77,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       </View>
       
       {/* Distance Filter Header */}
-      <View style={[styles.filterContainer, { backgroundColor: 'rgba(255, 255, 255, 0.05)' }]}>
+      <View style={[styles.filterContainer, { backgroundColor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(255, 255, 255, 0.05)' }]}>
         <Text style={[styles.filterTitle, { color: theme.colors.text }]}>
           Show whisprs within:
         </Text>
@@ -119,10 +119,10 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
                   {
                     backgroundColor: isSelected 
                       ? theme.colors.primary 
-                      : 'rgba(255, 255, 255, 0.1)',
+                      : (isDark ? 'rgba(51, 65, 85, 0.8)' : 'rgba(255, 255, 255, 0.1)'),
                     borderColor: isSelected 
                       ? theme.colors.primary 
-                      : 'rgba(255, 255, 255, 0.2)',
+                      : theme.colors.border,
                     shadowColor: isSelected ? theme.colors.primary : 'transparent',
                   }
                 ]}
@@ -172,7 +172,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   );
 };
 
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: Platform.OS === 'android' ? 0 : 0, // StatusBar height handled by StatusBar component
@@ -185,13 +185,13 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: theme.colors.border,
     backdropFilter: 'blur(10px)',
   },
   backButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: theme.colors.surfaceVariant,
     backdropFilter: 'blur(10px)',
   },
   headerTitle: {
@@ -205,7 +205,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: theme.colors.border,
     backdropFilter: 'blur(10px)',
   },
   filterTitle: {

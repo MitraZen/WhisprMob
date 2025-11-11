@@ -17,7 +17,7 @@ interface BuddiesScreenProps {
 }
 
 export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, refreshTrigger }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [buddies, setBuddies] = useState<Buddy[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'online'>('all');
@@ -30,7 +30,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   const [selectedBuddy, setSelectedBuddy] = useState<Buddy | null>(null);
   const [buddyRequestsCount, setBuddyRequestsCount] = useState<number>(0);
   
-  const styles = createStyles(theme);
+  const styles = createStyles(theme, isDark);
 
   // Simple alert system - in a real app, this would come from a context or service
   const getMessageAlerts = () => {
@@ -686,7 +686,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   );
 };
 
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: 'row',
@@ -745,11 +745,11 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   alertsDropdown: {
     marginTop: spacing.md,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.surface,
     borderRadius: borderRadius.md,
-    shadowColor: '#000',
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: isDark ? 0.3 : 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -765,27 +765,27 @@ const createStyles = (theme: any) => StyleSheet.create({
   alertsTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#7c3aed',
+    color: theme.colors.primary,
   },
   alertsCount: {
     fontSize: 14,
-    color: '#6b7280',
+    color: theme.colors.onSurfaceVariant,
     marginBottom: spacing.lg,
   },
   clearAlertsButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: theme.colors.primary,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },
   clearAlertsButtonText: {
-    color: '#ffffff',
+    color: theme.colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
   clearAlertsButtonTextDisabled: {
-    color: '#9ca3af',
+    color: theme.colors.onSurfaceVariant,
   },
   title: {
     fontSize: 28,
@@ -855,7 +855,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     ...theme.shadows.sm,
   },
   activeFilterButton: { 
-    backgroundColor: '#7c3aed',
+    backgroundColor: theme.colors.primary,
     ...theme.shadows.md,
   },
   filterButtonText: {
@@ -864,7 +864,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: '500',
   },
   activeFilterButtonText: { 
-    color: '#fff', 
+    color: theme.colors.onPrimary, 
     fontWeight: '600' 
   },
   buddiesList: { flex: 1, padding: spacing.xs },
@@ -996,7 +996,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
-  emptyStateSubtext: { fontSize: 14, color: '#9ca3af', textAlign: 'center' },
+  emptyStateSubtext: { fontSize: 14, color: theme.colors.onSurfaceVariant, textAlign: 'center' },
   loadingContainer: { alignItems: 'center', paddingVertical: spacing.xxl },
   loadingText: { marginTop: spacing.md, fontSize: 16, color: theme.colors.onSurface },
   errorContainer: { alignItems: 'center', paddingVertical: spacing.xxl },
@@ -1012,9 +1012,9 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
   },
-  retryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  retryButtonText: { color: theme.colors.onPrimary, fontSize: 16, fontWeight: '600' },
   lastUpdatedContainer: { alignItems: 'center', paddingVertical: spacing.sm },
-  lastUpdatedText: { fontSize: 12, color: '#9ca3af' },
+  lastUpdatedText: { fontSize: 12, color: theme.colors.onSurfaceVariant },
   
   // Buddy Options Modal Styles
   buddyOptionsOverlay: {
@@ -1024,14 +1024,14 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
   },
   buddyOptionsContainer: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     marginHorizontal: 30,
     maxWidth: 320,
     width: '100%',
-    shadowColor: '#000',
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: theme.isDark ? 0.3 : 0.15,
     shadowRadius: 4,
     elevation: 4,
   },
@@ -1041,7 +1041,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   buddyOptionsTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: theme.colors.onSurface,
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -1054,19 +1054,19 @@ const createStyles = (theme: any) => StyleSheet.create({
   buddyOptionButton: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: theme.colors.surfaceVariant,
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: theme.colors.border,
   },
   buddyOptionText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#374151',
+    color: theme.colors.onSurface,
     marginTop: 6,
     textAlign: 'center',
   },
