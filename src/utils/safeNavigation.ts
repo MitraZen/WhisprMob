@@ -22,26 +22,17 @@ export class SafeNavigation {
     fallbackScreen: string = 'notes'
   ): boolean {
     
-    // Custom back button behavior based on current screen
-    if (isAuthenticated) {
+    // Handle unauthenticated auth screens - navigate to welcome
+    if (!isAuthenticated) {
       switch (currentScreen) {
-        case 'buddies':
-          // Buddies screen -> Notes screen
-          onGoBack('notes');
+        case 'signup':
+        case 'signin':
+          // From signup/signin screens, go back to welcome
+          onGoBack('welcome');
           return true;
           
-        case 'liveWhisprs':
-          // Live Whispers screen -> Buddies screen
-          onGoBack('buddies');
-          return true;
-          
-        case 'settingsHub':
-          // Settings Hub screen -> Notes screen
-          onGoBack('notes');
-          return true;
-          
-        case 'notes':
-          // Notes screen -> Show exit confirmation
+        case 'welcome':
+          // At welcome screen, show exit confirmation
           Alert.alert(
             'Exit App',
             'Are you sure you want to exit Whispr?',
@@ -53,28 +44,75 @@ export class SafeNavigation {
           return true;
           
         default:
-          // For other screens, use the original safe navigation logic
-          if (navigationHistory.length > 1) {
-            const safeHistory = navigationHistory.filter(screen => 
-              !['signin', 'signup', 'welcome'].includes(screen)
-            );
-            
-            if (safeHistory.length > 1) {
-              // Go back to the last safe screen
-              const previousSafeScreen = safeHistory[safeHistory.length - 2];
-              onGoBack(previousSafeScreen);
-              return true;
-            } else {
-              // No safe screens in history, go to fallback
-              onGoBack(fallbackScreen);
-              return true;
-            }
+          // For other unauthenticated screens, try to go back to welcome
+          if (navigationHistory.includes('welcome')) {
+            onGoBack('welcome');
+            return true;
           }
-          break;
+          // If no welcome in history, show exit confirmation
+          Alert.alert(
+            'Exit App',
+            'Are you sure you want to exit Whispr?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
+            ]
+          );
+          return true;
       }
     }
     
-    // If not authenticated or at root, show exit confirmation
+    // Custom back button behavior based on current screen (authenticated users)
+    switch (currentScreen) {
+      case 'buddies':
+        // Buddies screen -> Notes screen
+        onGoBack('notes');
+        return true;
+        
+      case 'liveWhisprs':
+        // Live Whispers screen -> Buddies screen
+        onGoBack('buddies');
+        return true;
+        
+      case 'settingsHub':
+        // Settings Hub screen -> Notes screen
+        onGoBack('notes');
+        return true;
+        
+      case 'notes':
+        // Notes screen -> Show exit confirmation
+        Alert.alert(
+          'Exit App',
+          'Are you sure you want to exit Whispr?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
+          ]
+        );
+        return true;
+        
+      default:
+        // For other screens, use the original safe navigation logic
+        if (navigationHistory.length > 1) {
+          const safeHistory = navigationHistory.filter(screen => 
+            !['signin', 'signup', 'welcome'].includes(screen)
+          );
+          
+          if (safeHistory.length > 1) {
+            // Go back to the last safe screen
+            const previousSafeScreen = safeHistory[safeHistory.length - 2];
+            onGoBack(previousSafeScreen);
+            return true;
+          } else {
+            // No safe screens in history, go to fallback
+            onGoBack(fallbackScreen);
+            return true;
+          }
+        }
+        break;
+    }
+    
+    // Fallback: show exit confirmation
     Alert.alert(
       'Exit App',
       'Are you sure you want to exit Whispr?',

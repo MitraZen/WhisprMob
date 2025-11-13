@@ -14,17 +14,19 @@ import AuthService from '@/services/authService';
 interface PasswordResetScreenProps {
   onBackToSignIn: () => void;
   onResetSuccess?: () => void;
+  onCodeSent?: (email: string) => void; // New callback for code-based flow
 }
 
 export const PasswordResetScreen: React.FC<PasswordResetScreenProps> = ({ 
   onBackToSignIn, 
-  onResetSuccess 
+  onResetSuccess,
+  onCodeSent,
 }) => {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
-  const handleSendResetEmail = async () => {
+  const handleSendResetCode = async () => {
     if (!email) {
       Alert.alert('Email Required', 'Please enter your email address');
       return;
@@ -37,28 +39,31 @@ export const PasswordResetScreen: React.FC<PasswordResetScreenProps> = ({
 
     setIsLoading(true);
     try {
-      const { success, error } = await AuthService.resetPassword(email);
+      const { success, error } = await AuthService.generateResetCode(email);
       
       if (success) {
         setEmailSent(true);
-        Alert.alert(
-          'Reset Email Sent! 📧',
-          `We've sent a password reset link to ${email}. Check your email and follow the instructions to reset your password.`,
-          [
-            { 
-              text: 'OK', 
-              onPress: () => {
-                if (onResetSuccess) {
-                  onResetSuccess();
-                } else {
-                  onBackToSignIn();
+        // Navigate to code entry screen
+        if (onCodeSent) {
+          onCodeSent(email);
+        } else {
+          Alert.alert(
+            'Reset Code Sent! 📧',
+            `We've sent a 6-digit reset code to ${email}. Please check your email and enter the code.`,
+            [
+              { 
+                text: 'OK', 
+                onPress: () => {
+                  if (onCodeSent) {
+                    onCodeSent(email);
+                  }
                 }
               }
-            }
-          ]
-        );
+            ]
+          );
+        }
       } else {
-        Alert.alert('Reset Failed', error || 'Failed to send reset email. Please try again.');
+        Alert.alert('Reset Failed', error || 'Failed to send reset code. Please try again.');
       }
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
@@ -78,15 +83,15 @@ export const PasswordResetScreen: React.FC<PasswordResetScreenProps> = ({
         <View style={styles.content}>
           <Text style={styles.title}>Check Your Email 📧</Text>
           <Text style={styles.subtitle}>
-            We've sent a password reset link to {email}
+            We've sent a 6-digit reset code to {email}
           </Text>
           
           <View style={styles.instructionsContainer}>
             <Text style={styles.instructionsTitle}>Next Steps:</Text>
             <Text style={styles.instruction}>1. Check your email inbox</Text>
-            <Text style={styles.instruction}>2. Click the reset link</Text>
+            <Text style={styles.instruction}>2. Enter the 6-digit code</Text>
             <Text style={styles.instruction}>3. Set your new password</Text>
-            <Text style={styles.instruction}>4. Return to the app and sign in</Text>
+            <Text style={styles.instruction}>4. Sign in with your new password</Text>
           </View>
 
           <TouchableOpacity
@@ -112,7 +117,7 @@ export const PasswordResetScreen: React.FC<PasswordResetScreenProps> = ({
       <View style={styles.content}>
         <Text style={styles.title}>Reset Password</Text>
         <Text style={styles.subtitle}>
-          Enter your email address and we'll send you a link to reset your password
+          Enter your email address and we'll send you a 6-digit code to reset your password
         </Text>
 
         <View style={styles.form}>
@@ -130,13 +135,13 @@ export const PasswordResetScreen: React.FC<PasswordResetScreenProps> = ({
 
           <TouchableOpacity
             style={[styles.button, isLoading && styles.buttonDisabled]}
-            onPress={handleSendResetEmail}
+            onPress={handleSendResetCode}
             disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text style={styles.buttonText}>Send Reset Email</Text>
+              <Text style={styles.buttonText}>Send Reset Code</Text>
             )}
           </TouchableOpacity>
 

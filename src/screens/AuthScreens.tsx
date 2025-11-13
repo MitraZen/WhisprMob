@@ -250,9 +250,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
 interface SignInScreenProps {
   onSignInSuccess: (user: any) => void;
   onBackToWelcome: () => void;
+  onForgotPassword?: () => void; // New callback for password reset
 }
 
-export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onBackToWelcome }) => {
+export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onBackToWelcome, onForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -359,29 +360,13 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!email) {
-      Alert.alert('Email Required', 'Please enter your email address first, then tap "Forgot Password"');
-      return;
-    }
-
-    setIsResettingPassword(true);
-    try {
-      const { success, error } = await AuthService.resetPassword(email);
-      
-      if (success) {
-        Alert.alert(
-          'Reset Email Sent! 📧',
-          `We've sent a password reset link to ${email}. Check your email and follow the instructions to reset your password.`,
-          [{ text: 'OK', style: 'default' }]
-        );
-      } else {
-        Alert.alert('Reset Failed', error || 'Failed to send reset email. Please try again.');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setIsResettingPassword(false);
+  const handleForgotPassword = () => {
+    // Navigate to password reset screen
+    if (onForgotPassword) {
+      onForgotPassword();
+    } else {
+      // Fallback: Show alert if navigation not available
+      Alert.alert('Password Reset', 'Please use the password reset screen to reset your password.');
     }
   };
 

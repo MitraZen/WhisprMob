@@ -24,6 +24,9 @@ import { useAuth } from '@/store/AuthContext';
 import { useAdmin } from '@/store/AdminContext';
 import SafeNavigation from '@/utils/safeNavigation';
 import WelcomeScreen from '@/screens/WelcomeScreen';
+import { PasswordResetScreen } from '@/screens/PasswordResetScreen';
+import { VerifyResetCodeScreen } from '@/screens/VerifyResetCodeScreen';
+import { SetNewPasswordScreen } from '@/screens/SetNewPasswordScreen';
 
 const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -128,6 +131,10 @@ const AppNavigator = () => {
   const [navigationHistory, setNavigationHistory] = useState<string[]>(['welcome']);
   const { isAuthenticated, isLoading, isProfileComplete, user } = useAuth();
   const { isAdminMode } = useAdmin();
+  
+  // Store reset flow state
+  const [resetEmail, setResetEmail] = useState<string>('');
+  const [resetCode, setResetCode] = useState<string>('');
 
   const navigate = (screen: string, params?: any) => {
     setCurrentParams(params ?? null);
@@ -174,10 +181,15 @@ const AppNavigator = () => {
         (screen: string) => {
           setCurrentScreen(screen);
           // Update navigation history to reflect the navigation
-          setNavigationHistory(prev => {
-            const safeHistory = SafeNavigation.getSafeNavigationHistory(prev, isAuthenticated);
-            return [...safeHistory, screen];
-          });
+          // If going back to welcome from signup/signin, reset history
+          if ((currentScreen === 'signup' || currentScreen === 'signin') && screen === 'welcome') {
+            setNavigationHistory(['welcome']);
+          } else {
+            setNavigationHistory(prev => {
+              const safeHistory = SafeNavigation.getSafeNavigationHistory(prev, isAuthenticated);
+              return [...safeHistory, screen];
+            });
+          }
         },
         SafeNavigation.getFallbackScreen(isAuthenticated, isProfileComplete)
       );
@@ -189,6 +201,34 @@ const AppNavigator = () => {
   }, [navigationHistory, currentScreen, isAuthenticated, isProfileComplete]);
 
   console.log('AppNavigator - currentScreen:', currentScreen);
+
+  // Ensure unauthenticated users don't stay on signup/signin after app reopens
+  // This handles the case where Android restores app state to signup screen
+  const hasCheckedInitialScreen = React.useRef(false);
+  const previousLoadingState = React.useRef(isLoading);
+  
+  React.useEffect(() => {
+    // Only check once when app finishes loading (isLoading transitions from true to false)
+    const justFinishedLoading = previousLoadingState.current && !isLoading;
+    previousLoadingState.current = isLoading;
+    
+    if (justFinishedLoading && !isAuthenticated && !hasCheckedInitialScreen.current) {
+      hasCheckedInitialScreen.current = true;
+      // If we're on signup/signin when app first loads (not authenticated),
+      // it means app restored to signup - reset to welcome
+      if (currentScreen === 'signup' || currentScreen === 'signin') {
+        const timer = setTimeout(() => {
+          setCurrentScreen('welcome');
+          setNavigationHistory(['welcome']);
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    }
+    // Reset the flag if user becomes authenticated (allows check on next app start)
+    if (isAuthenticated) {
+      hasCheckedInitialScreen.current = false;
+    }
+  }, [isLoading, isAuthenticated, currentScreen]); // Run when app finishes loading
 
   // When the user becomes authenticated, default to notes screen
   React.useEffect(() => {
@@ -439,14 +479,61 @@ const AppNavigator = () => {
       return (
         <SignInScreen
           onSignInSuccess={() => navigate('notes')}
-          onBackToWelcome={() => navigate('welcome')}
+          onBackToWelcome={() => {
+            // Navigate to welcome and reset navigation history
+            setCurrentScreen('welcome');
+            setNavigationHistory(['welcome']);
+          }}
+          onForgotPassword={() => navigate('passwordReset')}
         />
       );
     case 'signup':
       return (
         <SignUpScreen
           onSignUpSuccess={() => navigate('notes')}
-          onBackToWelcome={() => navigate('welcome')}
+          onBackToWelcome={() => {
+            // Navigate to welcome and reset navigation history
+            setCurrentScreen('welcome');
+            setNavigationHistory(['welcome']);
+          }}
+        />
+      );
+    case 'passwordReset':
+      return (
+        <PasswordResetScreen
+          onBackToSignIn={() => navigate('signin')}
+          onCodeSent={(email: string) => {
+            setResetEmail(email);
+            navigate('verifyResetCode');
+          }}
+        />
+      );
+    case 'verifyResetCode':
+      return (
+        <VerifyResetCodeScreen
+          email={resetEmail}
+          onCodeVerified={(code: string) => {
+            setResetCode(code);
+            navigate('setNewPassword');
+          }}
+          onBack={() => navigate('passwordReset')}
+          onResendCode={async () => {
+            // Resend code logic is handled in VerifyResetCodeScreen
+          }}
+        />
+      );
+    case 'setNewPassword':
+      return (
+        <SetNewPasswordScreen
+          email={resetEmail}
+          code={resetCode}
+          onPasswordUpdated={() => {
+            // Reset state and navigate to sign in
+            setResetEmail('');
+            setResetCode('');
+            navigate('signin');
+          }}
+          onBack={() => navigate('verifyResetCode')}
         />
       );
     case 'mood':

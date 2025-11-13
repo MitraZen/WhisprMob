@@ -9,6 +9,18 @@ import { supabase } from '@/config/supabase';
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PermissionService from '@/services/permissionService';
+import analyticsService from '@/services/analyticsService';
+
+const NOTIFICATION_PERMISSION_ASKED_KEY = 'notificationPermissionAsked';
+const NOTIFICATION_REMINDER_LAST_SHOWN_KEY = 'notificationReminderLastShown';
+const BATTERY_REMINDER_LAST_SHOWN_KEY = 'batteryOptimizationReminderLastShown';
+const NOTIFICATION_PROMPT_SESSION_KEY = 'notifPromptedThisSession';
+const BATTERY_PROMPT_SESSION_KEY = 'batteryPromptedThisSession';
+const LEGACY_BATTERY_PROMPT_KEY = 'batteryOptimizationPromptShown';
+const DISABLE_PERMISSION_REMINDERS_KEY = 'disablePermissionReminders';
+const NOTIFICATION_PROMPT_SESSION_COUNT_KEY = 'notificationPromptSessionCount';
+const NOTIFICATION_REMINDER_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const BATTERY_REMINDER_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 interface AuthContextType extends AuthState {
   login: (mood: string) => Promise<void>;
@@ -71,55 +83,132 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isProfileComplete, setIsProfileComplete] = React.useState<boolean | undefined>(undefined);
   const [hasRequestedPermissions, setHasRequestedPermissions] = React.useState(false);
 
+  const isNotificationAuthorized = async (): Promise<boolean> => {
+    try {
+      const authStatus = await messaging().hasPermission();
+      return (
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL
+      );
+    } catch (error) {
+      console.warn('⚠️ Failed to read Firebase messaging permission status:', error);
+      try {
+        return await PermissionService.checkNotificationPermissions();
+      } catch (nativeError) {
+        console.warn('⚠️ Native notification permission check failed:', nativeError);
+        return false;
+      }
+    }
+  };
+
+  /**
+   * Get notification prompt session count (how many times user has seen the prompt)
+   */
+  const getNotificationPromptSessionCount = async (): Promise<number> => {
+    try {
+      const countValue = await AsyncStorage.getItem(NOTIFICATION_PROMPT_SESSION_COUNT_KEY);
+      return countValue ? Number(countValue) : 0;
+    } catch (error) {
+      console.error('Error getting notification prompt session count:', error);
+      return 0;
+    }
+  };
+
+  /**
+   * Increment notification prompt session count
+   */
+  const incrementNotificationPromptSessionCount = async (): Promise<number> => {
+    try {
+      const currentCount = await getNotificationPromptSessionCount();
+      const newCount = currentCount + 1;
+      await AsyncStorage.setItem(NOTIFICATION_PROMPT_SESSION_COUNT_KEY, String(newCount));
+      return newCount;
+    } catch (error) {
+      console.error('Error incrementing notification prompt session count:', error);
+      return 0;
+    }
+  };
+
+  /**
+   * Calculate days since last shown for battery reminder
+   */
+  const getDaysSinceLastBatteryReminder = async (): Promise<number | null> => {
+    try {
+      const lastShownValue = await AsyncStorage.getItem(BATTERY_REMINDER_LAST_SHOWN_KEY);
+      if (!lastShownValue) {
+        return null;
+      }
+      const lastShown = Number(lastShownValue);
+      if (Number.isNaN(lastShown)) {
+        return null;
+      }
+      const daysSince = Math.floor((Date.now() - lastShown) / (24 * 60 * 60 * 1000));
+      return daysSince;
+    } catch (error) {
+      console.error('Error calculating days since last battery reminder:', error);
+      return null;
+    }
+  };
+
   /**
    * Request notification permissions on app launch
    * Shows immediately for first-time users
    */
   const requestNotificationPermissionOnLaunch = async () => {
     try {
+      console.log('🔔 requestNotificationPermissionOnLaunch: Starting...');
       // Check if we've ever asked for notification permission
-      const hasAskedBefore = await AsyncStorage.getItem('notificationPermissionAsked');
+      const hasAskedBefore = await AsyncStorage.getItem(NOTIFICATION_PERMISSION_ASKED_KEY);
+      console.log('🔔 requestNotificationPermissionOnLaunch: hasAskedBefore =', hasAskedBefore);
       
       if (hasAskedBefore) {
-        console.log('🔔 Notification permission already asked before - skipping prompt');
-        
-        // Still check if permission is granted and save FCM token if user is authenticated
-        const authStatus = await messaging().hasPermission();
-        const isAuthorized = 
-          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-          
-        if (isAuthorized && state.user?.id) {
+        console.log('🔔 requestNotificationPermissionOnLaunch: User was asked before, calling maybeShowNotificationReminder()...');
+        const notificationsEnabled = await maybeShowNotificationReminder();
+        console.log('🔔 requestNotificationPermissionOnLaunch: maybeShowNotificationReminder returned:', notificationsEnabled);
+        if (notificationsEnabled && state.user?.id) {
           await saveFCMToken(state.user.id);
+        }
+        if (notificationsEnabled) {
+          showBatteryOptimizationPrompt({ delayMs: 1500 }).catch((error) =>
+            console.error('❌ Error scheduling battery optimization reminder:', error)
+          );
         }
         return;
       }
 
       // First time - check current permission status
-      const authStatus = await messaging().hasPermission();
-      const isAuthorized = 
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      console.log('🔔 requestNotificationPermissionOnLaunch: First-time user, checking if already authorized...');
+      const isAuthorized = await isNotificationAuthorized();
+      console.log('🔔 requestNotificationPermissionOnLaunch: isAuthorized =', isAuthorized);
 
       if (isAuthorized) {
         console.log('🔔 Notification permission already granted');
-        await AsyncStorage.setItem('notificationPermissionAsked', 'true');
+        await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
         
         if (state.user?.id) {
           await saveFCMToken(state.user.id);
         }
+        
+        showBatteryOptimizationPrompt({ delayMs: 1500 }).catch((error) =>
+          console.error('❌ Error scheduling battery optimization reminder:', error)
+        );
         return;
       }
 
       // Request permission using native dialog
       console.log('🔔 Requesting notification permission on app launch...');
       const granted = await PermissionService.requestNotificationPermissions();
+      console.log('🔔 requestNotificationPermissionOnLaunch: Permission request result =', granted);
 
       // Mark that we've asked
-      await AsyncStorage.setItem('notificationPermissionAsked', 'true');
+      await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
 
+      // Track analytics
       if (granted) {
         console.log('✅ Notification permission granted on launch');
+        analyticsService.track('notification_permission_granted', {
+          source: 'launch_prompt',
+        });
         
         // Save FCM token if user is authenticated
         if (state.user?.id) {
@@ -127,14 +216,131 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         // Show battery optimization prompt after a delay (only if permission granted)
-        setTimeout(() => {
-          showBatteryOptimizationPrompt();
-        }, 2000); // 2 second delay
+        showBatteryOptimizationPrompt({ delayMs: 2000 }).catch((error) =>
+          console.error('❌ Error scheduling battery optimization reminder:', error)
+        );
       } else {
         console.log('🚫 Notification permission denied on launch');
+        const sessionCount = await getNotificationPromptSessionCount();
+        analyticsService.track('notification_permission_denied', {
+          source: 'launch_prompt',
+          session_count: sessionCount,
+        });
       }
     } catch (error) {
       console.error('❌ Error requesting notification permission on launch:', error);
+    }
+  };
+
+  const maybeShowNotificationReminder = async (): Promise<boolean> => {
+    try {
+      // Check if user has disabled permission reminders
+      const remindersDisabled = await AsyncStorage.getItem(DISABLE_PERMISSION_REMINDERS_KEY);
+      if (remindersDisabled === 'true') {
+        console.log('🔕 User has disabled permission reminders');
+        return false;
+      }
+
+      const alreadyAuthorized = await isNotificationAuthorized();
+      if (alreadyAuthorized) {
+        console.log('🔔 Notifications already enabled - reminder not required');
+        return true;
+      }
+
+      const sessionPrompted = await AsyncStorage.getItem(NOTIFICATION_PROMPT_SESSION_KEY);
+      if (sessionPrompted === 'true') {
+        console.log('🔔 Notification reminder already shown this session - skipping');
+        return false;
+      }
+
+      const lastShownValue = await AsyncStorage.getItem(NOTIFICATION_REMINDER_LAST_SHOWN_KEY);
+      if (lastShownValue) {
+        const lastShown = Number(lastShownValue);
+        if (!Number.isNaN(lastShown) && Date.now() - lastShown < NOTIFICATION_REMINDER_COOLDOWN_MS) {
+          console.log('🔔 Notification reminder within cooldown window - skipping');
+          return false;
+        }
+      }
+
+      await AsyncStorage.setItem(NOTIFICATION_PROMPT_SESSION_KEY, 'true');
+      await AsyncStorage.setItem(NOTIFICATION_REMINDER_LAST_SHOWN_KEY, String(Date.now()));
+
+      // Increment session count and track reminder shown
+      const sessionCount = await incrementNotificationPromptSessionCount();
+      analyticsService.track('notification_reminder_shown', {
+        session_count: sessionCount,
+      });
+
+      return await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Enable Notifications',
+          'Notifications are currently turned off. Enable them to receive real-time updates, new messages, and important reminders from Whispr.',
+          [
+            {
+              text: 'Not Now',
+              style: 'cancel',
+              onPress: () => {
+                console.log('User dismissed notification reminder');
+                analyticsService.track('notification_permission_denied', {
+                  source: 'reminder',
+                  session_count: sessionCount,
+                  action: 'not_now',
+                });
+                resolve(false);
+              },
+            },
+            {
+              text: "Don't Ask Again",
+              style: 'destructive',
+              onPress: async () => {
+                await AsyncStorage.setItem(DISABLE_PERMISSION_REMINDERS_KEY, 'true');
+                console.log('🔕 User disabled permission reminders permanently');
+                analyticsService.track('notification_permission_reminders_disabled', {
+                  session_count: sessionCount,
+                });
+                resolve(false);
+              },
+            },
+            {
+              text: 'Enable',
+              onPress: () => {
+                (async () => {
+                  try {
+                    const granted = await PermissionService.requestNotificationPermissions();
+                    if (granted) {
+                      console.log('✅ Notification permission granted from reminder');
+                      await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
+                      analyticsService.track('notification_permission_granted', {
+                        source: 'reminder',
+                        session_count: sessionCount,
+                      });
+                      if (state.user?.id) {
+                        await saveFCMToken(state.user.id);
+                      }
+                      resolve(true);
+                    } else {
+                      console.log('🚫 Notification permission still denied from reminder');
+                      analyticsService.track('notification_permission_denied', {
+                        source: 'reminder',
+                        session_count: sessionCount,
+                        action: 'enable_denied',
+                      });
+                      resolve(false);
+                    }
+                  } catch (error) {
+                    console.error('❌ Error requesting notification permission from reminder:', error);
+                    resolve(false);
+                  }
+                })();
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+      });
+    } catch (error) {
+      console.error('❌ Error displaying notification reminder:', error);
+      return false;
     }
   };
 
@@ -157,55 +363,116 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   /**
    * Show battery optimization prompt for better notification delivery
    */
-  const showBatteryOptimizationPrompt = async () => {
-    if (Platform.OS !== 'android') return;
+  const showBatteryOptimizationPrompt = async (options: { delayMs?: number } = {}) => {
+    const { delayMs = 0 } = options;
+
+    if (delayMs > 0) {
+      setTimeout(() => {
+        showBatteryOptimizationPrompt({ delayMs: 0 }).catch((error) =>
+          console.error('❌ Delayed battery optimization prompt failed:', error)
+        );
+      }, delayMs);
+      return;
+    }
+
+    if (Platform.OS !== 'android') {
+      return;
+    }
 
     try {
-      // Check if we've already shown battery optimization prompt
-      const hasShownBatteryPrompt = await AsyncStorage.getItem('batteryOptimizationPromptShown');
-      
-      if (hasShownBatteryPrompt) {
-        console.log('🔋 Battery optimization prompt already shown before - skipping');
+      // Check if user has disabled permission reminders
+      const remindersDisabled = await AsyncStorage.getItem(DISABLE_PERMISSION_REMINDERS_KEY);
+      if (remindersDisabled === 'true') {
+        console.log('🔕 User has disabled permission reminders - skipping battery optimization prompt');
         return;
       }
 
-      // Check if battery optimization is already disabled
-      const isIgnored = await PermissionService.isBatteryOptimizationIgnored?.() ?? false;
-      
+      // Migrate legacy flag (one-time prompt) to timestamp-based reminder
+      const legacyFlag = await AsyncStorage.getItem(LEGACY_BATTERY_PROMPT_KEY);
+      if (legacyFlag === 'true') {
+        const existingTimestamp = await AsyncStorage.getItem(BATTERY_REMINDER_LAST_SHOWN_KEY);
+        if (!existingTimestamp) {
+          await AsyncStorage.setItem(BATTERY_REMINDER_LAST_SHOWN_KEY, String(Date.now()));
+        }
+        await AsyncStorage.removeItem(LEGACY_BATTERY_PROMPT_KEY);
+      }
+
+      const notificationsEnabled = await isNotificationAuthorized();
+      if (!notificationsEnabled) {
+        console.log('🔋 Skipping battery optimization prompt because notifications are disabled');
+        return;
+      }
+
+      const sessionPrompted = await AsyncStorage.getItem(BATTERY_PROMPT_SESSION_KEY);
+      if (sessionPrompted === 'true') {
+        console.log('🔋 Battery optimization prompt already shown this session - skipping');
+        return;
+      }
+
+      const lastShownValue = await AsyncStorage.getItem(BATTERY_REMINDER_LAST_SHOWN_KEY);
+      if (lastShownValue) {
+        const lastShown = Number(lastShownValue);
+        if (!Number.isNaN(lastShown) && Date.now() - lastShown < BATTERY_REMINDER_COOLDOWN_MS) {
+          console.log('🔋 Battery optimization prompt within cooldown window - skipping');
+          return;
+        }
+      }
+
+      const isIgnored = await PermissionService.isBatteryOptimizationIgnored?.();
       if (isIgnored) {
         console.log('🔋 Battery optimization already disabled - skipping prompt');
-        await AsyncStorage.setItem('batteryOptimizationPromptShown', 'true');
         return;
       }
 
-      // Show the prompt
+      // Calculate days since last before updating timestamp
+      const daysSinceLast = await getDaysSinceLastBatteryReminder();
+
+      await AsyncStorage.setItem(BATTERY_PROMPT_SESSION_KEY, 'true');
+      await AsyncStorage.setItem(BATTERY_REMINDER_LAST_SHOWN_KEY, String(Date.now()));
+
+      // Track prompt shown with days since last
+      analyticsService.track('battery_optimization_prompt_shown', {
+        days_since_last: daysSinceLast,
+      });
+
       Alert.alert(
         'Optimize Battery Settings',
-        'For the best Whispr experience, please disable battery optimization. This ensures you receive notifications promptly and messages are delivered reliably.\n\nWould you like to adjust your battery settings?',
+        'Battery optimization is currently limiting Whispr in the background. To receive timely notifications and keep messages in sync, please remove restrictions for Whispr.\n\nWould you like to adjust your battery settings now?',
         [
           {
             text: 'Maybe Later',
             style: 'cancel',
+            onPress: () => {
+              console.log('User dismissed battery optimization reminder');
+              analyticsService.track('battery_optimization_prompt_dismissed', {
+                action: 'maybe_later',
+              });
+            },
+          },
+          {
+            text: "Don't Ask Again",
+            style: 'destructive',
             onPress: async () => {
-              console.log('User skipped battery optimization');
-              // Don't mark as shown so we can ask again later
-            }
+              await AsyncStorage.setItem(DISABLE_PERMISSION_REMINDERS_KEY, 'true');
+              console.log('🔕 User disabled permission reminders permanently');
+              analyticsService.track('battery_optimization_reminders_disabled');
+            },
           },
           {
             text: 'Open Settings',
-            onPress: async () => {
-              try {
-                console.log('Opening battery optimization settings...');
-                await PermissionService.openBatteryOptimizationSettings?.();
-                console.log('✅ Battery optimization settings opened');
-                
-                // Mark as shown
-                await AsyncStorage.setItem('batteryOptimizationPromptShown', 'true');
-              } catch (error) {
-                console.error('❌ Error opening battery settings:', error);
-              }
-            }
-          }
+            onPress: () => {
+              (async () => {
+                try {
+                  console.log('Opening battery optimization settings...');
+                  await PermissionService.openBatteryOptimizationSettings?.();
+                  console.log('✅ Battery optimization settings opened');
+                  analyticsService.track('battery_optimization_settings_opened');
+                } catch (error) {
+                  console.error('❌ Error opening battery optimization settings:', error);
+                }
+              })();
+            },
+          },
         ],
         { cancelable: true }
       );
@@ -299,26 +566,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // ============================================================
   
   useEffect(() => {
+    console.log('🚀 AuthContext: useEffect for initialization running...');
     const initializeApp = async () => {
+      console.log('🚀 AuthContext: initializeApp() called');
       // Clear session flag on app start
       try {
-        await AsyncStorage.removeItem('notifPromptedThisSession');
-        console.log('🔔 Cleared notifPromptedThisSession flag on app start');
+        await AsyncStorage.multiRemove([NOTIFICATION_PROMPT_SESSION_KEY, BATTERY_PROMPT_SESSION_KEY]);
+        console.log('🔔 Cleared session prompt flags on app start');
       } catch (error) {
-        console.error('Error clearing notifPromptedThisSession:', error);
+        console.error('Error clearing prompt session flags:', error);
       }
       
       // Check auth status first
+      console.log('🚀 AuthContext: Checking auth status...');
       await checkAuthStatus();
+      console.log('🚀 AuthContext: Auth status check completed');
       
       // Request notification permission on launch (only for first-time users)
+      console.log('🚀 AuthContext: hasRequestedPermissions =', hasRequestedPermissions);
       if (!hasRequestedPermissions) {
+        console.log('🚀 AuthContext: Setting hasRequestedPermissions to true and scheduling notification check...');
         setHasRequestedPermissions(true);
         
         // Small delay to ensure app is fully loaded
         setTimeout(() => {
+          console.log('🚀 AuthContext: Calling requestNotificationPermissionOnLaunch()...');
           requestNotificationPermissionOnLaunch();
         }, 1000);
+      } else {
+        console.log('🚀 AuthContext: hasRequestedPermissions is already true, skipping notification check');
       }
     };
     
