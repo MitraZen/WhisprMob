@@ -447,8 +447,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const buttons: AlertButton[] = [
-        {
-          text: 'Open Settings',
+          {
+            text: 'Open Settings',
           onPress: () => {
             (async () => {
               try {

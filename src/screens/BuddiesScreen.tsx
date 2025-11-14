@@ -9,6 +9,9 @@ import AnonymousChatService from '@/services/anonymousChatService';
 import { BuddyRealtimeService } from '@/services/buddyRealtimeService';
 import { WalkthroughManager } from '@/components/WalkthroughManager';
 import GradientBackground from '@/components/GradientBackground';
+import { BuddiesService } from '@/services/buddiesService';
+import { CONVERSATION_STATES } from '@/config/profile.config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface BuddiesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -29,6 +32,7 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   const [showBuddyOptions, setShowBuddyOptions] = useState(false);
   const [selectedBuddy, setSelectedBuddy] = useState<Buddy | null>(null);
   const [buddyRequestsCount, setBuddyRequestsCount] = useState<number>(0);
+  const [myConversationMode, setMyConversationMode] = useState<string>('open');
   
   const styles = createStyles(theme, isDark);
 
@@ -43,6 +47,78 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
   useEffect(() => {
     loadBuddies(true);
     loadBuddyRequestsCount();
+    loadMyConversationMode();
+  }, [user?.id]);
+
+  // Load current user's conversation mode
+  const loadMyConversationMode = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const profile = await BuddiesService.getUserProfile(user.id);
+      if (profile?.conversation_mode) {
+        setMyConversationMode(profile.conversation_mode);
+      } else {
+        // Try to load from local storage as fallback
+        try {
+          const localMode = await AsyncStorage.getItem(`conversation_mode_${user.id}`);
+          if (localMode) {
+            setMyConversationMode(localMode);
+          } else {
+            setMyConversationMode('open');
+          }
+        } catch (storageError) {
+          console.error('Error loading conversation mode from local storage:', storageError);
+          setMyConversationMode('open');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading conversation mode:', error);
+      setMyConversationMode('open');
+    }
+  };
+
+  // Set up real-time subscription for conversation mode changes
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const setupRealtimeSubscription = async () => {
+      try {
+        const { supabase } = await import('@/config/supabase');
+        
+        const channel = supabase
+          .channel(`my_conversation_mode:${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'user_profiles',
+              filter: `id=eq.${user.id}`,
+            },
+            (payload) => {
+              if (payload.new?.conversation_mode) {
+                setMyConversationMode(payload.new.conversation_mode);
+              }
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      } catch (error) {
+        console.error('Error setting up real-time subscription for conversation mode:', error);
+      }
+    };
+
+    const cleanup = setupRealtimeSubscription();
+
+    return () => {
+      if (cleanup) {
+        cleanup.then(fn => fn && fn());
+      }
+    };
   }, [user?.id]);
 
   // Smart refresh strategy - only refresh when app becomes active or user manually refreshes
@@ -429,7 +505,28 @@ export const BuddiesScreen: React.FC<BuddiesScreenProps> = ({ onNavigate, user, 
         >
           <Icon name="arrow-back" size={24} color={theme.colors.onSurface} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Buddies</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Buddies</Text>
+          {(() => {
+            const modeConfig = CONVERSATION_STATES.find(s => s.id === myConversationMode);
+            if (modeConfig) {
+              return (
+                <TouchableOpacity
+                  style={[styles.myConversationModeBadge, { backgroundColor: modeConfig.color + '20' }]}
+                  onPress={() => onNavigate('profile')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.myConversationModeEmoji}>{modeConfig.emoji}</Text>
+                  <Text style={[styles.myConversationModeText, { color: modeConfig.color }]}>
+                    {modeConfig.label}
+                  </Text>
+                  <Icon name="chevron-forward" size={14} color={modeConfig.color} style={styles.myConversationModeChevron} />
+                </TouchableOpacity>
+              );
+            }
+            return null;
+          })()}
+        </View>
         <View style={styles.headerButtons}>
           <TouchableOpacity 
             style={styles.buddyRequestsButton}
@@ -704,10 +801,36 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     borderRadius: borderRadius.full,
     backgroundColor: theme.colors.surfaceVariant,
   },
+  headerTitleContainer: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
   headerTitle: {
     ...theme.typography.headlineMedium,
     color: theme.colors.onSurface,
     fontWeight: 'bold',
+    marginBottom: spacing.xs,
+  },
+  myConversationModeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+  },
+  myConversationModeEmoji: {
+    fontSize: 14,
+    marginRight: spacing.xs,
+  },
+  myConversationModeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginRight: spacing.xs,
+  },
+  myConversationModeChevron: {
+    marginLeft: spacing.xs,
   },
   headerButtons: {
     flexDirection: 'row',

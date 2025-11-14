@@ -59,62 +59,66 @@ serve(async (req) => {
       <p style="color: #666; font-size: 12px;">This is an automated message from Whispr. Please do not reply.</p>
     `.trim()
 
-    // Use Gmail SMTP (using same credentials as Supabase SMTP config)
-    // Get Gmail credentials from environment variables
-    const gmailUser = Deno.env.get('GMAIL_USER') || Deno.env.get('SMTP_USER')
-    const gmailAppPassword = Deno.env.get('GMAIL_APP_PASSWORD') || Deno.env.get('SMTP_PASSWORD')
+    // Use Resend API for email sending
+    // Get Resend credentials from environment variables
+    const resendApiKey = Deno.env.get('RESEND_API_KEY')
+    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'Whispr <noreply@resend.dev>'
     
-    if (!gmailUser || !gmailAppPassword) {
-      console.error('❌ Gmail credentials not configured')
+    if (!resendApiKey) {
+      console.error('❌ Resend API key not configured')
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: 'Gmail SMTP not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD environment variables.' 
+          error: 'Resend API not configured. Please set RESEND_API_KEY environment variable in Supabase Edge Function settings.' 
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     try {
-      console.log('Sending email via Gmail SMTP...')
+      console.log('Sending email via Resend API...')
       
-      // Use denomailer library for SMTP email sending
-      const { SMTPClient } = await import('https://deno.land/x/denomailer@1.6.0/mod.ts')
-      
-      const client = new SMTPClient({
-        connection: {
-          hostname: 'smtp.gmail.com',
-          port: 465, // Use implicit TLS to avoid STARTTLS handshake issues on 587
-          tls: true,
-          auth: {
-            username: gmailUser,
-            password: gmailAppPassword,
-          },
+      // Call Resend API
+      const resendResponse = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          from: resendFromEmail,
+          to: [email],
+          subject: emailSubject,
+          text: plainTextBody,
+          html: emailBody,
+        }),
       })
-      
-      await client.send({
-        from: gmailUser,
-        to: email,
-        subject: emailSubject,
-        content: plainTextBody,
-        html: emailBody,
-      })
-      
-      await client.close()
-      
-      console.log('✅ Email sent successfully via Gmail SMTP')
+
+      const resendData = await resendResponse.json()
+
+      if (!resendResponse.ok) {
+        console.error('❌ Resend API error:', resendData)
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Failed to send email: ${resendData.message || 'Unknown error'}` 
+          }),
+          { status: resendResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      console.log('✅ Email sent successfully via Resend API:', resendData)
       return new Response(
-        JSON.stringify({ success: true, message: 'Reset code email sent successfully' }),
+        JSON.stringify({ success: true, message: 'Reset code email sent successfully', data: resendData }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
       
-    } catch (gmailError) {
-      console.error('❌ Gmail SMTP error:', gmailError)
+    } catch (resendError) {
+      console.error('❌ Resend API error:', resendError)
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Failed to send email: ${gmailError.message || 'Unknown error'}` 
+          error: `Failed to send email: ${resendError.message || 'Unknown error'}` 
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )

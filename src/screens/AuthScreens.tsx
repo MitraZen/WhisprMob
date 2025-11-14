@@ -108,13 +108,34 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
 
     setIsLoading(true);
     try {
-      const { user, error } = await AuthService.signUp(email, password, selectedMood, username);
+      const { user, error, requiresEmailConfirmation } = await AuthService.signUp(email, password, selectedMood, username);
       
       if (error) {
         Alert.alert('Sign Up Failed', error);
       } else if (user) {
-        await setAuthenticatedUser(user);
-        onSignUpSuccess(user);
+        // Show email verification notification if required
+        if (requiresEmailConfirmation) {
+          Alert.alert(
+            '📧 Verification Email Sent',
+            `A verification email has been sent to:\n\n${email}\n\nPlease check your inbox and click the verification link to complete your account setup.\n\nComplete your verification for seamless access to your account in the future.`,
+            [
+              {
+                text: 'Got It',
+                onPress: async () => {
+                  // Still proceed with signup success flow
+                  // User will need to verify email before full access
+                  await setAuthenticatedUser(user);
+                  onSignUpSuccess(user);
+                }
+              }
+            ],
+            { cancelable: false }
+          );
+        } else {
+          // No email confirmation required, proceed normally
+          await setAuthenticatedUser(user);
+          onSignUpSuccess(user);
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred');

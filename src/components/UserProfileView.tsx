@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { theme, spacing, borderRadius, getMoodConfig } from '@/utils/theme';
 import { BuddiesService } from '@/services/buddiesService';
+import { InterestToken } from '@/types/profile.types';
+import { DEFAULT_INTEREST_TOKENS } from '@/config/profile.config';
+import { supabase } from '@/config/supabase';
 
 interface UserProfileViewProps {
   visible: boolean;
@@ -32,6 +35,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [interestTokens, setInterestTokens] = useState<InterestToken[]>([]);
 
   useEffect(() => {
     if (visible && userId) {
@@ -75,6 +79,39 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           isOnline: profile.is_online || false,
           lastSeen: profile.last_seen ? new Date(profile.last_seen) : null,
         });
+        
+        // Load interest tokens from profile
+        try {
+          if (profile.interests) {
+            const savedInterests = typeof profile.interests === 'string' 
+              ? JSON.parse(profile.interests) 
+              : profile.interests;
+            
+            if (Array.isArray(savedInterests) && savedInterests.length > 0) {
+              // Merge with defaults to ensure all tokens are available
+              const savedTokensMap = new Map(savedInterests.map((t: InterestToken) => [t.id, t]));
+              const mergedTokens = DEFAULT_INTEREST_TOKENS.map(defaultToken => {
+                const savedToken = savedTokensMap.get(defaultToken.id);
+                if (savedToken) {
+                  return {
+                    ...defaultToken,
+                    selected: savedToken.selected,
+                    category: savedToken.category || defaultToken.category,
+                  };
+                }
+                return defaultToken;
+              });
+              setInterestTokens(mergedTokens.filter(t => t.selected));
+            } else {
+              setInterestTokens([]);
+            }
+          } else {
+            setInterestTokens([]);
+          }
+        } catch (err) {
+          console.error('Error loading interest tokens:', err);
+          setInterestTokens([]);
+        }
       } else {
         // Show a fallback profile instead of error
         setProfileData({
@@ -228,6 +265,66 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <Text style={styles.detailValue}>{formatJoinDate(profileData.joinDate)}</Text>
                 </View>
               </View>
+
+              {/* Interests */}
+              {interestTokens.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Interests ({interestTokens.length})</Text>
+                  
+                  {/* Group interest tokens by category */}
+                  {(() => {
+                    const groupedTokens = interestTokens.reduce((acc, token) => {
+                      const category = token.category || 'Other';
+                      if (!acc[category]) {
+                        acc[category] = [];
+                      }
+                      acc[category].push(token);
+                      return acc;
+                    }, {} as Record<string, InterestToken[]>);
+
+                    const getCategoryEmoji = (category: string): string => {
+                      const categoryEmojis: Record<string, string> = {
+                        'Lifestyle & Vibes': '🎯',
+                        'Music & Audio': '🎵',
+                        'Social & Modern Interests': '🌍',
+                        'Nature & Outdoors': '🍀',
+                        'Food & Drinks': '🍽️',
+                        'Games & Hobbies': '🎮',
+                        'Travel & Culture': '🚗',
+                        'Mind & Growth': '📚',
+                        'Cute & Aesthetic Interests': '🎁',
+                        'Fitness & Health': '💪',
+                        'Tech & Innovation': '💻',
+                      };
+                      return categoryEmojis[category] || '📌';
+                    };
+
+                    return (
+                      <>
+                        {Object.entries(groupedTokens).map(([category, tokens]) => (
+                          <View key={category} style={styles.interestCategorySection}>
+                            <View style={styles.interestCategoryHeader}>
+                              <Text style={styles.interestCategoryEmoji}>{getCategoryEmoji(category)}</Text>
+                              <Text style={styles.interestCategoryTitle}>{category}</Text>
+                            </View>
+                            <View style={styles.interestTokensGrid}>
+                              {tokens.map((token) => (
+                                <View
+                                  key={token.id}
+                                  style={styles.interestTokenChip}
+                                >
+                                  <Text style={styles.interestTokenEmoji}>{token.emoji}</Text>
+                                  <Text style={styles.interestTokenLabel}>{token.label}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </View>
+              )}
             </ScrollView>
           ) : null}
         </View>
@@ -410,6 +507,50 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     flex: 1,
     textAlign: 'right',
+  },
+  interestCategorySection: {
+    marginBottom: 20,
+  },
+  interestCategoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  interestCategoryEmoji: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  interestCategoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  interestTokensGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  interestTokenChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  interestTokenEmoji: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  interestTokenLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.onSurface,
   },
 });
 

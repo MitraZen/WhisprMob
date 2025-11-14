@@ -185,10 +185,10 @@ const AppNavigator = () => {
           if ((currentScreen === 'signup' || currentScreen === 'signin') && screen === 'welcome') {
             setNavigationHistory(['welcome']);
           } else {
-            setNavigationHistory(prev => {
-              const safeHistory = SafeNavigation.getSafeNavigationHistory(prev, isAuthenticated);
-              return [...safeHistory, screen];
-            });
+          setNavigationHistory(prev => {
+            const safeHistory = SafeNavigation.getSafeNavigationHistory(prev, isAuthenticated);
+            return [...safeHistory, screen];
+          });
           }
         },
         SafeNavigation.getFallbackScreen(isAuthenticated, isProfileComplete)

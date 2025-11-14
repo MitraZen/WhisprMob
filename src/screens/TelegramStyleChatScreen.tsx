@@ -24,6 +24,9 @@ import { EnhancedBuddyProfileView } from '@/components/EnhancedBuddyProfileView'
 import { getTextInputColor, getPlaceholderTextColor } from '@/utils/textColorUtils';
 import { messageReactionsService, Emoji } from '@/services/messageReactionsService';
 import { messageRepliesService, ReplyInfo } from '@/services/messageRepliesService';
+import { CONVERSATION_STATES } from '@/config/profile.config';
+import { BuddiesService } from '@/services/buddiesService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -404,6 +407,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const lastTypingEmitRef = useRef<number>(0);
   const typingChannelRef = useRef<any>(null);
   
+  // Conversation mode state (for the buddy you're chatting with)
+  const [buddyConversationMode, setBuddyConversationMode] = useState<string>('open');
+  
   // Scroll tracking and new message banner state
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
@@ -467,6 +473,68 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       setTimeout(markAsRead, 500);
     }
   }, [buddy?.id, user?.id, onMessagesRead]);
+
+  // Load conversation mode for the buddy (the person you're chatting with)
+  useEffect(() => {
+    const buddyUserId = buddy?.buddyUserId || buddy?.id;
+    if (!buddyUserId) return;
+
+    const loadBuddyConversationMode = async () => {
+      try {
+        const profile = await BuddiesService.getUserProfile(buddyUserId);
+        if (profile?.conversation_mode) {
+          setBuddyConversationMode(profile.conversation_mode);
+        } else {
+          // Default to 'open' if not set
+          setBuddyConversationMode('open');
+        }
+      } catch (error) {
+        console.error('Error loading buddy conversation mode:', error);
+        setBuddyConversationMode('open');
+      }
+    };
+    
+    loadBuddyConversationMode();
+
+    // Set up real-time subscription to listen for conversation mode changes
+    const setupRealtimeSubscription = async () => {
+      try {
+        const { supabase } = await import('@/config/supabase');
+        
+        const channel = supabase
+          .channel(`user_profile:${buddyUserId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'user_profiles',
+              filter: `id=eq.${buddyUserId}`,
+            },
+            (payload) => {
+              if (payload.new?.conversation_mode) {
+                setBuddyConversationMode(payload.new.conversation_mode);
+              }
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      } catch (error) {
+        console.error('Error setting up real-time subscription for conversation mode:', error);
+      }
+    };
+
+    const cleanup = setupRealtimeSubscription();
+
+    return () => {
+      if (cleanup) {
+        cleanup.then(fn => fn && fn());
+      }
+    };
+  }, [buddy?.buddyUserId, buddy?.id]);
 
   useEffect(() => {
     if (buddy?.id) {
@@ -1268,7 +1336,22 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             <Text style={styles.buddyName}>{getOtherUserName()}</Text>
             <Icon name="chevron-down" size={16} color={theme.colors.onSurfaceVariant} style={styles.chevronIcon} />
           </TouchableOpacity>
-          <Text style={styles.buddyStatus}>Online</Text>
+          <View style={styles.statusContainer}>
+            {(() => {
+              const modeConfig = CONVERSATION_STATES.find(s => s.id === buddyConversationMode);
+              if (modeConfig) {
+                return (
+                  <View style={[styles.conversationModeBadge, { backgroundColor: modeConfig.color + '20' }]}>
+                    <Text style={styles.conversationModeEmoji}>{modeConfig.emoji}</Text>
+                    <Text style={[styles.conversationModeText, { color: modeConfig.color }]}>
+                      {modeConfig.label}
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            })()}
+          </View>
         </View>
         
         <TouchableOpacity 
@@ -1596,9 +1679,30 @@ const createStyles = (theme: any) => StyleSheet.create({
   chevronIcon: {
     marginLeft: 4,
   },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
   buddyStatus: {
-    fontSize: 14,
+    fontSize: 12,
     color: theme.colors.onSurfaceVariant,
+  },
+  conversationModeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  conversationModeEmoji: {
+    fontSize: 12,
+  },
+  conversationModeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   searchButton: {
     padding: 8,

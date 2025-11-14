@@ -12,12 +12,15 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
+import { supabase } from '@/config/supabase';
 import EnhancedBuddyProfileService, {
   EnhancedBuddyProfile,
   UserAchievement,
   UserInterest,
   TrustMarker,
 } from '@/services/enhancedBuddyProfileService';
+import { InterestToken } from '@/types/profile.types';
+import { DEFAULT_INTEREST_TOKENS } from '@/config/profile.config';
 
 interface EnhancedBuddyProfileViewProps {
   visible: boolean;
@@ -39,6 +42,7 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'achievements' | 'interests' | 'trust'>('achievements');
+  const [interestTokens, setInterestTokens] = useState<InterestToken[]>([]);
 
   useEffect(() => {
     if (visible && userId) {
@@ -55,6 +59,45 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
       
       if (profile) {
         setProfileData(profile);
+        
+        // Load interest tokens from profile - fetch full profile to get interests field
+        try {
+          const { data: profileData } = await supabase
+            .from('user_profiles')
+            .select('interests')
+            .eq('id', userId)
+            .single();
+          
+          if (profileData?.interests) {
+            const savedInterests = typeof profileData.interests === 'string' 
+              ? JSON.parse(profileData.interests) 
+              : profileData.interests;
+            
+            if (Array.isArray(savedInterests) && savedInterests.length > 0) {
+              // Merge with defaults to ensure all tokens are available
+              const savedTokensMap = new Map(savedInterests.map((t: InterestToken) => [t.id, t]));
+              const mergedTokens = DEFAULT_INTEREST_TOKENS.map(defaultToken => {
+                const savedToken = savedTokensMap.get(defaultToken.id);
+                if (savedToken) {
+                  return {
+                    ...defaultToken,
+                    selected: savedToken.selected,
+                    category: savedToken.category || defaultToken.category,
+                  };
+                }
+                return defaultToken;
+              });
+              setInterestTokens(mergedTokens.filter(t => t.selected));
+            } else {
+              setInterestTokens([]);
+            }
+          } else {
+            setInterestTokens([]);
+          }
+        } catch (err) {
+          console.error('Error loading interest tokens:', err);
+          setInterestTokens([]);
+        }
       } else {
         setError('Failed to load profile');
       }
@@ -174,13 +217,85 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
         );
 
       case 'interests':
+        // Group interest tokens by category
+        const groupedTokens = interestTokens.reduce((acc, token) => {
+          const category = token.category || 'Other';
+          if (!acc[category]) {
+            acc[category] = [];
+          }
+          acc[category].push(token);
+          return acc;
+        }, {} as Record<string, InterestToken[]>);
+
+        const getCategoryEmoji = (category: string): string => {
+          const categoryEmojis: Record<string, string> = {
+            'Lifestyle & Vibes': '🎯',
+            'Music & Audio': '🎵',
+            'Social & Modern Interests': '🌍',
+            'Nature & Outdoors': '🍀',
+            'Food & Drinks': '🍽️',
+            'Games & Hobbies': '🎮',
+            'Travel & Culture': '🚗',
+            'Mind & Growth': '📚',
+            'Cute & Aesthetic Interests': '🎁',
+            'Fitness & Health': '💪',
+            'Tech & Innovation': '💻',
+          };
+          return categoryEmojis[category] || '📌';
+        };
+
         return (
           <View style={styles.tabContent}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              My Interests ({profileData.interests.length})
+              Interests ({interestTokens.length})
             </Text>
-            {profileData.interests.length > 0 ? (
-              profileData.interests.map(renderInterestItem)
+            
+            {interestTokens.length > 0 ? (
+              <>
+                {Object.entries(groupedTokens).map(([category, tokens]) => (
+                  <View key={category} style={styles.interestCategorySection}>
+                    <View style={styles.interestCategoryHeader}>
+                      <Text style={styles.interestCategoryEmoji}>{getCategoryEmoji(category)}</Text>
+                      <Text style={[styles.interestCategoryTitle, { color: theme.colors.text }]}>
+                        {category}
+                      </Text>
+                    </View>
+                    <View style={styles.interestTokensGrid}>
+                      {tokens.map((token) => (
+                        <View
+                          key={token.id}
+                          style={[
+                            styles.interestTokenChip,
+                            { backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.border }
+                          ]}
+                        >
+                          <Text style={styles.interestTokenEmoji}>{token.emoji}</Text>
+                          <Text style={[styles.interestTokenLabel, { color: theme.colors.text }]}>
+                            {token.label}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+                
+                {/* Also show legacy interests if any */}
+                {profileData.interests && profileData.interests.length > 0 && (
+                  <>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text, marginTop: 24 }]}>
+                      Additional Interests ({profileData.interests.length})
+                    </Text>
+                    {profileData.interests.map(renderInterestItem)}
+                  </>
+                )}
+              </>
+            ) : profileData.interests && profileData.interests.length > 0 ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                  Interests ({profileData.interests.length})
+                </Text>
+                {profileData.interests.map(renderInterestItem)}
+              </>
             ) : (
               <View style={styles.emptyState}>
                 <Text style={[styles.emptyStateText, { color: theme.colors.textSecondary }]}>
@@ -662,6 +777,46 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 16,
     textAlign: 'center',
+  },
+  interestCategorySection: {
+    marginBottom: 24,
+  },
+  interestCategoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  interestCategoryEmoji: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  interestCategoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  interestTokensGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  interestTokenChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  interestTokenEmoji: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  interestTokenLabel: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

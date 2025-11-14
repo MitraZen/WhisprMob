@@ -13,7 +13,7 @@ export class AuthService {
   }
 
   // Sign up with email and password
-  static async signUp(email: string, password: string, mood: MoodType, username: string): Promise<{ user: User | null; error: string | null }> {
+  static async signUp(email: string, password: string, mood: MoodType, username: string): Promise<{ user: User | null; error: string | null; requiresEmailConfirmation?: boolean }> {
     try {
       // Check if username is already taken BEFORE creating auth user
       const usernameCheckResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${username}`, {
@@ -203,7 +203,14 @@ export class AuthService {
         // Continue anyway - user profile is created
       }
 
-      return { user, error: null };
+      // Check if email confirmation is required (session is null when email confirmation is enabled)
+      const requiresEmailConfirmation = !authData?.session && !authData?.access_token;
+      
+      return { 
+        user, 
+        error: null,
+        requiresEmailConfirmation: requiresEmailConfirmation || false
+      };
     } catch (error) {
       console.error('Sign up error:', error);
       return { user: null, error: error instanceof Error ? error.message : 'Unknown error' };
