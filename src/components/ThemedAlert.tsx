@@ -52,12 +52,12 @@ export const ThemedAlert: React.FC<ThemedAlertProps> = ({
           )}
           
           {/* Buttons */}
-          <View style={styles.buttonContainer}>
+          <View style={buttons.length >= 3 ? styles.buttonContainerVertical : styles.buttonContainer}>
             {buttons.map((button, index) => (
               <TouchableOpacity
                 key={index}
                 style={[
-                  styles.button,
+                  buttons.length >= 3 ? styles.buttonVertical : styles.button,
                   button.style === 'cancel' && styles.cancelButton,
                   button.style === 'destructive' && styles.destructiveButton,
                   buttons.length === 1 && styles.singleButton
@@ -69,11 +69,15 @@ export const ThemedAlert: React.FC<ThemedAlertProps> = ({
                   onClose();
                 }}
               >
-                <Text style={[
-                  styles.buttonText,
-                  button.style === 'cancel' && styles.cancelButtonText,
-                  button.style === 'destructive' && styles.destructiveButtonText
-                ]}>
+                <Text 
+                  style={[
+                    styles.buttonText,
+                    button.style === 'cancel' && styles.cancelButtonText,
+                    button.style === 'destructive' && styles.destructiveButtonText
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={false}
+                >
                   {button.text}
                 </Text>
               </TouchableOpacity>
@@ -161,6 +165,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     width: '100%',
     gap: spacing.sm,
   },
+  buttonContainerVertical: {
+    flexDirection: 'column',
+    width: '100%',
+    gap: spacing.sm,
+  },
   button: {
     flex: 1,
     backgroundColor: theme.colors.primary,
@@ -168,6 +177,18 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  buttonVertical: {
+    width: '100%',
+    backgroundColor: theme.colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   singleButton: {
     flex: 1,

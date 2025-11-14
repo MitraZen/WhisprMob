@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AppState, AppStateStatus, Alert, Platform } from 'react-native';
+import { AppState, AppStateStatus, Alert, Platform, AlertButton } from 'react-native';
 import { AuthState, User } from '@/types';
 import { StorageService, generateAnonymousId } from '@/utils/helpers';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
@@ -10,6 +10,7 @@ import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PermissionService from '@/services/permissionService';
 import analyticsService from '@/services/analyticsService';
+import { ThemedAlert } from '@/components/ThemedAlert';
 
 const NOTIFICATION_PERMISSION_ASKED_KEY = 'notificationPermissionAsked';
 const NOTIFICATION_REMINDER_LAST_SHOWN_KEY = 'notificationReminderLastShown';
@@ -82,6 +83,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const [isProfileComplete, setIsProfileComplete] = React.useState<boolean | undefined>(undefined);
   const [hasRequestedPermissions, setHasRequestedPermissions] = React.useState(false);
+  const [alertVisible, setAlertVisible] = React.useState(false);
+  const [alertConfig, setAlertConfig] = React.useState<{
+    title: string;
+    message?: string;
+    buttons: AlertButton[];
+    onResolve?: (value: boolean) => void;
+  } | null>(null);
 
   const isNotificationAuthorized = async (): Promise<boolean> => {
     try {
@@ -272,71 +280,74 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       return await new Promise<boolean>((resolve) => {
-        Alert.alert(
-          'Enable Notifications',
-          'Notifications are currently turned off. Enable them to receive real-time updates, new messages, and important reminders from Whispr.',
-          [
-            {
-              text: 'Not Now',
-              style: 'cancel',
-              onPress: () => {
-                console.log('User dismissed notification reminder');
-                analyticsService.track('notification_permission_denied', {
-                  source: 'reminder',
-                  session_count: sessionCount,
-                  action: 'not_now',
-                });
-                resolve(false);
-              },
-            },
-            {
-              text: "Don't Ask Again",
-              style: 'destructive',
-              onPress: async () => {
-                await AsyncStorage.setItem(DISABLE_PERMISSION_REMINDERS_KEY, 'true');
-                console.log('🔕 User disabled permission reminders permanently');
-                analyticsService.track('notification_permission_reminders_disabled', {
-                  session_count: sessionCount,
-                });
-                resolve(false);
-              },
-            },
-            {
-              text: 'Enable',
-              onPress: () => {
-                (async () => {
-                  try {
-                    const granted = await PermissionService.requestNotificationPermissions();
-                    if (granted) {
-                      console.log('✅ Notification permission granted from reminder');
-                      await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
-                      analyticsService.track('notification_permission_granted', {
-                        source: 'reminder',
-                        session_count: sessionCount,
-                      });
-                      if (state.user?.id) {
-                        await saveFCMToken(state.user.id);
-                      }
-                      resolve(true);
-                    } else {
-                      console.log('🚫 Notification permission still denied from reminder');
-                      analyticsService.track('notification_permission_denied', {
-                        source: 'reminder',
-                        session_count: sessionCount,
-                        action: 'enable_denied',
-                      });
-                      resolve(false);
+        const buttons: AlertButton[] = [
+          {
+            text: 'Enable',
+            onPress: () => {
+              (async () => {
+                try {
+                  const granted = await PermissionService.requestNotificationPermissions();
+                  if (granted) {
+                    console.log('✅ Notification permission granted from reminder');
+                    await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
+                    analyticsService.track('notification_permission_granted', {
+                      source: 'reminder',
+                      session_count: sessionCount,
+                    });
+                    if (state.user?.id) {
+                      await saveFCMToken(state.user.id);
                     }
-                  } catch (error) {
-                    console.error('❌ Error requesting notification permission from reminder:', error);
+                    resolve(true);
+                  } else {
+                    console.log('🚫 Notification permission still denied from reminder');
+                    analyticsService.track('notification_permission_denied', {
+                      source: 'reminder',
+                      session_count: sessionCount,
+                      action: 'enable_denied',
+                    });
                     resolve(false);
                   }
-                })();
-              },
+                } catch (error) {
+                  console.error('❌ Error requesting notification permission:', error);
+                  resolve(false);
+                }
+              })();
             },
-          ],
-          { cancelable: true }
-        );
+          },
+          {
+            text: 'Not Now',
+            style: 'cancel',
+            onPress: () => {
+              console.log('User dismissed notification reminder');
+              analyticsService.track('notification_permission_denied', {
+                source: 'reminder',
+                session_count: sessionCount,
+                action: 'not_now',
+              });
+              resolve(false);
+            },
+          },
+          {
+            text: 'Never Ask',
+            style: 'destructive',
+            onPress: async () => {
+              await AsyncStorage.setItem(DISABLE_PERMISSION_REMINDERS_KEY, 'true');
+              console.log('🔕 User disabled permission reminders permanently');
+              analyticsService.track('notification_permission_reminders_disabled', {
+                session_count: sessionCount,
+              });
+              resolve(false);
+            },
+          },
+        ];
+
+        setAlertConfig({
+          title: 'Enable Notifications',
+          message: 'Notifications are currently turned off. Enable them to receive real-time updates, new messages, and important reminders from Whispr.',
+          buttons,
+          onResolve: resolve,
+        });
+        setAlertVisible(true);
       });
     } catch (error) {
       console.error('❌ Error displaying notification reminder:', error);
@@ -435,47 +446,49 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         days_since_last: daysSinceLast,
       });
 
-      Alert.alert(
-        'Optimize Battery Settings',
-        'Battery optimization is currently limiting Whispr in the background. To receive timely notifications and keep messages in sync, please remove restrictions for Whispr.\n\nWould you like to adjust your battery settings now?',
-        [
-          {
-            text: 'Maybe Later',
-            style: 'cancel',
-            onPress: () => {
-              console.log('User dismissed battery optimization reminder');
-              analyticsService.track('battery_optimization_prompt_dismissed', {
-                action: 'maybe_later',
-              });
-            },
+      const buttons: AlertButton[] = [
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            (async () => {
+              try {
+                console.log('Opening battery optimization settings...');
+                await PermissionService.openBatteryOptimizationSettings?.();
+                console.log('✅ Battery optimization settings opened');
+                analyticsService.track('battery_optimization_settings_opened');
+              } catch (error) {
+                console.error('❌ Error opening battery optimization settings:', error);
+              }
+            })();
           },
-          {
-            text: "Don't Ask Again",
-            style: 'destructive',
-            onPress: async () => {
-              await AsyncStorage.setItem(DISABLE_PERMISSION_REMINDERS_KEY, 'true');
-              console.log('🔕 User disabled permission reminders permanently');
-              analyticsService.track('battery_optimization_reminders_disabled');
-            },
+        },
+        {
+          text: 'Maybe Later',
+          style: 'cancel',
+          onPress: () => {
+            console.log('User dismissed battery optimization reminder');
+            analyticsService.track('battery_optimization_prompt_dismissed', {
+              action: 'maybe_later',
+            });
           },
-          {
-            text: 'Open Settings',
-            onPress: () => {
-              (async () => {
-                try {
-                  console.log('Opening battery optimization settings...');
-                  await PermissionService.openBatteryOptimizationSettings?.();
-                  console.log('✅ Battery optimization settings opened');
-                  analyticsService.track('battery_optimization_settings_opened');
-                } catch (error) {
-                  console.error('❌ Error opening battery optimization settings:', error);
-                }
-              })();
-            },
+        },
+        {
+          text: 'Never Ask',
+          style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.setItem(DISABLE_PERMISSION_REMINDERS_KEY, 'true');
+            console.log('🔕 User disabled permission reminders permanently');
+            analyticsService.track('battery_optimization_reminders_disabled');
           },
-        ],
-        { cancelable: true }
-      );
+        },
+      ];
+
+      setAlertConfig({
+        title: 'Optimize Battery Settings',
+        message: 'Battery optimization is currently limiting Whispr in the background. To receive timely notifications and keep messages in sync, please remove restrictions for Whispr.\n\nWould you like to adjust your battery settings now?',
+        buttons,
+      });
+      setAlertVisible(true);
     } catch (error) {
       console.error('❌ Error showing battery optimization prompt:', error);
     }
@@ -939,6 +952,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const handleAlertClose = () => {
+    setAlertVisible(false);
+    if (alertConfig?.onResolve) {
+      alertConfig.onResolve(false);
+    }
+    setAlertConfig(null);
+  };
+
   const value: AuthContextType = {
     ...state,
     login,
@@ -950,7 +971,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     markProfileComplete: (complete: boolean) => setIsProfileComplete(complete),
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      {alertConfig && (
+        <ThemedAlert
+          visible={alertVisible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          buttons={alertConfig.buttons}
+          onClose={handleAlertClose}
+          icon="information-circle"
+          iconColor="#3b82f6"
+        />
+      )}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = (): AuthContextType => {

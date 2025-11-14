@@ -9,6 +9,7 @@ import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
 import { useAuth } from '@/store/AuthContext';
 import UserProfileDataService from '@/services/userProfileDataService';
+import { QueryCache } from '@/services/enhancedQueryCache';
 
 interface ProfileScreenProps {
   onNavigate: (screen: string) => void;
@@ -520,15 +521,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
       
       // Only add fields if they have values (to avoid null errors)
       if (profileData.displayName && profileData.displayName !== 'Anonymous User') {
-        updateData.username = profileData.displayName;
+        updateData.display_name = profileData.displayName;
       }
       if (profileData.username && profileData.username !== 'anonymous') {
         updateData.username = profileData.username;
       }
       
-      // Handle date of birth properly
+      // Handle date of birth properly - use date_of_birth field
       if (profileData.dateOfBirth && profileData.dateOfBirth instanceof Date && !isNaN(profileData.dateOfBirth.getTime())) {
-        updateData.age = profileData.dateOfBirth.toISOString();
+        // Format as YYYY-MM-DD for date type in database
+        const year = profileData.dateOfBirth.getFullYear();
+        const month = String(profileData.dateOfBirth.getMonth() + 1).padStart(2, '0');
+        const day = String(profileData.dateOfBirth.getDate()).padStart(2, '0');
+        updateData.date_of_birth = `${year}-${month}-${day}`;
+        // Also update age for backward compatibility
+        const age = calculateAge(profileData.dateOfBirth);
+        updateData.age = age;
       }
       
       if (profileData.location && profileData.location !== 'Not specified') {
@@ -546,6 +554,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
 
       console.log('Updating profile with data:', updateData);
       await BuddiesService.updateUserProfile(user.id, updateData);
+      
+      // Invalidate cache to ensure fresh data is fetched
+      QueryCache.invalidateUserProfile(user.id);
+      
+      // Reload profile data to reflect changes immediately
+      await loadProfileData();
       
       setShowEditModal(false);
       setOriginalProfileData(profileData);
@@ -1567,53 +1581,59 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               }
             ]}
           >
-            <View style={styles.trustMarkersContainer}>
-              {trustMarkers.filter(m => m.isEarned).slice(0, 6).map((marker) => (
-                <View key={marker.id} style={styles.trustMarker}>
-                  <View style={[
-                    styles.trustMarkerIconContainer,
-                    { backgroundColor: marker.color + '20' }
-                  ]}>
-                    <Text style={styles.trustMarkerIcon}>{marker.icon}</Text>
-                  </View>
-                  <Text style={styles.trustMarkerTitle}>{marker.title}</Text>
-                  <Text style={styles.trustMarkerPoints}>+{marker.points}</Text>
-                </View>
-              ))}
-            </View>
-            
-            {/* Progress Indicators for Unearned Markers */}
-            {trustMarkers.filter(m => !m.isEarned).length > 0 && (
-              <View style={styles.progressMarkersContainer}>
-                <Text style={styles.progressMarkersTitle}>In Progress</Text>
-                <View style={styles.progressMarkersList}>
-                  {trustMarkers.filter(m => !m.isEarned).slice(0, 3).map((marker) => (
-                    <View key={marker.id} style={styles.progressMarker}>
-                      <View style={styles.progressMarkerIconContainer}>
-                        <Text style={styles.progressMarkerIcon}>{marker.icon}</Text>
-                      </View>
-                      <View style={styles.progressMarkerContent}>
-                        <Text style={styles.progressMarkerTitle}>{marker.title}</Text>
-                        <View style={styles.progressBar}>
-                          <View 
-                            style={[
-                              styles.progressBarFill,
-                              { 
-                                width: `${(marker.progress / marker.maxProgress) * 100}%`,
-                                backgroundColor: marker.color
-                              }
-                            ]} 
-                          />
-                        </View>
-                        <Text style={styles.progressMarkerText}>
-                          {marker.progress}/{marker.maxProgress}
-                        </Text>
-                      </View>
+            <ScrollView 
+              style={styles.trustMarkersScrollView}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              <View style={styles.trustMarkersContainer}>
+                {trustMarkers.filter(m => m.isEarned).slice(0, 6).map((marker) => (
+                  <View key={marker.id} style={styles.trustMarker}>
+                    <View style={[
+                      styles.trustMarkerIconContainer,
+                      { backgroundColor: marker.color + '20' }
+                    ]}>
+                      <Text style={styles.trustMarkerIcon}>{marker.icon}</Text>
                     </View>
-                  ))}
-                </View>
+                    <Text style={styles.trustMarkerTitle}>{marker.title}</Text>
+                    <Text style={styles.trustMarkerPoints}>+{marker.points}</Text>
+                  </View>
+                ))}
               </View>
-            )}
+              
+              {/* Progress Indicators for Unearned Markers */}
+              {trustMarkers.filter(m => !m.isEarned).length > 0 && (
+                <View style={styles.progressMarkersContainer}>
+                  <Text style={styles.progressMarkersTitle}>In Progress</Text>
+                  <View style={styles.progressMarkersList}>
+                    {trustMarkers.filter(m => !m.isEarned).slice(0, 3).map((marker) => (
+                      <View key={marker.id} style={styles.progressMarker}>
+                        <View style={styles.progressMarkerIconContainer}>
+                          <Text style={styles.progressMarkerIcon}>{marker.icon}</Text>
+                        </View>
+                        <View style={styles.progressMarkerContent}>
+                          <Text style={styles.progressMarkerTitle}>{marker.title}</Text>
+                          <View style={styles.progressBar}>
+                            <View 
+                              style={[
+                                styles.progressBarFill,
+                                { 
+                                  width: `${(marker.progress / marker.maxProgress) * 100}%`,
+                                  backgroundColor: marker.color
+                                }
+                              ]} 
+                            />
+                          </View>
+                          <Text style={styles.progressMarkerText}>
+                            {marker.progress}/{marker.maxProgress}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </ScrollView>
           </Animated.View>
           
         </Animated.View>
@@ -1718,48 +1738,54 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
                 }
               ]}
             >
-              <View style={styles.activityList}>
-                {recentActivity.map((activity, index) => (
-                  <TouchableOpacity
-                    key={activity.id}
-                    style={[
-                      styles.activityItem,
-                      index === recentActivity.length - 1 && styles.lastActivityItem
-                    ]}
-                    onPress={() => handleActivityPress(activity)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.activityItemContent}>
-                      <View style={[
-                        styles.activityIconContainer,
-                        { backgroundColor: activity.color + '15' }
-                      ]}>
-                        <Text style={styles.activityIcon}>{activity.icon}</Text>
+              <ScrollView 
+                style={styles.activityScrollView}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+              >
+                <View style={styles.activityList}>
+                  {recentActivity.map((activity, index) => (
+                    <TouchableOpacity
+                      key={activity.id}
+                      style={[
+                        styles.activityItem,
+                        index === recentActivity.length - 1 && styles.lastActivityItem
+                      ]}
+                      onPress={() => handleActivityPress(activity)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.activityItemContent}>
+                        <View style={[
+                          styles.activityIconContainer,
+                          { backgroundColor: activity.color + '15' }
+                        ]}>
+                          <Text style={styles.activityIcon}>{activity.icon}</Text>
+                        </View>
+                        
+                        <View style={styles.activityTextContainer}>
+                          <Text style={styles.activityItemTitle}>{activity.title}</Text>
+                          <Text style={styles.activityItemDescription}>{activity.description}</Text>
+                          <Text style={styles.activityItemTime}>
+                            {formatActivityTime(activity.timestamp)}
+                          </Text>
+                        </View>
+                        
+                        <Icon 
+                          name="chevron-forward" 
+                          size={16} 
+                          color={theme.colors.onSurfaceVariant} 
+                        />
                       </View>
-                      
-                      <View style={styles.activityTextContainer}>
-                        <Text style={styles.activityItemTitle}>{activity.title}</Text>
-                        <Text style={styles.activityItemDescription}>{activity.description}</Text>
-                        <Text style={styles.activityItemTime}>
-                          {formatActivityTime(activity.timestamp)}
-                        </Text>
-                      </View>
-                      
-                      <Icon 
-                        name="chevron-forward" 
-                        size={16} 
-                        color={theme.colors.onSurfaceVariant} 
-                      />
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              
-              <View style={styles.activityFooter}>
-                <Text style={styles.activityFooterText}>
-                  Keep engaging to see more activity! 📱
-                </Text>
-              </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                
+                <View style={styles.activityFooter}>
+                  <Text style={styles.activityFooterText}>
+                    Keep engaging to see more activity! 📱
+                  </Text>
+                </View>
+              </ScrollView>
             </Animated.View>
           </Animated.View>
         )}
@@ -2154,16 +2180,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               <DateTimePicker
                 value={selectedDate}
                 mode="date"
-                display="default"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={(event, date) => {
-                  if (event.type === 'set' && date) {
-                    setSelectedDate(date);
-                    // Auto-close after selection
-                    setTimeout(() => {
+                  if (Platform.OS === 'android') {
+                    // On Android, the picker closes automatically
+                    if (event.type === 'set' && date) {
+                      setSelectedDate(date);
+                      // Update profile data immediately on Android
                       handleDateSelect();
-                    }, 100);
-                  } else if (event.type === 'dismissed') {
-                    setShowDatePicker(false);
+                    } else if (event.type === 'dismissed') {
+                      setShowDatePicker(false);
+                    }
+                  } else {
+                    // On iOS, just update the selected date, user confirms with button
+                    if (date) {
+                      setSelectedDate(date);
+                    }
                   }
                 }}
                 maximumDate={new Date()}
@@ -2171,20 +2203,25 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               />
             </View>
             
-            <View style={styles.editModalActions}>
-              <TouchableOpacity 
-                style={styles.editCancelButton}
-                onPress={() => setShowDatePicker(false)}
-              >
-                <Text style={styles.editCancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.editSaveButton}
-                onPress={handleDateSelect}
-              >
-                <Text style={styles.editSaveButtonText}>Select</Text>
-              </TouchableOpacity>
-            </View>
+            {Platform.OS === 'ios' && (
+              <View style={styles.editModalActions}>
+                <TouchableOpacity 
+                  style={styles.editCancelButton}
+                  onPress={() => setShowDatePicker(false)}
+                >
+                  <Text style={styles.editCancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.editSaveButton}
+                  onPress={() => {
+                    handleDateSelect();
+                    setShowDatePicker(false);
+                  }}
+                >
+                  <Text style={styles.editSaveButtonText}>Select</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -2209,7 +2246,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, user }
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.privacyModalContent} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.privacyModalContent} 
+              contentContainerStyle={styles.privacyModalContentContainer}
+              showsVerticalScrollIndicator={true}
+            >
               {/* Profile Visibility */}
               <View style={styles.privacySection}>
                 <Text style={styles.privacySectionTitle}>Profile Visibility</Text>
@@ -2759,6 +2800,9 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   activityContent: {
     overflow: 'hidden',
+  },
+  activityScrollView: {
+    flex: 1,
   },
   activityList: {
     paddingHorizontal: spacing.lg,
@@ -3476,7 +3520,11 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   privacyModalContent: {
     flex: 1,
+  },
+  privacyModalContentContainer: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
   },
   privacySection: {
     marginVertical: spacing.lg,
@@ -3989,6 +4037,9 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   trustMarkersContent: {
     overflow: 'hidden',
+  },
+  trustMarkersScrollView: {
+    flex: 1,
   },
   trustScoreContainer: {
     alignItems: 'center',
