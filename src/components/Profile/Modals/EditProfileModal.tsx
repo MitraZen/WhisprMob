@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, TextInput, Platform, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, TextInput, Platform, Alert, ActivityIndicator } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
@@ -12,6 +12,7 @@ import { spacing, borderRadius } from '@/utils/themes';
 import { ProfileData } from '@/types/profile.types';
 import { GENDER_OPTIONS } from '@/config/profile.config';
 import { calculateAge } from '@/utils/profile.utils';
+import { getUserCountry } from '@/utils/locationService';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -46,6 +47,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     profileData.dateOfBirth || new Date(2000, 0, 1)
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   // Reset edited data when modal opens/closes or profileData changes
   useEffect(() => {
@@ -138,15 +140,45 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const handleGetLocation = async () => {
     try {
-      // This would integrate with actual location services
+      setIsGettingLocation(true);
+      
+      // Get user's country based on current location
+      const country = await getUserCountry();
+      
+      // Update the location field with the country name
+      setEditedData(prev => ({ ...prev, location: country }));
+      
       Alert.alert(
-        'Location Services',
-        'Location services will be integrated here. This will automatically detect your current location.',
+        'Location Updated',
+        `Your location has been set to ${country}.`,
         [{ text: 'OK' }]
       );
     } catch (error) {
       console.error('Error getting location:', error);
-      Alert.alert('Error', 'Unable to get your location. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Provide helpful error messages
+      if (errorMessage.includes('permission')) {
+        Alert.alert(
+          'Location Permission Required',
+          'Please enable location permissions in your device settings to automatically detect your country.',
+          [{ text: 'OK' }]
+        );
+      } else if (errorMessage.includes('timeout')) {
+        Alert.alert(
+          'Location Timeout',
+          'Unable to get your location. Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Location Error',
+          'Unable to detect your location. Please try again or set it manually.',
+          [{ text: 'OK' }]
+        );
+      }
+    } finally {
+      setIsGettingLocation(false);
     }
   };
 
@@ -213,18 +245,28 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
             <View style={styles.field}>
               <Text style={styles.label}>Location</Text>
               <TouchableOpacity
-                style={styles.dateButton}
+                style={[styles.dateButton, isGettingLocation && styles.dateButtonDisabled]}
                 onPress={handleGetLocation}
+                disabled={isGettingLocation}
               >
-                <Text style={styles.dateText}>
-                  {editedData.location === 'Not specified' 
-                    ? 'Get Current Location' 
-                    : editedData.location}
-                </Text>
-                <Icon name="location" size={20} color={theme.colors.primary} />
+                {isGettingLocation ? (
+                  <View style={styles.locationLoadingContainer}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginRight: spacing.sm }} />
+                    <Text style={styles.dateText}>Detecting location...</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.dateText}>
+                      {editedData.location === 'Not specified' 
+                        ? 'Get Current Location' 
+                        : editedData.location}
+                    </Text>
+                    <Icon name="location" size={20} color={theme.colors.primary} />
+                  </>
+                )}
               </TouchableOpacity>
               <Text style={styles.locationHint}>
-                Location is automatically detected for security
+                Tap to automatically detect your country based on your current location
               </Text>
             </View>
 
@@ -444,6 +486,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    minHeight: 48,
+  },
+  dateButtonDisabled: {
+    opacity: 0.6,
+  },
+  locationLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   dateText: {
     ...theme.typography.bodyMedium,

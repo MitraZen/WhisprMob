@@ -161,20 +161,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   /**
    * Request notification permissions on app launch
    * Shows immediately for first-time users
+   * Uses user-specific key to ensure each new user gets the popup
+   * @param userId Optional user ID - if not provided, uses state.user?.id
    */
-  const requestNotificationPermissionOnLaunch = async () => {
+  const requestNotificationPermissionOnLaunch = async (userId?: string) => {
     try {
       console.log('🔔 requestNotificationPermissionOnLaunch: Starting...');
-      // Check if we've ever asked for notification permission
-      const hasAskedBefore = await AsyncStorage.getItem(NOTIFICATION_PERMISSION_ASKED_KEY);
-      console.log('🔔 requestNotificationPermissionOnLaunch: hasAskedBefore =', hasAskedBefore);
+      
+      // Use provided userId or fall back to state.user?.id
+      const currentUserId = userId || state.user?.id;
+      
+      // Only show notification popup if user is authenticated
+      if (!currentUserId) {
+        console.log('🔔 requestNotificationPermissionOnLaunch: No authenticated user, skipping notification request');
+        return;
+      }
+
+      // Use user-specific key to ensure each new user gets the popup
+      const userSpecificKey = `${NOTIFICATION_PERMISSION_ASKED_KEY}_${currentUserId}`;
+      const hasAskedBefore = await AsyncStorage.getItem(userSpecificKey);
+      console.log('🔔 requestNotificationPermissionOnLaunch: hasAskedBefore for user', currentUserId, '=', hasAskedBefore);
       
       if (hasAskedBefore) {
         console.log('🔔 requestNotificationPermissionOnLaunch: User was asked before, calling maybeShowNotificationReminder()...');
         const notificationsEnabled = await maybeShowNotificationReminder();
         console.log('🔔 requestNotificationPermissionOnLaunch: maybeShowNotificationReminder returned:', notificationsEnabled);
-        if (notificationsEnabled && state.user?.id) {
-          await saveFCMToken(state.user.id);
+        if (notificationsEnabled && currentUserId) {
+          await saveFCMToken(currentUserId);
         }
         if (notificationsEnabled) {
           showBatteryOptimizationPrompt({ delayMs: 1500 }).catch((error) =>
@@ -184,17 +197,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // First time - check current permission status
+      // First time for this user - check current permission status
       console.log('🔔 requestNotificationPermissionOnLaunch: First-time user, checking if already authorized...');
       const isAuthorized = await isNotificationAuthorized();
       console.log('🔔 requestNotificationPermissionOnLaunch: isAuthorized =', isAuthorized);
 
       if (isAuthorized) {
         console.log('🔔 Notification permission already granted');
-        await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
+        await AsyncStorage.setItem(userSpecificKey, 'true');
         
-        if (state.user?.id) {
-          await saveFCMToken(state.user.id);
+        if (currentUserId) {
+          await saveFCMToken(currentUserId);
         }
         
         showBatteryOptimizationPrompt({ delayMs: 1500 }).catch((error) =>
@@ -204,12 +217,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       // Request permission using native dialog
-      console.log('🔔 Requesting notification permission on app launch...');
+      console.log('🔔 Requesting notification permission on app launch for new user...');
       const granted = await PermissionService.requestNotificationPermissions();
       console.log('🔔 requestNotificationPermissionOnLaunch: Permission request result =', granted);
 
-      // Mark that we've asked
-      await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
+      // Mark that we've asked for this specific user
+      await AsyncStorage.setItem(userSpecificKey, 'true');
 
       // Track analytics
       if (granted) {
@@ -219,8 +232,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
         
         // Save FCM token if user is authenticated
-        if (state.user?.id) {
-          await saveFCMToken(state.user.id);
+        if (currentUserId) {
+          await saveFCMToken(currentUserId);
         }
 
         // Show battery optimization prompt after a delay (only if permission granted)
@@ -895,6 +908,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Initialize notification services
       await initializeNotificationServices(user.id);
+      
+      // Don't request notification permission here - it will be requested after profile completion
+      // This avoids conflicts with location permission popup during profile setup
+      console.log('🔔 setAuthenticatedUser: Notification permission will be requested after profile completion');
     } catch (error) {
       console.error('setAuthenticatedUser error:', error);
     }

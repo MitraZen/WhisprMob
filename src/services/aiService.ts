@@ -1,11 +1,8 @@
 import { MoodType } from '@/types';
-import { GROQ_CONFIG } from '@/config/env';
+import { supabase } from '@/config/supabase';
 
-// Groq API configuration
-const GROQ_API_KEY: string = GROQ_CONFIG.apiKey;
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-// Using llama-3.1-8b-instant for fast, free-tier friendly inference
-const GROQ_MODEL = 'llama-3.1-8b-instant';
+// Configuration: Use Edge Function (server-side, more secure)
+const USE_EDGE_FUNCTION = true;
 
 export interface AIEnhancementOptions {
   mood: MoodType;
@@ -30,116 +27,58 @@ class AIService {
   }
 
   /**
+   * Enhance text via Supabase Edge Function (server-side, more secure)
+   */
+  private async enhanceTextViaEdgeFunction(options: AIEnhancementOptions): Promise<AIEnhancementResult> {
+    try {
+      const { mood, originalText, enhancementType } = options;
+
+      console.log('🤖 Calling AI Edge Function...');
+
+      const { data, error } = await supabase.functions.invoke('ai-enhance', {
+        body: {
+          mood,
+          originalText,
+          enhancementType,
+        },
+      });
+
+      if (error) {
+        console.error('❌ Edge Function Error:', error);
+        throw new Error(error.message || 'Edge Function error');
+      }
+
+      if (!data || !data.enhancedText) {
+        throw new Error('Invalid response from Edge Function');
+      }
+
+      return {
+        enhancedText: data.enhancedText,
+        suggestions: data.suggestions || [],
+        confidence: data.confidence || 5,
+      };
+    } catch (error) {
+      console.error('AI Enhancement Error (Edge Function):', error);
+      // Fallback to mock enhancement if Edge Function fails
+      return this.getMockEnhancement(options);
+    }
+  }
+
+  /**
    * Enhance text based on mood and enhancement type
    */
   async enhanceText(options: AIEnhancementOptions): Promise<AIEnhancementResult> {
     try {
-      const { mood, originalText, enhancementType } = options;
-      
-      // Check if API key is configured
-      if (!this.isAvailable()) {
-        console.log('Groq API key not configured, using mock enhancement');
-        return this.getMockEnhancement(options);
+      // Use Edge Function if configured
+      if (USE_EDGE_FUNCTION) {
+        return this.enhanceTextViaEdgeFunction(options);
       }
       
-      // Create mood-specific prompts
-      const moodPrompts = {
-        happy: "Make this message joyful, positive, and uplifting while keeping it anonymous and mysterious.",
-        sad: "Make this message empathetic, comforting, and understanding while maintaining anonymity.",
-        anxious: "Make this message calming, reassuring, and supportive while maintaining anonymity.",
-        angry: "Make this message more constructive, channeling frustration into something meaningful while maintaining anonymity.",
-        joyful: "Make this message more joyful, uplifting, and positive while keeping it anonymous and mysterious.",
-        reflective: "Make this message more thoughtful, introspective, and contemplative while maintaining anonymity.",
-        excited: "Make this message more energetic, enthusiastic, and exciting while keeping it mysterious.",
-        calm: "Make this message more peaceful, serene, and calming while maintaining its anonymous nature.",
-        curious: "Make this message more intriguing, thought-provoking, and curiosity-inducing while keeping it mysterious.",
-        grateful: "Make this message more appreciative, thankful, and warm while maintaining anonymity.",
-        hopeful: "Make this message more optimistic, inspiring, and hopeful while keeping it mysterious.",
-        playful: "Make this message more fun, lighthearted, and playful while maintaining its anonymous nature.",
-        nostalgic: "Make this message more wistful, sentimental, and nostalgic while keeping it mysterious.",
-        determined: "Make this message more focused, resolute, and determined while maintaining anonymity.",
-        lonely: "Make this message more connecting, understanding, and supportive while maintaining anonymity."
-      };
-
-      const enhancementPrompts = {
-        improve: "Improve the overall quality, clarity, and impact of this message.",
-        shorten: "Make this message more concise and impactful while keeping the core meaning.",
-        expand: "Expand this message with more detail and depth while maintaining its essence.",
-        make_mysterious: "Make this message more mysterious, intriguing, and enigmatic.",
-        generate_from_prompt: "Generate creative content based on this prompt. Be surprising and creative!"
-      };
-
-      const moodPrompt = moodPrompts[mood] || moodPrompts.reflective;
-      const enhancementPrompt = enhancementPrompts[enhancementType] || enhancementPrompts.improve;
-
-      const systemPrompt = `You are an AI writing assistant for an anonymous messaging app called Whispr. 
-Your job is to enhance anonymous messages while maintaining their mysterious and anonymous nature.
-Guidelines:
-- Keep messages appropriate and respectful
-- Maintain anonymity (no personal details)
-- Make messages engaging and mysterious
-- Preserve the original intent and emotion
-- Keep responses concise (under 200 characters)
-- Make them feel like genuine anonymous whispers`;
-
-      const userPrompt = `${moodPrompt} ${enhancementPrompt}
-
-Original message: "${originalText}"
-
-Please provide:
-1. An enhanced version of the message
-2. 2-3 alternative suggestions
-3. A confidence score (1-10) for how well the enhancement matches the mood
-
-Format your response as JSON:
-{
-  "enhanced": "enhanced message here",
-  "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"],
-  "confidence": 8
-}`;
-
-      const response = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          max_tokens: 300,
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      
-      if (!content) {
-        throw new Error('No response from AI');
-      }
-
-      // Parse JSON response
-      const parsedResponse = JSON.parse(content);
-      
-      return {
-        enhancedText: parsedResponse.enhanced || originalText,
-        suggestions: parsedResponse.suggestions || [],
-        confidence: parsedResponse.confidence || 5
-      };
-
+      // Fallback to mock if Edge Function is not available
+      console.log('Edge Function not configured, using mock enhancement');
+      return this.getMockEnhancement(options);
     } catch (error) {
       console.error('AI Enhancement Error:', error);
-      
-      // Fallback to mock enhancement if AI fails
       return this.getMockEnhancement(options);
     }
   }
@@ -149,100 +88,18 @@ Format your response as JSON:
    */
   async generateFromPrompt(prompt: string, mood: MoodType): Promise<AIEnhancementResult> {
     try {
-      // Check if API key is configured
-      if (!this.isAvailable()) {
-        console.log('Groq API key not configured, using mock generation');
-        return this.getMockPromptGeneration(prompt, mood);
+      // Use Edge Function if configured
+      if (USE_EDGE_FUNCTION) {
+        return this.enhanceTextViaEdgeFunction({
+          mood,
+          originalText: prompt,
+          enhancementType: 'generate_from_prompt',
+        });
       }
-
-      const moodContext = {
-        happy: "joyful, uplifting, and positive",
-        sad: "empathetic, comforting, and understanding",
-        anxious: "calming, reassuring, and supportive",
-        angry: "constructive, channeling frustration into something meaningful",
-        joyful: "joyful, uplifting, and positive",
-        reflective: "thoughtful, introspective, and contemplative",
-        excited: "energetic, enthusiastic, and exciting",
-        calm: "peaceful, serene, and calming",
-        curious: "intriguing, thought-provoking, and curiosity-inducing",
-        grateful: "appreciative, thankful, and warm",
-        hopeful: "optimistic, inspiring, and hopeful",
-        playful: "fun, lighthearted, and playful",
-        nostalgic: "wistful, sentimental, and nostalgic",
-        determined: "focused, resolute, and determined",
-        lonely: "connecting, understanding, and supportive"
-      };
-
-      const moodDescription = moodContext[mood] || moodContext.reflective;
-
-      const systemPrompt = `You are a creative AI writing assistant for an anonymous messaging app called Whispr. 
-Your job is to generate creative, engaging content based on user prompts while maintaining anonymity and mystery.
-
-Guidelines:
-- Keep content appropriate and respectful
-- Maintain anonymity (no personal details)
-- Make content engaging and mysterious
-- Be creative and surprising
-- Keep responses concise (under 200 characters)
-- Make them feel like genuine anonymous whispers
-- If the prompt asks for quotes, poems, or creative content, generate original content
-- If the prompt is a feeling or emotion, enhance and expand on it creatively`;
-
-      const userPrompt = `User prompt: "${prompt}"
-Mood context: Make this ${moodDescription} and mysterious.
-
-Generate creative content based on this prompt. Be surprising and creative!
-
-Please provide:
-1. A creative response to the prompt
-2. 2-3 alternative creative suggestions
-3. A confidence score (1-10) for how well it matches the mood and prompt
-
-Format your response as JSON:
-{
-  "enhanced": "creative response here",
-  "suggestions": ["alternative 1", "alternative 2", "alternative 3"],
-  "confidence": 8
-}`;
-
-      const response = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          max_tokens: 400,
-          temperature: 0.9, // Higher temperature for more creativity
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
       
-      if (!content) {
-        throw new Error('No response from AI');
-      }
-
-      // Parse JSON response
-      const parsedResponse = JSON.parse(content);
-      
-      return {
-        enhancedText: parsedResponse.enhanced || prompt,
-        suggestions: parsedResponse.suggestions || [],
-        confidence: parsedResponse.confidence || 7
-      };
-
+      // Fallback to mock if Edge Function is not available
+      console.log('Edge Function not configured, using mock generation');
+      return this.getMockPromptGeneration(prompt, mood);
     } catch (error) {
       console.error('AI Prompt Generation Error:', error);
       return this.getMockPromptGeneration(prompt, mood);
@@ -254,65 +111,15 @@ Format your response as JSON:
    */
   async generateConversationStarters(mood: MoodType): Promise<string[]> {
     try {
-      // Check if API key is configured
-      if (!this.isAvailable()) {
-        console.log('Groq API key not configured, using mock conversation starters');
+      // Use Edge Function if configured (conversation starters can use the same Edge Function)
+      if (USE_EDGE_FUNCTION) {
+        // For now, use mock since conversation starters aren't implemented in Edge Function
+        // This can be extended later if needed
+        console.log('Using mock conversation starters');
         return this.getMockConversationStarters(mood);
       }
-
-      const moodStarters = {
-        happy: "Generate 3 joyful, uplifting conversation starters for anonymous messaging",
-        sad: "Generate 3 empathetic, comforting conversation starters for anonymous messaging",
-        anxious: "Generate 3 calming, reassuring conversation starters for anonymous messaging",
-        angry: "Generate 3 constructive, channeling frustration conversation starters for anonymous messaging",
-        joyful: "Generate 3 joyful, uplifting conversation starters for anonymous messaging",
-        reflective: "Generate 3 thoughtful, introspective conversation starters for anonymous messaging",
-        excited: "Generate 3 energetic, exciting conversation starters for anonymous messaging",
-        calm: "Generate 3 peaceful, serene conversation starters for anonymous messaging",
-        curious: "Generate 3 intriguing, curiosity-inducing conversation starters for anonymous messaging",
-        grateful: "Generate 3 appreciative, thankful conversation starters for anonymous messaging",
-        hopeful: "Generate 3 optimistic, inspiring conversation starters for anonymous messaging",
-        playful: "Generate 3 fun, lighthearted conversation starters for anonymous messaging",
-        nostalgic: "Generate 3 wistful, sentimental conversation starters for anonymous messaging",
-        determined: "Generate 3 focused, determined conversation starters for anonymous messaging",
-        lonely: "Generate 3 connecting, supportive conversation starters for anonymous messaging"
-      };
-
-      const prompt = `${moodStarters[mood] || moodStarters.reflective}. 
-Keep them mysterious, anonymous, and engaging. Each should be under 100 characters.
-Format as a JSON array: ["starter1", "starter2", "starter3"]`;
-
-      const response = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: [
-            { role: "system", content: "You are a creative writing assistant for anonymous messaging." },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 200,
-          temperature: 0.8,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
       
-      if (!content) {
-        throw new Error('No response from AI');
-      }
-
-      return JSON.parse(content);
-
+      return this.getMockConversationStarters(mood);
     } catch (error) {
       console.error('AI Conversation Starters Error:', error);
       return this.getMockConversationStarters(mood);
@@ -445,7 +252,8 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
    * Check if AI service is available
    */
   isAvailable(): boolean {
-    return GROQ_API_KEY !== 'your-groq-api-key-here' && GROQ_API_KEY.length > 0;
+    // Always return true since we're using Edge Function (server-side)
+    return USE_EDGE_FUNCTION;
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -7,14 +7,16 @@ import {
   StyleSheet, 
   ScrollView, 
   Alert, 
-  ActivityIndicator, 
-  Modal,
-  FlatList
+  ActivityIndicator
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import Icon from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme, spacing, borderRadius } from '@/utils/theme';
 import { useAuth } from '@/store/AuthContext';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
+import { getUserCountry } from '@/utils/locationService';
+import PermissionService from '@/services/permissionService';
 
 interface ProfileCompletionScreenProps {
   onComplete: (profileData: ProfileData) => void;
@@ -29,34 +31,6 @@ interface ProfileData {
   bio: string;
 }
 
-// Comprehensive country list
-const countries = [
-  'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
-  'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan',
-  'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi',
-  'Cambodia', 'Cameroon', 'Canada', 'Cape Verde', 'Central African Republic', 'Chad', 'Chile', 'China',
-  'Colombia', 'Comoros', 'Congo', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus', 'Czech Republic',
-  'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea',
-  'Eritrea', 'Estonia', 'Ethiopia', 'Fiji', 'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany',
-  'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras',
-  'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Jamaica',
-  'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Latvia',
-  'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Macedonia',
-  'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania',
-  'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco',
-  'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua',
-  'Niger', 'Nigeria', 'North Korea', 'Norway', 'Oman', 'Pakistan', 'Palau', 'Panama', 'Papua New Guinea',
-  'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda',
-  'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa', 'San Marino',
-  'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone',
-  'Singapore', 'Slovakia', 'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea',
-  'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Swaziland', 'Sweden', 'Switzerland',
-  'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga',
-  'Trinidad and Tobago', 'Tunisia', 'Turkey', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine',
-  'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Vanuatu',
-  'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe'
-];
-
 export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = ({ 
   onComplete, 
   user
@@ -66,11 +40,68 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [country, setCountry] = useState('');
-  const [countrySearch, setCountrySearch] = useState('');
-  const [showCountryModal, setShowCountryModal] = useState(false);
   const [bio, setBio] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const { markProfileComplete } = useAuth();
+
+  // Automatically detect country on mount
+  useEffect(() => {
+    detectCountry();
+  }, []);
+
+  const detectCountry = async () => {
+    setIsDetectingLocation(true);
+    setLocationError(null);
+    
+    try {
+      const detectedCountry = await getUserCountry();
+      setCountry(detectedCountry);
+      console.log('✅ Country detected:', detectedCountry);
+    } catch (error) {
+      console.error('❌ Country detection failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Provide user-friendly error messages
+      let userMessage = 'Unable to detect your location.';
+      if (errorMessage.includes('permission')) {
+        userMessage = 'Location permission is required to set your country.';
+      } else if (errorMessage.includes('timeout')) {
+        userMessage = 'Location detection timed out. Please check your internet connection.';
+      }
+      
+      setLocationError(userMessage);
+      
+      // Show alert explaining location is required
+      Alert.alert(
+        '📍 Location Required',
+        'Whispr needs access to your location to automatically set your country during sign-up.\n\nPlease enable location permissions in your device settings and try again.',
+        [
+          {
+            text: 'Retry',
+            onPress: () => detectCountry(),
+            style: 'default',
+          },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              // On Android, we can't directly open settings, but we can show instructions
+              Alert.alert(
+                'Enable Location',
+                'Please go to:\nSettings > Apps > Whispr > Permissions > Location\n\nEnable location access and return to retry.',
+                [{ text: 'OK' }]
+              );
+            },
+            style: 'default',
+          },
+        ],
+        { cancelable: false }
+      );
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  };
 
   const genderOptions = [
     { value: 'male', label: 'Male' },
@@ -109,14 +140,26 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
     return Array.from({ length: daysInMonth }, (_, i) => i + 1);
   };
 
-  // Filter countries based on search (case-insensitive, partial match)
-  const filteredCountries = countries.filter(country =>
-    country.toLowerCase().includes(countrySearch.toLowerCase().trim())
-  );
-
   const handleComplete = async () => {
     if (!gender || !selectedYear || !selectedMonth || !selectedDay || !country) {
-      Alert.alert('Missing Information', 'Please fill in all required fields.');
+      if (!country) {
+        Alert.alert(
+          'Location Required',
+          'Your country must be detected before completing your profile. Please enable location permissions and retry.',
+          [
+            {
+              text: 'Retry Detection',
+              onPress: () => detectCountry(),
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Missing Information', 'Please fill in all required fields.');
+      }
       return;
     }
 
@@ -172,6 +215,31 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
       }
 
       markProfileComplete(true);
+      
+      // Request notification permission after profile completion
+      // Delay to ensure location permission popup has closed
+      setTimeout(async () => {
+        try {
+          console.log('🔔 ProfileCompletionScreen: Requesting notification permission after profile completion');
+          const userSpecificKey = `notificationPermissionAsked_${userId}`;
+          const hasAskedBefore = await AsyncStorage.getItem(userSpecificKey);
+          
+          if (!hasAskedBefore) {
+            const granted = await PermissionService.requestNotificationPermissions();
+            if (granted) {
+              console.log('✅ Notification permission granted after profile completion');
+              await AsyncStorage.setItem(userSpecificKey, 'true');
+            } else {
+              console.log('🚫 Notification permission denied after profile completion');
+            }
+          } else {
+            console.log('🔔 Notification permission already asked for this user');
+          }
+        } catch (error) {
+          console.error('❌ Error requesting notification permission:', error);
+        }
+      }, 2000);
+      
       onComplete(profileData);
     } catch (error) {
       console.error('Profile completion error:', error);
@@ -180,34 +248,6 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
       setIsLoading(false);
     }
   };
-
-  const selectCountry = (selectedCountry: string) => {
-    setCountry(selectedCountry);
-    setCountrySearch(selectedCountry);
-    setShowCountryModal(false);
-  };
-
-  const openCountryModal = () => {
-    setCountrySearch('');
-    setShowCountryModal(true);
-  };
-
-  const renderCountryItem = ({ item }: { item: string }) => (
-    <TouchableOpacity
-      style={[
-        styles.countryItem,
-        country === item && styles.selectedCountryItem
-      ]}
-      onPress={() => selectCountry(item)}
-    >
-      <Text style={[
-        styles.countryItemText,
-        country === item && styles.selectedCountryItemText
-      ]}>
-        {item}
-      </Text>
-    </TouchableOpacity>
-  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -299,22 +339,51 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
           </View>
         </View>
 
-        {/* Country Selection */}
+        {/* Country Selection - Auto-detected */}
         <View style={styles.section}>
           <Text style={styles.label}>Country *</Text>
-          <TouchableOpacity
-            style={styles.countrySelector}
-            onPress={openCountryModal}
-            disabled={isLoading}
-          >
-            <Text style={[
-              styles.countrySelectorText,
-              !country && styles.placeholderText
-            ]}>
-              {country || 'Select Country'}
-            </Text>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
+          {isDetectingLocation ? (
+            <View style={styles.countryDetectingContainer}>
+              <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginRight: spacing.sm }} />
+              <Text style={styles.countryDetectingText}>Detecting your location...</Text>
+            </View>
+          ) : country ? (
+            <View style={styles.countryDetectedContainer}>
+              <View style={styles.countryDisplay}>
+                <Icon name="location" size={20} color={theme.colors.primary} style={{ marginRight: spacing.sm }} />
+                <Text style={styles.countryDetectedText}>{country}</Text>
+                <Icon name="checkmark-circle" size={20} color="#10b981" style={{ marginLeft: spacing.sm }} />
+              </View>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={detectCountry}
+                disabled={isDetectingLocation}
+              >
+                <Icon name="refresh" size={16} color={theme.colors.primary} style={{ marginRight: spacing.xs }} />
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.countryErrorContainer}>
+              <View style={styles.countryErrorDisplay}>
+                <Icon name="location-outline" size={20} color="#ef4444" style={{ marginRight: spacing.sm }} />
+                <Text style={styles.countryErrorText}>
+                  {locationError || 'Location not detected'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.retryButtonError}
+                onPress={detectCountry}
+                disabled={isDetectingLocation}
+              >
+                <Icon name="refresh" size={16} color="#ef4444" style={{ marginRight: spacing.xs }} />
+                <Text style={styles.retryButtonTextError}>Retry Detection</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          <Text style={styles.countryHint}>
+            Your country is automatically detected based on your location. Location permission is required.
+          </Text>
         </View>
 
         {/* Bio */}
@@ -349,68 +418,6 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
 
         </View>
       </View>
-
-      {/* Country Selection Modal */}
-      <Modal
-        visible={showCountryModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => setShowCountryModal(false)}
-            >
-              <Text style={styles.modalCloseText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Select Country</Text>
-            <View style={styles.modalSpacer} />
-          </View>
-
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search countries..."
-              placeholderTextColor="#9ca3af"
-              value={countrySearch}
-              onChangeText={setCountrySearch}
-              autoFocus
-              clearButtonMode="while-editing"
-              returnKeyType="search"
-            />
-            {countrySearch.length > 0 && (
-              <TouchableOpacity
-                style={styles.clearButton}
-                onPress={() => setCountrySearch('')}
-              >
-                <Text style={styles.clearButtonText}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {filteredCountries.length > 0 ? (
-            <FlatList
-              data={filteredCountries}
-              keyExtractor={(item) => item}
-              renderItem={renderCountryItem}
-              style={styles.countryList}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              removeClippedSubviews={false}
-              initialNumToRender={20}
-              maxToRenderPerBatch={10}
-              windowSize={10}
-            />
-          ) : (
-            <View style={styles.noResultsContainer}>
-              <Text style={styles.noResultsText}>
-                {countrySearch ? 'No countries found matching your search' : 'No countries available'}
-              </Text>
-            </View>
-          )}
-        </View>
-      </Modal>
     </ScrollView>
   );
 };
@@ -476,29 +483,97 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     textAlign: 'center',
   },
-  countrySelector: {
+  countryDetectingContainer: {
     backgroundColor: '#f3f4f6',
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    minHeight: 50,
   },
-  countrySelectorText: {
+  countryDetectingText: {
     fontSize: 16,
     color: theme.colors.onBackground,
+  },
+  countryDetectedContainer: {
+    gap: spacing.sm,
+  },
+  countryDisplay: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    minHeight: 50,
+  },
+  countryDetectedText: {
+    fontSize: 16,
+    color: theme.colors.onBackground,
+    fontWeight: '600',
     flex: 1,
   },
-  placeholderText: {
-    color: '#9ca3af',
+  countryErrorContainer: {
+    gap: spacing.sm,
   },
-  chevron: {
-    fontSize: 18,
-    color: '#9ca3af',
-    fontWeight: 'bold',
+  countryErrorDisplay: {
+    backgroundColor: '#fef2f2',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    minHeight: 50,
+  },
+  countryErrorText: {
+    fontSize: 16,
+    color: '#ef4444',
+    flex: 1,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: '#f0f9ff',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  retryButtonError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: '#fef2f2',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  retryButtonTextError: {
+    fontSize: 14,
+    color: '#ef4444',
+    fontWeight: '600',
+  },
+  countryHint: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
   },
   input: {
     backgroundColor: '#f3f4f6',
@@ -532,102 +607,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalCloseButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  modalCloseText: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontWeight: '600',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.onBackground,
-  },
-  modalSpacer: {
-    width: 60,
-  },
-  searchContainer: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  searchInput: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: 16,
-    color: theme.colors.onBackground,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    marginRight: spacing.sm,
-  },
-  clearButton: {
-    padding: spacing.sm,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 15,
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearButtonText: {
-    fontSize: 16,
-    color: '#6b7280',
-    fontWeight: 'bold',
-  },
-  countryList: {
-    flex: 1,
-  },
-  noResultsContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
-  },
-  noResultsText: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-  countryItem: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  selectedCountryItem: {
-    backgroundColor: '#dbeafe',
-  },
-  countryItemText: {
-    fontSize: 16,
-    color: theme.colors.onBackground,
-  },
-  selectedCountryItemText: {
-    color: theme.colors.primary,
-    fontWeight: '600',
   },
 });
 
