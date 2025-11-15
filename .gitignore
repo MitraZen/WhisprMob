@@ -90,6 +90,3 @@ java_pid*.hprof
 *.csv
 #powershell scripts
 *.ps1
-
-# Test files with API keys
-test-groq-api.js
