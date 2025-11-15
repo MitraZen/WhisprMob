@@ -1,8 +1,11 @@
 import { MoodType } from '@/types';
+import { GROQ_CONFIG } from '@/config/env';
 
-// OpenAI API configuration
-const OPENAI_API_KEY: string = 'your-api-key-here'; // Replace with your actual API key
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+// Groq API configuration
+const GROQ_API_KEY: string = GROQ_CONFIG.apiKey;
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+// Using llama-3.1-8b-instant for fast, free-tier friendly inference
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
 export interface AIEnhancementOptions {
   mood: MoodType;
@@ -35,7 +38,7 @@ class AIService {
       
       // Check if API key is configured
       if (!this.isAvailable()) {
-        console.log('OpenAI API key not configured, using mock enhancement');
+        console.log('Groq API key not configured, using mock enhancement');
         return this.getMockEnhancement(options);
       }
       
@@ -95,14 +98,14 @@ Format your response as JSON:
   "confidence": 8
 }`;
 
-      const response = await fetch(OPENAI_API_URL, {
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-3.5-turbo",
+          model: GROQ_MODEL,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -113,7 +116,8 @@ Format your response as JSON:
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -147,7 +151,7 @@ Format your response as JSON:
     try {
       // Check if API key is configured
       if (!this.isAvailable()) {
-        console.log('OpenAI API key not configured, using mock generation');
+        console.log('Groq API key not configured, using mock generation');
         return this.getMockPromptGeneration(prompt, mood);
       }
 
@@ -201,14 +205,14 @@ Format your response as JSON:
   "confidence": 8
 }`;
 
-      const response = await fetch(OPENAI_API_URL, {
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-3.5-turbo",
+          model: GROQ_MODEL,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -219,7 +223,8 @@ Format your response as JSON:
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -251,7 +256,7 @@ Format your response as JSON:
     try {
       // Check if API key is configured
       if (!this.isAvailable()) {
-        console.log('OpenAI API key not configured, using mock conversation starters');
+        console.log('Groq API key not configured, using mock conversation starters');
         return this.getMockConversationStarters(mood);
       }
 
@@ -277,14 +282,14 @@ Format your response as JSON:
 Keep them mysterious, anonymous, and engaging. Each should be under 100 characters.
 Format as a JSON array: ["starter1", "starter2", "starter3"]`;
 
-      const response = await fetch(OPENAI_API_URL, {
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-3.5-turbo",
+          model: GROQ_MODEL,
           messages: [
             { role: "system", content: "You are a creative writing assistant for anonymous messaging." },
             { role: "user", content: prompt }
@@ -295,7 +300,8 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -319,11 +325,12 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
   private getMockEnhancement(options: AIEnhancementOptions): AIEnhancementResult {
     const { originalText, mood, enhancementType } = options;
     
-    const mockEnhancements = {
+    const mockEnhancements: Record<AIEnhancementOptions['enhancementType'], string> = {
       improve: `✨ ${originalText} ✨`,
       shorten: originalText.length > 50 ? originalText.substring(0, 50) + '...' : originalText,
       expand: `${originalText} What do you think?`,
-      make_mysterious: `🤫 ${originalText} 🤫`
+      make_mysterious: `🤫 ${originalText} 🤫`,
+      generate_from_prompt: `🌟 ${originalText} 🌟`
     };
 
     const mockSuggestions = [
@@ -438,7 +445,7 @@ Format as a JSON array: ["starter1", "starter2", "starter3"]`;
    * Check if AI service is available
    */
   isAvailable(): boolean {
-    return OPENAI_API_KEY !== 'your-api-key-here' && OPENAI_API_KEY.length > 0;
+    return GROQ_API_KEY !== 'your-groq-api-key-here' && GROQ_API_KEY.length > 0;
   }
 }
 
