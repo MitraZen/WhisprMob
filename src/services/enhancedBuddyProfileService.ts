@@ -82,7 +82,7 @@ class EnhancedBuddyProfileService {
     try {
       console.log('🔍 Fetching enhanced buddy profile for user:', userId);
 
-      // Fetch basic profile info
+      // Fetch basic profile info - user_profiles uses 'id' as primary key
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
@@ -91,6 +91,11 @@ class EnhancedBuddyProfileService {
 
       if (profileError) {
         console.error('❌ Error fetching profile:', profileError);
+        return null;
+      }
+      
+      if (!profileData) {
+        console.error('❌ No profile data found for userId:', userId);
         return null;
       }
 
@@ -128,15 +133,66 @@ class EnhancedBuddyProfileService {
         console.error('❌ Error fetching trust markers:', trustMarkersError);
       }
 
-      // Fetch trust summary
-      const { data: trustSummary, error: trustSummaryError } = await supabase
+      // Fetch trust summary - try both id and user_id
+      let trustSummary = null;
+      let trustSummaryError = null;
+      
+      // First try with user_id
+      const { data: summaryByUserId, error: errorByUserId } = await supabase
         .from('user_trust_summary')
         .select('*')
         .eq('user_id', userId)
         .single();
 
-      if (trustSummaryError) {
+      if (summaryByUserId && !errorByUserId) {
+        trustSummary = summaryByUserId;
+      } else {
+        // Try with id if user_id didn't work
+        const { data: summaryById, error: errorById } = await supabase
+          .from('user_trust_summary')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        
+        if (summaryById && !errorById) {
+          trustSummary = summaryById;
+        } else {
+          trustSummaryError = errorById || errorByUserId;
+        }
+      }
+
+      // If no trust summary exists, try to recalculate it
+      if (!trustSummary && (!trustSummaryError || trustSummaryError.code === 'PGRST116')) {
+        console.log('⚠️ No trust summary found, attempting to recalculate...');
+        try {
+          const recalculatedScore = await this.recalculateTrustScore(userId);
+          console.log('✅ Recalculated trust score:', recalculatedScore);
+          
+          // Fetch again after recalculation
+          const { data: newSummary } = await supabase
+            .from('user_trust_summary')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+          
+          if (newSummary) {
+            trustSummary = newSummary;
+          }
+        } catch (recalcError) {
+          console.error('❌ Error recalculating trust score:', recalcError);
+        }
+      }
+
+      if (trustSummaryError && trustSummaryError.code !== 'PGRST116') {
         console.error('❌ Error fetching trust summary:', trustSummaryError);
+      } else if (!trustSummary) {
+        console.log('⚠️ No trust summary available for user:', userId);
+      } else {
+        console.log('✅ Trust summary loaded:', {
+          total_trust_score: trustSummary.total_trust_score,
+          trust_level: trustSummary.trust_level,
+          active_markers_count: trustSummary.active_markers_count
+        });
       }
 
       const enhancedProfile: EnhancedBuddyProfile = {

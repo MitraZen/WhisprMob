@@ -3,12 +3,13 @@
  * Modal for selecting and managing interest tokens
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius } from '@/utils/themes';
 import { InterestToken } from '@/types/profile.types';
+import { DEFAULT_INTEREST_TOKENS } from '@/config/profile.config';
 
 interface InterestModalProps {
   visible: boolean;
@@ -27,13 +28,48 @@ export const InterestModal: React.FC<InterestModalProps> = ({
 }) => {
   const styles = createStyles(theme);
   const safeTokens = interestTokens || [];
-  const [localTokens, setLocalTokens] = useState<InterestToken[]>(safeTokens);
-
-  useEffect(() => {
-    if (visible) {
-      setLocalTokens(safeTokens);
+  
+  // Merge incoming tokens with DEFAULT_INTEREST_TOKENS to ensure all options are always visible
+  // This ensures we ALWAYS have all tokens, even if the prop is empty or incomplete
+  const mergedTokens = useMemo(() => {
+    // Always start with all default tokens
+    const result = [...DEFAULT_INTEREST_TOKENS];
+    
+    // If we have incoming tokens, merge their selection state
+    if (safeTokens && safeTokens.length > 0) {
+      // Create a map of incoming tokens by ID to preserve selection state
+      const incomingTokensMap = new Map(safeTokens.map((t: InterestToken) => [t.id, t]));
+      
+      // Update result tokens with selection state from incoming tokens
+      return result.map(defaultToken => {
+        const incomingToken = incomingTokensMap.get(defaultToken.id);
+        if (incomingToken) {
+          // Preserve selection state and any custom properties from incoming token
+          return {
+            ...defaultToken,
+            selected: incomingToken.selected,
+            category: incomingToken.category || defaultToken.category,
+          };
+        }
+        // Use default token if not in incoming tokens
+        return defaultToken;
+      });
     }
-  }, [visible, safeTokens]);
+    
+    // If no incoming tokens, return all defaults (all unselected)
+    return result;
+  }, [safeTokens]);
+  
+  // Initialize with merged tokens immediately
+  const [localTokens, setLocalTokens] = useState<InterestToken[]>(mergedTokens);
+
+  // Always sync localTokens with mergedTokens when modal opens
+  useEffect(() => {
+    // When modal opens, always update to ensure we have all tokens
+    if (visible && mergedTokens.length > 0) {
+      setLocalTokens(mergedTokens);
+    }
+  }, [visible, mergedTokens]);
 
   const handleTokenToggle = (tokenId: string) => {
     const updatedTokens = localTokens.map(token =>
@@ -51,14 +87,16 @@ export const InterestModal: React.FC<InterestModalProps> = ({
   };
 
   // Group tokens by category
-  const groupedTokens = localTokens.reduce((acc, token) => {
-    const category = token.category || 'Other';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(token);
-    return acc;
-  }, {} as Record<string, InterestToken[]>);
+  const groupedTokens = useMemo(() => {
+    return localTokens.reduce((acc, token) => {
+      const category = token.category || 'Other';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(token);
+      return acc;
+    }, {} as Record<string, InterestToken[]>);
+  }, [localTokens]);
 
   // Get category emoji (extract from first token's category or use default)
   const getCategoryEmoji = (category: string): string => {
@@ -78,12 +116,22 @@ export const InterestModal: React.FC<InterestModalProps> = ({
     return categoryEmojis[category] || '📌';
   };
 
+  // Debug: Log token count when modal opens
+  useEffect(() => {
+    if (visible) {
+      console.log('🔍 InterestModal opened - Total tokens:', localTokens.length);
+      console.log('🔍 InterestModal opened - Categories:', Object.keys(groupedTokens).length);
+      console.log('🔍 InterestModal opened - Category names:', Object.keys(groupedTokens));
+    }
+  }, [visible, localTokens.length, groupedTokens]);
+
   return (
     <Modal
       visible={visible}
       transparent
       animationType="slide"
       onRequestClose={onClose}
+      key={`interest-modal-${visible}`}
     >
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
@@ -103,13 +151,17 @@ export const InterestModal: React.FC<InterestModalProps> = ({
             style={styles.content} 
             contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
+            removeClippedSubviews={false}
           >
             <Text style={styles.description}>
               Select your interests to help others find you
             </Text>
 
             {/* Grouped Interest Tokens */}
-            {Object.entries(groupedTokens).map(([category, tokens]) => (
+            {Object.entries(groupedTokens)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([category, tokens]) => (
               <View key={category} style={styles.categorySection}>
                 <View style={styles.categoryHeader}>
                   <Text style={styles.categoryEmoji}>{getCategoryEmoji(category)}</Text>
@@ -201,6 +253,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   contentContainer: {
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   description: {
     ...theme.typography.bodyMedium,
