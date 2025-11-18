@@ -8,6 +8,7 @@ import { MoodType } from '@/types';
 import { AuthService } from '@/services/authService';
 import { useAuth } from '@/store/AuthContext';
 import BiometricService from '@/services/biometricService';
+import { Toast, useToast } from '@/components/Toast';
 
 interface SignUpScreenProps {
   onSignUpSuccess: (user: any) => void;
@@ -282,6 +283,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const { setAuthenticatedUser } = useAuth();
+  const { toast, showToast, hideToast } = useToast();
 
   useEffect(() => {
     checkBiometricStatus();
@@ -320,28 +322,12 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
       const { user, error } = await AuthService.signIn(email, password);
       
       if (error) {
-        Alert.alert('Sign In Failed', error);
+        showToast(error, 'error', 4000);
       } else if (user) {
         await setAuthenticatedUser(user);
         
-        // Offer to enable biometric authentication if available and not already enabled
-        if (biometricAvailable && !biometricEnabled) {
-          const shouldEnable = await BiometricService.promptBiometricSetup();
-          if (shouldEnable) {
-            try {
-              const result = await BiometricService.enableBiometric(user.id, password);
-              if (result.success) {
-                Alert.alert(
-                  'Biometric Authentication Enabled',
-                  `${result.biometryType?.name} authentication has been enabled for faster future sign-ins.`,
-                  [{ text: 'OK' }]
-                );
-              }
-            } catch (error) {
-              console.error('Error enabling biometric authentication:', error);
-            }
-          }
-        }
+        // Biometric authentication can be enabled manually from Settings
+        // Removed automatic prompt to reduce notifications on app launch
         
         onSignInSuccess(user);
       }
@@ -366,7 +352,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
         const { user, error } = await AuthService.signIn(result.credentials.userId, result.credentials.password);
         
         if (error) {
-          Alert.alert('Sign In Failed', error);
+          showToast(error, 'error', 4000);
         } else if (user) {
           await setAuthenticatedUser(user);
           onSignInSuccess(user);
@@ -473,6 +459,15 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
           </View>
         </View>
       </ScrollView>
+      
+      {/* Toast Notification */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        duration={toast.duration}
+        onHide={hideToast}
+      />
     </KeyboardAvoidingView>
   );
 };

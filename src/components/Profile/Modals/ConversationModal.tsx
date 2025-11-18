@@ -10,6 +10,7 @@ import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius } from '@/utils/themes';
 import { ConversationState } from '@/types/profile.types';
 import { CONVERSATION_STATES } from '@/config/profile.config';
+import { Toast, useToast } from '@/components/Toast';
 
 interface ConversationModalProps {
   visible: boolean;
@@ -27,6 +28,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({
   theme,
 }) => {
   const styles = createStyles(theme);
+  const { toast, showToast, hideToast } = useToast();
 
   const getAvailabilityColor = (availability: string) => {
     switch (availability) {
@@ -54,11 +56,11 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({
           conversationMode: mode as any,
           availability: selectedState.availability,
         });
-        Alert.alert(
-          'Conversation Mode Updated',
-          `You're now in "${selectedState.label}" mode!`
-        );
-        onClose();
+        showToast(`You're now in "${selectedState.label}" mode!`, 'success', 3000);
+        // Close modal after a short delay to show the toast
+        setTimeout(() => {
+          onClose();
+        }, 500);
       } catch (error) {
         console.error('Error updating conversation state:', error);
       }
@@ -66,6 +68,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({
   };
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -148,6 +151,16 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({
         </View>
       </View>
     </Modal>
+    
+    {/* Toast Notification */}
+    <Toast
+      visible={toast.visible}
+      message={toast.message}
+      type={toast.type}
+      duration={toast.duration}
+      onHide={hideToast}
+    />
+  </>
   );
 };
 

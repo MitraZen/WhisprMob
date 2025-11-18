@@ -9,7 +9,6 @@ import { AuthProvider } from '@/store/AuthContext';
 import { AdminProvider } from '@/store/AdminContext';
 import { ThemeProvider, useTheme } from '@/store/ThemeContext';
 import { WalkthroughProvider } from '@/store/WalkthroughContext';
-import { GlobalAlertProvider } from '@/services/globalAlertManager';
 import { notificationService } from '@/services/notificationService';
 import { DirectWakeupService } from '@/services/directWakeupService';
 import { supabase } from '@/config/supabase';
@@ -74,9 +73,7 @@ const App: React.FC = () => {
         <AdminProvider>
           <AuthProvider>
             <WalkthroughProvider>
-              <GlobalAlertProvider>
-                <AppContent />
-              </GlobalAlertProvider>
+              <AppContent />
             </WalkthroughProvider>
           </AuthProvider>
         </AdminProvider>

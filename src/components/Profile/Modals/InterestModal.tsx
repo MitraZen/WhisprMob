@@ -10,6 +10,7 @@ import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius } from '@/utils/themes';
 import { InterestToken } from '@/types/profile.types';
 import { DEFAULT_INTEREST_TOKENS } from '@/config/profile.config';
+import { Toast, useToast } from '@/components/Toast';
 
 interface InterestModalProps {
   visible: boolean;
@@ -27,6 +28,7 @@ export const InterestModal: React.FC<InterestModalProps> = ({
   theme,
 }) => {
   const styles = createStyles(theme);
+  const { toast, showToast, hideToast } = useToast();
   const safeTokens = interestTokens || [];
   
   // Merge incoming tokens with DEFAULT_INTEREST_TOKENS to ensure all options are always visible
@@ -82,8 +84,11 @@ export const InterestModal: React.FC<InterestModalProps> = ({
 
   const handleSave = () => {
     onTokensChange(localTokens);
-    Alert.alert('Interests Updated', 'Your interest tokens have been saved!');
-    onClose();
+    showToast('Your interest tokens have been saved!', 'success', 3000);
+    // Close modal after a short delay to show the toast
+    setTimeout(() => {
+      onClose();
+    }, 500);
   };
 
   // Group tokens by category
@@ -126,6 +131,7 @@ export const InterestModal: React.FC<InterestModalProps> = ({
   }, [visible, localTokens.length, groupedTokens]);
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -207,6 +213,16 @@ export const InterestModal: React.FC<InterestModalProps> = ({
         </View>
       </View>
     </Modal>
+    
+    {/* Toast Notification */}
+    <Toast
+      visible={toast.visible}
+      message={toast.message}
+      type={toast.type}
+      duration={toast.duration}
+      onHide={hideToast}
+    />
+  </>
   );
 };
 

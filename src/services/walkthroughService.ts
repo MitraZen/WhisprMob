@@ -1,5 +1,6 @@
 import { WalkthroughStep } from '@/components/Walkthrough';
 import { StorageService } from '@/utils/helpers';
+import { supabase } from '@/config/supabase';
 
 export interface WalkthroughConfig {
   id: string;
@@ -238,10 +239,66 @@ export class WalkthroughService {
   }
 
   /**
+   * Check if user is truly a first-time user (has no activity)
+   * This prevents showing tour to existing users after app data cleanup
+   */
+  private static async isFirstTimeUser(userId: string): Promise<boolean> {
+    try {
+      // Check if user has any activity: messages, buddies, or notes
+      // Using limit(1) to efficiently check existence without fetching all data
+      const [messagesResult, buddiesResult, notesResult] = await Promise.all([
+        supabase
+          .from('buddy_messages')
+          .select('id')
+          .eq('sender_id', userId)
+          .limit(1),
+        supabase
+          .from('buddies')
+          .select('id')
+          .eq('user_id', userId)
+          .limit(1),
+        supabase
+          .from('whispr_notes')
+          .select('id')
+          .eq('sender_id', userId)
+          .limit(1),
+      ]);
+
+      const hasMessages = messagesResult.data && messagesResult.data.length > 0;
+      const hasBuddies = buddiesResult.data && buddiesResult.data.length > 0;
+      const hasNotes = notesResult.data && notesResult.data.length > 0;
+
+      const isNewUser = !hasMessages && !hasBuddies && !hasNotes;
+      console.log(`🎯 Walkthrough check for user ${userId}:`, {
+        hasMessages,
+        hasBuddies,
+        hasNotes,
+        isFirstTimeUser: isNewUser,
+      });
+
+      return isNewUser;
+    } catch (error) {
+      console.error('Error checking if user is first-time user:', error);
+      // On error, assume user is new (safer to show tour than to hide it)
+      return true;
+    }
+  }
+
+  /**
    * Check if walkthrough should be shown for a specific user
+   * Only shows for truly first-time users (no activity in database)
    */
   static async shouldShowWalkthroughForUser(walkthroughId: string, userId: string): Promise<boolean> {
     try {
+      // First check if user is truly a first-time user (has no activity)
+      // This prevents showing tour to existing users after app data cleanup
+      const isNewUser = await this.isFirstTimeUser(userId);
+      if (!isNewUser) {
+        console.log(`🎯 User ${userId} has existing activity - skipping walkthrough ${walkthroughId}`);
+        return false;
+      }
+
+      // User is new - check if walkthrough was already completed
       const userWalkthroughs = await StorageService.getItem<{ [key: string]: boolean }>(`${this.USER_WALKTHROUGH_KEY}_${userId}`) || {};
       const isCompleted = userWalkthroughs[walkthroughId] === true;
       

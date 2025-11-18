@@ -317,56 +317,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, user
     }
   };
 
-  const handleRequestPermissions = async () => {
-    try {
-      // Show dialog with instructions
-      Alert.alert(
-        'Manage Permissions',
-        'This will open the App permissions page for Whispr where you can enable or disable individual permissions.\n\nAfter updating permissions, return to the app.',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'App permissions',
-            onPress: () => {
-              console.log('🔧 User clicked "App permissions" button');
-              // Set flag to check permissions when app becomes active
-              permissionCheckTriggered.current = true;
-              
-              // Open app info page which shows Permissions prominently
-              if (Platform.OS === 'android') {
-                console.log('🔧 Calling PermissionService.openAppPermissionsSettings()...');
-                try {
-                  PermissionService.openAppPermissionsSettings();
-                  console.log('🔧 PermissionService.openAppPermissionsSettings() called');
-                } catch (error) {
-                  console.error('❌ Error in openAppPermissionsSettings:', error);
-                  // Direct fallback - try Linking.openSettings directly
-                  console.log('🔄 Trying Linking.openSettings() directly...');
-                  Linking.openSettings()
-                    .then(() => console.log('✅ Linking.openSettings() succeeded'))
-                    .catch((err) => {
-                      console.error('❌ Linking.openSettings() failed:', err);
-                      Alert.alert('Error', 'Unable to open device settings');
-                    });
-                }
-              } else {
-                // iOS - open general settings
-                Linking.openSettings().catch((error) => {
-                  console.error('Error opening settings:', error);
-                  Alert.alert('Error', 'Unable to open device settings');
-                });
+  const handleRequestPermissions = () => {
+    // Show native OS alert dialog with clear, engaging instructions
+    Alert.alert(
+      'Permission Management',
+      'Control which permissions Whispr can access on your device.\n\nYou can enable or disable:\n\n- Notifications\n- Location\n- Camera\n- Storage\n\nAfter updating permissions, return to the app to see the changes.',
+      [
+        {
+          text: 'Not Now',
+          style: 'cancel',
+        },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            console.log('🔧 User clicked "Open Settings" button');
+            // Set flag to check permissions when app becomes active
+            permissionCheckTriggered.current = true;
+            
+            // Open app info page which shows Permissions prominently
+            if (Platform.OS === 'android') {
+              console.log('🔧 Calling PermissionService.openAppPermissionsSettings()...');
+              try {
+                PermissionService.openAppPermissionsSettings();
+                console.log('🔧 PermissionService.openAppPermissionsSettings() called');
+              } catch (error) {
+                console.error('❌ Error in openAppPermissionsSettings:', error);
+                // Direct fallback - try Linking.openSettings directly
+                console.log('🔄 Trying Linking.openSettings() directly...');
+                Linking.openSettings()
+                  .then(() => console.log('✅ Linking.openSettings() succeeded'))
+                  .catch((err) => {
+                    console.error('❌ Linking.openSettings() failed:', err);
+                    Alert.alert('Error', 'Unable to open device settings');
+                  });
               }
-            },
+            } else {
+              // iOS - open general settings
+              Linking.openSettings().catch((error) => {
+                console.error('Error opening settings:', error);
+                Alert.alert('Error', 'Unable to open device settings');
+              });
+            }
           },
-        ]
-      );
-    } catch (error) {
-      console.error('Error opening permission settings:', error);
-      Alert.alert('Error', 'Failed to open permission settings');
-    }
+        },
+      ]
+    );
   };
 
   const handleExportData = () => {

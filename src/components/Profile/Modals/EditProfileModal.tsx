@@ -13,6 +13,7 @@ import { ProfileData } from '@/types/profile.types';
 import { GENDER_OPTIONS } from '@/config/profile.config';
 import { calculateAge } from '@/utils/profile.utils';
 import { getUserCountry } from '@/utils/locationService';
+import { Toast, useToast } from '@/components/Toast';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -48,6 +49,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const { toast, showToast, hideToast } = useToast();
 
   // Reset edited data when modal opens/closes or profileData changes
   useEffect(() => {
@@ -72,8 +74,11 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       delete dataToSave.username; // Remove username from save data
       
       await onSave(dataToSave);
-      Alert.alert('Success', 'Profile updated successfully!');
-      onClose();
+      showToast('Profile updated successfully!', 'success', 3000);
+      // Close modal after a short delay to show the toast
+      setTimeout(() => {
+        onClose();
+      }, 500);
     } catch (error) {
       console.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to update profile. Please try again.');
@@ -191,6 +196,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   };
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -404,6 +410,16 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
         </View>
       </View>
     </Modal>
+    
+    {/* Toast Notification */}
+    <Toast
+      visible={toast.visible}
+      message={toast.message}
+      type={toast.type}
+      duration={toast.duration}
+      onHide={hideToast}
+    />
+  </>
   );
 };
 

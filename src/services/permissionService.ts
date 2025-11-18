@@ -20,6 +20,11 @@ export interface PermissionStatus {
 
 export type PermissionType = keyof PermissionStatus;
 
+export interface NotificationPermissionResult {
+  granted: boolean;
+  permanentlyDenied: boolean;
+}
+
 interface PermissionConfig {
   title: string;
   message: string;
@@ -162,8 +167,9 @@ class PermissionService {
 
   /**
    * Request notification permissions with proper Android 13+ handling
+   * Returns detailed result including permanent denial status
    */
-  async requestNotificationPermissions(): Promise<boolean> {
+  async requestNotificationPermissionsDetailed(): Promise<NotificationPermissionResult> {
     try {
       if (Platform.OS === 'android') {
         const androidVersion = Platform.Version as number;
@@ -185,23 +191,24 @@ class PermissionService {
 
             if (granted === PermissionsAndroid.RESULTS.GRANTED) {
               console.log('Notification permission granted');
-              return true;
+              return { granted: true, permanentlyDenied: false };
             } else if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
               console.log('Notification permission permanently denied');
               this.showPermissionDeniedDialog('notifications');
-              return false;
+              return { granted: false, permanentlyDenied: true };
             } else {
               console.log('Notification permission denied');
-              return false;
+              return { granted: false, permanentlyDenied: false };
             }
           } catch (error) {
             console.error('Error requesting notification permission:', error);
-            return false;
+            return { granted: false, permanentlyDenied: false };
           }
         } else {
           // Android < 13 - permissions handled by manifest
           console.log('Android < 13 - checking notification status');
-          return await this.checkNotificationPermissions();
+          const isGranted = await this.checkNotificationPermissions();
+          return { granted: isGranted, permanentlyDenied: false };
         }
       } else {
         // iOS - request permissions through push notification
@@ -209,16 +216,27 @@ class PermissionService {
         try {
           const permissions = await PushNotification.requestPermissions();
           console.log('iOS notification permissions result:', permissions);
-          return permissions?.alert || false;
+          const isGranted = permissions?.alert || false;
+          return { granted: isGranted, permanentlyDenied: false };
         } catch (error) {
           console.error('Error requesting iOS notification permissions:', error);
-          return await this.checkNotificationPermissions();
+          const isGranted = await this.checkNotificationPermissions();
+          return { granted: isGranted, permanentlyDenied: false };
         }
       }
     } catch (error) {
       console.error('Error in requestNotificationPermissions:', error);
-      return false;
+      return { granted: false, permanentlyDenied: false };
     }
+  }
+
+  /**
+   * Request notification permissions with proper Android 13+ handling
+   * @deprecated Use requestNotificationPermissionsDetailed() for detailed results
+   */
+  async requestNotificationPermissions(): Promise<boolean> {
+    const result = await this.requestNotificationPermissionsDetailed();
+    return result.granted;
   }
 
   /**

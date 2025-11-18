@@ -143,17 +143,23 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNavigate }) => {
           <View style={styles.featureRow}>
             <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>🔒</Text>
-              <Text style={styles.featureTitle}>Anonymous</Text>
+              <Text style={styles.featureTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>
+                Anonymous
+              </Text>
             </View>
 
             <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>💭</Text>
-              <Text style={styles.featureTitle}>Mood-Based</Text>
+              <Text style={styles.featureTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>
+                Mood-Based
+              </Text>
             </View>
 
             <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>🛡️</Text>
-              <Text style={styles.featureTitle}>Safe & Secure</Text>
+              <Text style={styles.featureTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>
+                Safe & Secure
+              </Text>
             </View>
           </View>
         </View>
@@ -259,9 +265,10 @@ const styles = StyleSheet.create({
   featureBlock: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#F3EEFF', // soft lavender tone
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.xs,
     borderRadius: 14,
     marginHorizontal: spacing.xs,
     borderWidth: 1,
@@ -271,13 +278,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 6,
     elevation: 4,
+    minHeight: 80,
   },
   featureIcon: {
     fontSize: 26,
     marginBottom: spacing.xs,
   },
   featureTitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#3B2E6F', // improved contrast text color
     fontWeight: '600',
     textAlign: 'center',

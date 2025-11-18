@@ -8,6 +8,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert, Dim
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
+import { Toast, useToast } from '@/components/Toast';
 interface MoodModalProps {
   visible: boolean;
   onClose: () => void;
@@ -24,6 +25,7 @@ export const MoodModal: React.FC<MoodModalProps> = ({
   theme,
 }) => {
   const styles = createStyles(theme);
+  const { toast, showToast, hideToast } = useToast();
 
   // TODO: Get available moods from moodConfig
   const moods = Object.keys(moodConfig);
@@ -32,17 +34,18 @@ export const MoodModal: React.FC<MoodModalProps> = ({
     try {
       await onMoodSelect(mood);
       const config = getMoodConfig(mood);
-      Alert.alert(
-        'Mood Updated',
-        `You're now feeling ${config.description.toLowerCase()}!`
-      );
-      onClose();
+      showToast(`You're now feeling ${config.description.toLowerCase()}!`, 'success', 3000);
+      // Close modal after a short delay to show the toast
+      setTimeout(() => {
+        onClose();
+      }, 500);
     } catch (error) {
       console.error('Error updating mood:', error);
     }
   };
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -106,6 +109,16 @@ export const MoodModal: React.FC<MoodModalProps> = ({
         </View>
       </View>
     </Modal>
+    
+    {/* Toast Notification */}
+    <Toast
+      visible={toast.visible}
+      message={toast.message}
+      type={toast.type}
+      duration={toast.duration}
+      onHide={hideToast}
+    />
+  </>
   );
 };
 
