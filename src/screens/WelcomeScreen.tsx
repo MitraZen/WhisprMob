@@ -143,38 +143,17 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNavigate }) => {
           <View style={styles.featureRow}>
             <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>🔒</Text>
-              <Text
-                style={styles.featureTitle}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-              >
-                Anonymous
-              </Text>
+              <Text style={styles.featureTitle}>Anonymous</Text>
             </View>
 
             <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>💭</Text>
-              <Text
-                style={styles.featureTitle}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-              >
-                Mood-Based
-              </Text>
+              <Text style={styles.featureTitle}>Mood-Based</Text>
             </View>
 
             <View style={styles.featureBlock}>
               <Text style={styles.featureIcon}>🛡️</Text>
-              <Text
-                style={styles.featureTitle}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-              >
-                Safe & Secure
-              </Text>
+              <Text style={styles.featureTitle}>Safe & Secure</Text>
             </View>
           </View>
         </View>

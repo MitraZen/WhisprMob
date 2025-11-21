@@ -78,11 +78,13 @@ class EnhancedBuddyProfileService {
   /**
    * Get enhanced buddy profile with achievements, interests, and trust markers
    */
-  async getEnhancedBuddyProfile(userId: string): Promise<EnhancedBuddyProfile | null> {
+  async getEnhancedBuddyProfile(
+    userId: string,
+  ): Promise<EnhancedBuddyProfile | null> {
     try {
       console.log('🔍 Fetching enhanced buddy profile for user:', userId);
 
-      // Fetch basic profile info
+      // Fetch basic profile info - user_profiles uses 'id' as primary key
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
@@ -91,6 +93,11 @@ class EnhancedBuddyProfileService {
 
       if (profileError) {
         console.error('❌ Error fetching profile:', profileError);
+        return null;
+      }
+
+      if (!profileData) {
+        console.error('❌ No profile data found for userId:', userId);
         return null;
       }
 
@@ -128,25 +135,88 @@ class EnhancedBuddyProfileService {
         console.error('❌ Error fetching trust markers:', trustMarkersError);
       }
 
-      // Fetch trust summary
-      const { data: trustSummary, error: trustSummaryError } = await supabase
+      // Fetch trust summary - try both id and user_id
+      let trustSummary = null;
+      let trustSummaryError = null;
+
+      // First try with user_id
+      const { data: summaryByUserId, error: errorByUserId } = await supabase
         .from('user_trust_summary')
         .select('*')
         .eq('user_id', userId)
         .single();
 
-      if (trustSummaryError) {
+      if (summaryByUserId && !errorByUserId) {
+        trustSummary = summaryByUserId;
+      } else {
+        // Try with id if user_id didn't work
+        const { data: summaryById, error: errorById } = await supabase
+          .from('user_trust_summary')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (summaryById && !errorById) {
+          trustSummary = summaryById;
+        } else {
+          trustSummaryError = errorById || errorByUserId;
+        }
+      }
+
+      // If no trust summary exists, try to recalculate it
+      if (
+        !trustSummary &&
+        (!trustSummaryError || trustSummaryError.code === 'PGRST116')
+      ) {
+        console.log('⚠️ No trust summary found, attempting to recalculate...');
+        try {
+          const recalculatedScore = await this.recalculateTrustScore(userId);
+          console.log('✅ Recalculated trust score:', recalculatedScore);
+
+          // Fetch again after recalculation
+          const { data: newSummary } = await supabase
+            .from('user_trust_summary')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+          if (newSummary) {
+            trustSummary = newSummary;
+          }
+        } catch (recalcError) {
+          console.error('❌ Error recalculating trust score:', recalcError);
+        }
+      }
+
+      if (trustSummaryError && trustSummaryError.code !== 'PGRST116') {
         console.error('❌ Error fetching trust summary:', trustSummaryError);
+      } else if (!trustSummary) {
+        console.log('⚠️ No trust summary available for user:', userId);
+      } else {
+        console.log('✅ Trust summary loaded:', {
+          total_trust_score: trustSummary.total_trust_score,
+          trust_level: trustSummary.trust_level,
+          active_markers_count: trustSummary.active_markers_count,
+        });
       }
 
       const enhancedProfile: EnhancedBuddyProfile = {
         basicInfo: {
-          displayName: profileData.display_name || profileData.username || 'Anonymous User',
-          username: profileData.username || profileData.anonymous_id || 'anonymous',
+          displayName:
+            profileData.display_name ||
+            profileData.username ||
+            'Anonymous User',
+          username:
+            profileData.username || profileData.anonymous_id || 'anonymous',
           bio: profileData.bio || 'No bio available',
           age: (() => {
-            const dob = profileData.date_of_birth ? new Date(profileData.date_of_birth) : null;
-            const numericAge = typeof profileData.age === 'number' ? profileData.age : parseInt(profileData.age, 10);
+            const dob = profileData.date_of_birth
+              ? new Date(profileData.date_of_birth)
+              : null;
+            const numericAge =
+              typeof profileData.age === 'number'
+                ? profileData.age
+                : parseInt(profileData.age, 10);
             if (dob && !isNaN(dob.getTime())) {
               const today = new Date();
               let ageYears = today.getFullYear() - dob.getFullYear();
@@ -161,12 +231,15 @@ class EnhancedBuddyProfileService {
             }
             return 'Not specified';
           })(),
-          location: profileData.location || profileData.country || 'Not specified',
+          location:
+            profileData.location || profileData.country || 'Not specified',
           gender: profileData.gender || 'Not specified',
           mood: profileData.mood || 'happy',
           joinDate: new Date(profileData.created_at),
           isOnline: profileData.is_online || false,
-          lastSeen: profileData.last_seen ? new Date(profileData.last_seen) : null,
+          lastSeen: profileData.last_seen
+            ? new Date(profileData.last_seen)
+            : null,
         },
         achievements: achievements || [],
         interests: interests || [],
@@ -186,7 +259,6 @@ class EnhancedBuddyProfileService {
 
       console.log('✅ Enhanced buddy profile loaded successfully');
       return enhancedProfile;
-
     } catch (error) {
       console.error('❌ Error in getEnhancedBuddyProfile:', error);
       return null;
@@ -196,7 +268,10 @@ class EnhancedBuddyProfileService {
   /**
    * Get recent achievements (last 5)
    */
-  async getRecentAchievements(userId: string, limit: number = 5): Promise<UserAchievement[]> {
+  async getRecentAchievements(
+    userId: string,
+    limit: number = 5,
+  ): Promise<UserAchievement[]> {
     try {
       const { data, error } = await supabase
         .from('user_achievements')
@@ -220,7 +295,9 @@ class EnhancedBuddyProfileService {
   /**
    * Get user interests by category
    */
-  async getInterestsByCategory(userId: string): Promise<Record<string, UserInterest[]>> {
+  async getInterestsByCategory(
+    userId: string,
+  ): Promise<Record<string, UserInterest[]>> {
     try {
       const { data, error } = await supabase
         .from('user_interests')
@@ -302,16 +379,14 @@ class EnhancedBuddyProfileService {
   async addInterest(
     interestCategory: string,
     interestName: string,
-    interestLevel: 'casual' | 'moderate' | 'passionate' | 'expert' = 'casual'
+    interestLevel: 'casual' | 'moderate' | 'passionate' | 'expert' = 'casual',
   ): Promise<boolean> {
     try {
-      const { error } = await supabase
-        .from('user_interests')
-        .insert({
-          interest_category: interestCategory,
-          interest_name: interestName,
-          interest_level: interestLevel,
-        });
+      const { error } = await supabase.from('user_interests').insert({
+        interest_category: interestCategory,
+        interest_name: interestName,
+        interest_level: interestLevel,
+      });
 
       if (error) {
         console.error('❌ Error adding interest:', error);
@@ -355,7 +430,7 @@ class EnhancedBuddyProfileService {
   async recalculateTrustScore(userId: string): Promise<number> {
     try {
       const { data, error } = await supabase.rpc('calculate_user_trust_score', {
-        p_user_id: userId
+        p_user_id: userId,
       });
 
       if (error) {
@@ -428,4 +503,3 @@ class EnhancedBuddyProfileService {
 }
 
 export default EnhancedBuddyProfileService.getInstance();
-

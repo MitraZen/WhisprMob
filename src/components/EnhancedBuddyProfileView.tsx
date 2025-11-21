@@ -62,40 +62,87 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
         
         // Load interest tokens from profile - fetch full profile to get interests field
         try {
-          const { data: profileData } = await supabase
+          // user_profiles table uses 'id' as primary key (not user_id)
+          const { data: profileData, error: profileError } = await supabase
             .from('user_profiles')
-            .select('interests')
+            .select('interests, id')
             .eq('id', userId)
             .single();
           
+          console.log('🔍 Loading interests for userId:', userId);
+          console.log('🔍 Profile data found:', !!profileData);
+          console.log('🔍 Profile error:', profileError);
+          
           if (profileData?.interests) {
-            const savedInterests = typeof profileData.interests === 'string' 
-              ? JSON.parse(profileData.interests) 
-              : profileData.interests;
+            let savedInterests: any = null;
+            
+            // Handle different formats: text[] array, JSON string, or already parsed array
+            if (typeof profileData.interests === 'string') {
+              try {
+                // Try parsing as JSON first
+                savedInterests = JSON.parse(profileData.interests);
+              } catch (e) {
+                // If not JSON, might be a PostgreSQL array string like "{item1,item2}"
+                // Or a single string value
+                console.log('🔍 Interests is string but not JSON, treating as array:', profileData.interests);
+                savedInterests = [profileData.interests];
+              }
+            } else if (Array.isArray(profileData.interests)) {
+              // Already an array (PostgreSQL text[] format)
+              savedInterests = profileData.interests;
+            } else {
+              savedInterests = profileData.interests;
+            }
+            
+            console.log('🔍 Raw interests:', profileData.interests);
+            console.log('🔍 Parsed interests type:', typeof savedInterests, Array.isArray(savedInterests) ? `array[${savedInterests.length}]` : 'not array');
+            console.log('🔍 Parsed interests value:', savedInterests);
             
             if (Array.isArray(savedInterests) && savedInterests.length > 0) {
-              // Merge with defaults to ensure all tokens are available
-              const savedTokensMap = new Map(savedInterests.map((t: InterestToken) => [t.id, t]));
-              const mergedTokens = DEFAULT_INTEREST_TOKENS.map(defaultToken => {
-                const savedToken = savedTokensMap.get(defaultToken.id);
-                if (savedToken) {
-                  return {
-                    ...defaultToken,
-                    selected: savedToken.selected,
-                    category: savedToken.category || defaultToken.category,
-                  };
-                }
-                return defaultToken;
-              });
-              setInterestTokens(mergedTokens.filter(t => t.selected));
+              // Check if it's an array of InterestToken objects or just strings/IDs
+              const firstItem = savedInterests[0];
+              
+              if (typeof firstItem === 'object' && firstItem !== null && 'id' in firstItem) {
+                // Array of InterestToken objects
+                const savedTokensMap = new Map(savedInterests.map((t: InterestToken) => [t.id, t]));
+                const mergedTokens = DEFAULT_INTEREST_TOKENS.map(defaultToken => {
+                  const savedToken = savedTokensMap.get(defaultToken.id);
+                  if (savedToken) {
+                    return {
+                      ...defaultToken,
+                      selected: savedToken.selected !== false, // Default to true if saved
+                      category: savedToken.category || defaultToken.category,
+                    };
+                  }
+                  return defaultToken;
+                });
+                const selectedTokens = mergedTokens.filter(t => t.selected);
+                console.log('🔍 Selected interest tokens (object format):', selectedTokens.length);
+                setInterestTokens(selectedTokens);
+              } else {
+                // Array of strings/IDs - match with DEFAULT_INTEREST_TOKENS
+                const selectedTokens = DEFAULT_INTEREST_TOKENS.filter(token => {
+                  // Match by ID, label, or emoji
+                  return savedInterests.some((saved: any) => {
+                    const savedStr = String(saved).toLowerCase();
+                    return savedStr === token.id.toLowerCase() ||
+                           savedStr === token.label.toLowerCase() ||
+                           savedStr === token.emoji;
+                  });
+                });
+                console.log('🔍 Selected interest tokens (string format):', selectedTokens.length);
+                setInterestTokens(selectedTokens);
+              }
             } else {
+              console.log('🔍 No interests found in profile (empty or invalid format)');
               setInterestTokens([]);
             }
           } else {
+            console.log('🔍 No interests field in profile data');
             setInterestTokens([]);
           }
         } catch (err) {
-          console.error('Error loading interest tokens:', err);
+          console.error('❌ Error loading interest tokens:', err);
           setInterestTokens([]);
         }
       } else {
@@ -307,6 +354,21 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
         );
 
       case 'trust':
+        // Calculate actual trust score from active trust markers
+        const calculatedTrustScore = profileData.trustMarkers
+          .filter(marker => marker.is_active)
+          .reduce((total, marker) => total + (marker.trust_score || 0), 0);
+        
+        // Use calculated score if it differs from stored score (more accurate)
+        const displayTrustScore = calculatedTrustScore > 0 ? calculatedTrustScore : profileData.trustSummary.total_trust_score;
+        
+        console.log('🔍 Trust Score Debug:', {
+          stored: profileData.trustSummary.total_trust_score,
+          calculated: calculatedTrustScore,
+          activeMarkers: profileData.trustMarkers.filter(m => m.is_active).length,
+          display: displayTrustScore
+        });
+        
         return (
           <View style={styles.tabContent}>
             <View style={styles.trustSummary}>
@@ -318,7 +380,7 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
                   styles.trustScoreValue,
                   { color: EnhancedBuddyProfileService.getTrustLevelColor(profileData.trustSummary.trust_level) }
                 ]}>
-                  {profileData.trustSummary.total_trust_score}
+                  {displayTrustScore}
                 </Text>
                 <Text style={[
                   styles.trustLevel,

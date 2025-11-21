@@ -1246,10 +1246,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     if (flatListRef.current && reversedMessages.length > 0) {
       try {
         flatListRef.current.scrollToIndex({ index: 0, animated });
-        setIsUserScrolling(false);
-        setHasNewMessages(false);
-        setNewMessageCount(0);
-        messagesEndRef.current = messages.length;
+      setIsUserScrolling(false);
+      setHasNewMessages(false);
+      setNewMessageCount(0);
+      messagesEndRef.current = messages.length;
       } catch (error) {
         // Fallback if scrollToIndex fails
         if (flatListRef.current) {
@@ -1584,7 +1584,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
               if (flatListRef.current && !isUserScrolling && reversedMessages.length > 0) {
                 try {
                   flatListRef.current.scrollToIndex({ index: 0, animated: true });
-                  lastAutoScrollTimeRef.current = Date.now();
+                lastAutoScrollTimeRef.current = Date.now();
                 } catch (error) {
                   // Fallback
                   if (flatListRef.current) {
@@ -1599,28 +1599,28 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         ListEmptyComponent={() => {
           if (isLoading && messages.length === 0) {
             return (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
-                <Text style={styles.loadingText}>Loading messages...</Text>
-              </View>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={styles.loadingText}>Loading messages...</Text>
+          </View>
             );
           }
           if (filteredMessages.length === 0 && searchQuery.trim().length > 0) {
             return (
-              <View style={styles.emptyContainer}>
-                <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
-                <Text style={styles.emptyText}>No results found</Text>
-                <Text style={styles.emptySubtext}>Try a different search term</Text>
-              </View>
+          <View style={styles.emptyContainer}>
+            <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
+            <Text style={styles.emptyText}>No results found</Text>
+            <Text style={styles.emptySubtext}>Try a different search term</Text>
+          </View>
             );
           }
           if (filteredMessages.length === 0) {
             return (
-              <View style={styles.emptyContainer}>
-                <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
-                <Text style={styles.emptyText}>No messages yet</Text>
-                <Text style={styles.emptySubtext}>Start a conversation!</Text>
-              </View>
+          <View style={styles.emptyContainer}>
+            <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
+            <Text style={styles.emptyText}>No messages yet</Text>
+            <Text style={styles.emptySubtext}>Start a conversation!</Text>
+          </View>
             );
           }
           return null;

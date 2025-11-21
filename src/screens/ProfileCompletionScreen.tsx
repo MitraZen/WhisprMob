@@ -16,10 +16,7 @@ import { theme, spacing, borderRadius } from '@/utils/theme';
 import { useAuth } from '@/store/AuthContext';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { getUserCountry } from '@/utils/locationService';
-import PermissionService, {
-  NotificationPermissionResult,
-} from '@/services/permissionService';
-import messaging from '@react-native-firebase/messaging';
+import PermissionService from '@/services/permissionService';
 
 interface ProfileCompletionScreenProps {
   onComplete: (profileData: ProfileData) => void;
@@ -254,43 +251,10 @@ export const ProfileCompletionScreen: React.FC<
           const hasAskedBefore = await AsyncStorage.getItem(userSpecificKey);
 
           if (!hasAskedBefore) {
-            // Use detailed method to get permanent denial status
-            const result: NotificationPermissionResult =
-              await PermissionService.requestNotificationPermissionsDetailed();
-
-            // CRITICAL FIX #1: Always set the flag regardless of result
-            // This prevents re-prompting users who explicitly denied
-            await AsyncStorage.setItem(userSpecificKey, 'true');
-
-            // CRITICAL FIX #4: Track permanent denial separately
-            if (result.permanentlyDenied) {
-              await AsyncStorage.setItem(permanentlyDeniedKey, 'true');
-              console.log(
-                '🔕 Notification permission permanently denied after profile completion',
-              );
-            }
-
-            if (result.granted) {
-              console.log(
-                '✅ Notification permission granted after profile completion',
-              );
-
-              // CRITICAL FIX #2: Save FCM token immediately when granted
-              try {
-                const token = await messaging().getToken();
-                console.log('🔑 FCM Token:', token);
-
-                const { fcmManager } = await import('@/services/FCMManager');
-                await fcmManager.initialize(userId);
-                console.log(
-                  '✅ FCM token saved via FCMManager after profile completion',
-                );
-              } catch (fcmError) {
-                console.warn(
-                  '⚠️ Failed to save FCM token after profile completion:',
-                  fcmError,
-                );
-              }
+            const granted = await PermissionService.requestNotificationPermissions();
+            if (granted) {
+              console.log('✅ Notification permission granted after profile completion');
+              await AsyncStorage.setItem(userSpecificKey, 'true');
             } else {
               console.log(
                 '🚫 Notification permission denied after profile completion',
