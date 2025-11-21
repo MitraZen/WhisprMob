@@ -8,6 +8,7 @@ import { MoodType } from '@/types';
 import { AuthService } from '@/services/authService';
 import { useAuth } from '@/store/AuthContext';
 import BiometricService from '@/services/biometricService';
+import { Toast, useToast } from '@/components/Toast';
 
 interface SignUpScreenProps {
   onSignUpSuccess: (user: any) => void;
@@ -109,7 +110,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onB
     setIsLoading(true);
     try {
       const { user, error, requiresEmailConfirmation } = await AuthService.signUp(email, password, selectedMood, username);
-      
+
       if (error) {
         Alert.alert('Sign Up Failed', error);
       } else if (user) {
@@ -282,6 +283,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const { setAuthenticatedUser } = useAuth();
+  const { toast, showToast, hideToast } = useToast();
 
   useEffect(() => {
     checkBiometricStatus();
@@ -318,12 +320,13 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
     setIsLoading(true);
     try {
       const { user, error } = await AuthService.signIn(email, password);
-      
+
       if (error) {
         Alert.alert('Sign In Failed', error);
+        showToast(error, 'error', 4000);
       } else if (user) {
         await setAuthenticatedUser(user);
-        
+
         // Offer to enable biometric authentication if available and not already enabled
         if (biometricAvailable && !biometricEnabled) {
           const shouldEnable = await BiometricService.promptBiometricSetup();
@@ -342,7 +345,9 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
             }
           }
         }
-        
+        // Biometric authentication can be enabled manually from Settings
+        // Removed automatic prompt to reduce notifications on app launch
+
         onSignInSuccess(user);
       }
     } catch (error) {
@@ -361,12 +366,13 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
     setIsLoading(true);
     try {
       const result = await BiometricService.authenticateWithBiometric();
-      
+
       if (result.success && result.credentials) {
         const { user, error } = await AuthService.signIn(result.credentials.userId, result.credentials.password);
-        
+
         if (error) {
           Alert.alert('Sign In Failed', error);
+          showToast(error, 'error', 4000);
         } else if (user) {
           await setAuthenticatedUser(user);
           onSignInSuccess(user);
@@ -473,6 +479,15 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
           </View>
         </View>
       </ScrollView>
+      
+      {/* Toast Notification */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        duration={toast.duration}
+        onHide={hideToast}
+      />
     </KeyboardAvoidingView>
   );
 };

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   StyleSheet,
   Platform,
   Alert,
@@ -198,7 +199,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
               </Text>
               <Animated.View 
                 style={[
-                  styles.statusContainer,
+                  styles.messageStatusContainer,
                   { 
                     opacity: checkmarkAnim,
                     transform: [{ scale: checkmarkScaleAnim }]
@@ -417,7 +418,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const scrollPositionRef = useRef(0);
   const messagesEndRef = useRef(0);
   
-  const scrollViewRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList<SimpleMessage>>(null);
   const processingMessages = useRef<Set<string>>(new Set());
   const lastAutoScrollTimeRef = useRef<number>(0);
   const autoScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -432,6 +433,11 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       message.content?.toLowerCase().includes(query)
     );
   }, [messages, searchQuery]);
+
+  // Reversed messages for inverted FlatList (newest first in array, displayed at bottom)
+  const reversedMessages = useMemo(() => {
+    return [...filteredMessages].reverse();
+  }, [filteredMessages]);
 
   // Toggle search mode
   const toggleSearchMode = () => {
@@ -473,6 +479,26 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       setTimeout(markAsRead, 500);
     }
   }, [buddy?.id, user?.id, onMessagesRead]);
+
+  // Initial scroll to bottom when messages first load (inverted list - scroll to index 0)
+  useEffect(() => {
+    if (!flatListRef.current) return;
+    if (reversedMessages.length === 0) return;
+
+    const tryScroll = () => {
+      if (!flatListRef.current) return;
+      try {
+        flatListRef.current.scrollToIndex({ index: 0, animated: false });
+        setIsUserScrolling(false);
+        console.log('✅ Scrolled to bottom (index 0)');
+      } catch (e) {
+        // Retry if scrollToIndex fails (item not rendered yet)
+        setTimeout(() => tryScroll(), 150);
+      }
+    };
+
+    tryScroll();
+  }, [reversedMessages.length, buddy?.id]);
 
   // Load conversation mode for the buddy (the person you're chatting with)
   useEffect(() => {
@@ -929,13 +955,27 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     // 2. If message is from buddy AND user is scrolled up → Don't scroll (show banner instead)
     // 3. If message is from buddy AND user is at bottom → Auto-scroll to show new message
     setTimeout(() => {
-      if (scrollViewRef.current) {
+      if (flatListRef.current) {
         if (isFromCurrentUser) {
           // User sent their own message - always scroll to see it
-          scrollViewRef.current.scrollToEnd({ animated: true });
+          try {
+            flatListRef.current.scrollToIndex({ index: 0, animated: true });
+          } catch (error) {
+            // Fallback
+            if (flatListRef.current) {
+              flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+            }
+          }
         } else if (!isUserScrolling) {
           // Message from buddy, but user is at bottom - auto-scroll
-          scrollViewRef.current.scrollToEnd({ animated: true });
+          try {
+            flatListRef.current.scrollToIndex({ index: 0, animated: true });
+          } catch (error) {
+            // Fallback
+            if (flatListRef.current) {
+              flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+            }
+          }
         } else {
           // Message from buddy, user is scrolled up - don't scroll, banner will show
           console.log('📍 User is scrolled up - not auto-scrolling, banner will show for new message');
@@ -1148,8 +1188,8 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  // Helper function to determine if date header should be shown
-  const shouldShowDateHeader = (currentMessage: SimpleMessage, previousMessage: SimpleMessage | null): boolean => {
+  // Helper function to determine if date header should be shown - memoized
+  const shouldShowDateHeader = useCallback((currentMessage: SimpleMessage, previousMessage: SimpleMessage | null): boolean => {
     if (!previousMessage) return true;
     
     const currentDate = new Date(currentMessage.created_at);
@@ -1159,7 +1199,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     previousDate.setHours(0, 0, 0, 0);
     
     return currentDate.getTime() !== previousDate.getTime();
-  };
+  }, []);
 
   const getOtherUserId = () => {
     if (!buddy || !user) {
@@ -1201,23 +1241,37 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   // Function to scroll to bottom and clear new message indicator
+  // With inverted list, index 0 is the newest message (at bottom)
   const scrollToBottom = (animated: boolean = true) => {
-    if (scrollViewRef.current) {
-      scrollViewRef.current.scrollToEnd({ animated });
-      setIsUserScrolling(false);
-      setHasNewMessages(false);
-      setNewMessageCount(0);
-      messagesEndRef.current = messages.length;
+    if (flatListRef.current && reversedMessages.length > 0) {
+      try {
+        flatListRef.current.scrollToIndex({ index: 0, animated });
+        setIsUserScrolling(false);
+        setHasNewMessages(false);
+        setNewMessageCount(0);
+        messagesEndRef.current = messages.length;
+      } catch (error) {
+        // Fallback if scrollToIndex fails
+        if (flatListRef.current) {
+          flatListRef.current.scrollToOffset({ offset: 0, animated });
+        }
+      }
     }
   };
 
-  const renderMessage = (message: SimpleMessage, index: number) => {
-    const isFromCurrentUser = message.sender_id === user.id;
-    const previousMessage = index > 0 ? filteredMessages[index - 1] : null;
-    const showDateHeader = shouldShowDateHeader(message, previousMessage);
-    
+  // Memoized MessageItem component for better performance
+  const MessageItem = React.memo<{
+    message: SimpleMessage;
+    index: number;
+    isFromCurrentUser: boolean;
+    showDateHeader: boolean;
+    previousMessage: SimpleMessage | null;
+    messageReactions: Record<string, number> | undefined;
+    onReply: (msg: SimpleMessage) => void;
+    onLongPress: (messageId: string) => void;
+  }>(({ message, index, isFromCurrentUser, showDateHeader, previousMessage, messageReactions, onReply, onLongPress }) => {
     return (
-      <View key={message.id || `message-${index}`}>
+      <View>
         {showDateHeader && (
           <View style={styles.dateHeaderContainer}>
             <View style={styles.dateHeaderBadge}>
@@ -1231,10 +1285,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         <SwipeableMessage
           message={message}
           isFromCurrentUser={isFromCurrentUser}
-          onReply={(msg) => {
-            console.log('Swipe reply triggered for message:', msg.id);
-            setReplyingToMessage(msg);
-          }}
+          onReply={onReply}
         >
           <View
             style={[
@@ -1245,11 +1296,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             <Pressable
               delayLongPress={500}
               pressRetentionOffset={{ top: 20, left: 20, right: 20, bottom: 20 }}
-              onLongPress={() => {
-                console.log('Long press detected for message:', message.id);
-                setReactionPickerMessageId(message.id);
-                setReactionPickerVisible(true);
-              }}
+              onLongPress={() => onLongPress(message.id)}
               onPressIn={() => {
                 console.log('press-in on bubble', message.id);
               }}
@@ -1265,9 +1312,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
               />
             </Pressable>
             
-            {reactionsByMessageId[message.id] && (
+            {messageReactions && (
               <View style={styles.reactionPillsRow}>
-                {Object.entries(reactionsByMessageId[message.id]).map(([emoji, count]) => (
+                {Object.entries(messageReactions).map(([emoji, count]) => (
                   <View key={`${message.id}-${emoji}`} style={styles.reactionPill}>
                     <Text style={styles.reactionPillText}>{`${emoji} ${count}`}</Text>
                   </View>
@@ -1278,7 +1325,73 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </SwipeableMessage>
       </View>
     );
-  };
+  }, (prevProps, nextProps) => {
+    // Custom comparison function for React.memo - only re-render if props actually change
+    // Avoid JSON.stringify for performance - use shallow comparison
+    const prevReactions = prevProps.messageReactions;
+    const nextReactions = nextProps.messageReactions;
+    let reactionsEqual = false;
+    
+    if (prevReactions === nextReactions) {
+      reactionsEqual = true;
+    } else if (prevReactions && nextReactions) {
+      const prevKeys = Object.keys(prevReactions);
+      const nextKeys = Object.keys(nextReactions);
+      reactionsEqual = prevKeys.length === nextKeys.length &&
+        prevKeys.every(key => prevReactions[key] === nextReactions[key]);
+    } else if (!prevReactions && !nextReactions) {
+      reactionsEqual = true;
+    }
+    
+    return (
+      prevProps.message.id === nextProps.message.id &&
+      prevProps.message.content === nextProps.message.content &&
+      prevProps.message.is_read === nextProps.message.is_read &&
+      prevProps.message.created_at === nextProps.message.created_at &&
+      prevProps.showDateHeader === nextProps.showDateHeader &&
+      prevProps.isFromCurrentUser === nextProps.isFromCurrentUser &&
+      reactionsEqual
+    );
+  });
+
+  // Handlers for MessageItem - memoized
+  const handleMessageReply = useCallback((msg: SimpleMessage) => {
+    console.log('Swipe reply triggered for message:', msg.id);
+    setReplyingToMessage(msg);
+  }, []);
+
+  const handleMessageLongPress = useCallback((messageId: string) => {
+    console.log('Long press detected for message:', messageId);
+    setReactionPickerMessageId(messageId);
+    setReactionPickerVisible(true);
+  }, []);
+
+  // FlatList renderItem wrapper - memoized with useCallback
+  // Note: With inverted list + reversed data, previousMessage is at index + 1
+  const renderItem = useCallback(({ item, index }: { item: SimpleMessage; index: number }) => {
+    const isFromCurrentUser = item.sender_id === user.id;
+    // For inverted list with reversed data: previous message (visually above) is next in array
+    const previousMessage = index + 1 < reversedMessages.length ? reversedMessages[index + 1] : null;
+    const showDateHeader = shouldShowDateHeader(item, previousMessage);
+    
+    return (
+      <MessageItem
+        message={item}
+        index={index}
+        isFromCurrentUser={isFromCurrentUser}
+        showDateHeader={showDateHeader}
+        previousMessage={previousMessage}
+        messageReactions={reactionsByMessageId[item.id]}
+        onReply={handleMessageReply}
+        onLongPress={handleMessageLongPress}
+      />
+    );
+  }, [user?.id, reversedMessages, reactionsByMessageId, shouldShowDateHeader, handleMessageReply, handleMessageLongPress]);
+
+  // FlatList keyExtractor - memoized
+  const keyExtractor = useCallback((item: SimpleMessage, index: number) => {
+    return item.id || `message-${index}`;
+  }, []);
 
   const [showError, setShowError] = React.useState(false);
   
@@ -1407,88 +1520,147 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </View>
       )}
 
-      <ScrollView
-        ref={scrollViewRef}
+      <FlatList
+        ref={flatListRef}
+        data={reversedMessages}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        inverted={true}
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        onContentSizeChange={(contentWidth, contentHeight) => {
-          // onContentSizeChange fires when content size changes (new message added)
-          // CRITICAL: Use scrollPositionRef (updated in handleScroll) instead of state
-          // This prevents race conditions where state hasn't updated yet when onContentSizeChange fires
-          if (!scrollViewRef.current) return;
+        onLayout={(event) => {
+          // Simplified: Only handle new message auto-scroll when user is at bottom
+          if (!flatListRef.current || reversedMessages.length === 0) return;
+          if (isUserScrolling) return;
           
-          // Debounce: Prevent rapid successive scrolls when multiple messages arrive quickly
+          // Debounce rapid scrolls
           const now = Date.now();
           const timeSinceLastScroll = now - lastAutoScrollTimeRef.current;
           if (timeSinceLastScroll < 200) {
-            // Too soon since last scroll - cancel previous timeout if exists
             if (autoScrollTimeoutRef.current) {
               clearTimeout(autoScrollTimeoutRef.current);
             }
           }
           
-          // Use the last known scroll position from handleScroll (most recent)
-          const currentScrollPosition = scrollPositionRef.current;
-          
-          // Estimate if user is near bottom based on scroll position
-          // If scrollPosition is close to contentHeight, user is at bottom
-          // Add a safety buffer - if scroll position is within 300px of content height, consider it "near bottom"
-          // Note: This is an approximation, the exact check happens in handleScroll
-          const estimatedDistanceFromBottom = contentHeight - currentScrollPosition;
-          const isLikelyNearBottom = estimatedDistanceFromBottom < 300; // 300px buffer for safety
-          
-          // CRITICAL FIX: Only auto-scroll if BOTH conditions are true:
-          // 1. Scroll position suggests user is near bottom, AND
-          // 2. State confirms user is not scrolling (double-check)
-          // This prevents unwanted scrolling when user is reading old messages
-          if (isLikelyNearBottom && !isUserScrolling) {
-            // Clear any pending scroll timeout
+          // Auto-scroll to newest message (index 0) if user is at bottom
+          if (!isUserScrolling) {
             if (autoScrollTimeoutRef.current) {
               clearTimeout(autoScrollTimeoutRef.current);
             }
-            
-            // Small delay to let React state settle and prevent race conditions
             autoScrollTimeoutRef.current = setTimeout(() => {
-              // Final check before scrolling - state must still say user is at bottom
-              if (scrollViewRef.current && !isUserScrolling) {
-                scrollViewRef.current.scrollToEnd({ animated: true });
-                lastAutoScrollTimeRef.current = Date.now();
+              if (flatListRef.current && !isUserScrolling && reversedMessages.length > 0) {
+                try {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                  lastAutoScrollTimeRef.current = Date.now();
+                } catch (error) {
+                  // Fallback
+                  if (flatListRef.current) {
+                    flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+                  }
+                }
               }
               autoScrollTimeoutRef.current = null;
-            }, 100); // Increased delay to 100ms for better state sync
-          } else {
-            // User is scrolled up OR state says they're scrolling - don't auto-scroll
-            if (isLikelyNearBottom && isUserScrolling) {
-              console.log('📍 onContentSizeChange: User scrolled up (state check), not auto-scrolling');
-            }
+            }, 100);
           }
         }}
-      >
-        {isLoading && messages.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading messages...</Text>
-          </View>
-        ) : filteredMessages.length === 0 && searchQuery.trim().length > 0 ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
-            <Text style={styles.emptyText}>No results found</Text>
-            <Text style={styles.emptySubtext}>Try a different search term</Text>
-          </View>
-        ) : filteredMessages.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
-            <Text style={styles.emptyText}>No messages yet</Text>
-            <Text style={styles.emptySubtext}>Start a conversation!</Text>
-          </View>
-        ) : (
-          filteredMessages.map((message, index) => renderMessage(message, index))
-        )}
-      </ScrollView>
+        onContentSizeChange={(contentWidth, contentHeight) => {
+          // Simplified: Only handle new message auto-scroll when user is at bottom
+          if (!flatListRef.current || reversedMessages.length === 0) return;
+          if (isUserScrolling) return;
+          
+          const currentScrollPosition = scrollPositionRef.current;
+          const estimatedDistanceFromBottom = contentHeight - currentScrollPosition;
+          const isLikelyNearBottom = estimatedDistanceFromBottom < 300;
+          
+          if (isLikelyNearBottom) {
+            if (autoScrollTimeoutRef.current) {
+              clearTimeout(autoScrollTimeoutRef.current);
+            }
+            autoScrollTimeoutRef.current = setTimeout(() => {
+              if (flatListRef.current && !isUserScrolling && reversedMessages.length > 0) {
+                try {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                  lastAutoScrollTimeRef.current = Date.now();
+                } catch (error) {
+                  // Fallback
+                  if (flatListRef.current) {
+                    flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+                  }
+                }
+              }
+              autoScrollTimeoutRef.current = null;
+            }, 100);
+          }
+        }}
+        ListEmptyComponent={() => {
+          if (isLoading && messages.length === 0) {
+            return (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text style={styles.loadingText}>Loading messages...</Text>
+              </View>
+            );
+          }
+          if (filteredMessages.length === 0 && searchQuery.trim().length > 0) {
+            return (
+              <View style={styles.emptyContainer}>
+                <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
+                <Text style={styles.emptyText}>No results found</Text>
+                <Text style={styles.emptySubtext}>Try a different search term</Text>
+              </View>
+            );
+          }
+          if (filteredMessages.length === 0) {
+            return (
+              <View style={styles.emptyContainer}>
+                <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
+                <Text style={styles.emptyText}>No messages yet</Text>
+                <Text style={styles.emptySubtext}>Start a conversation!</Text>
+              </View>
+            );
+          }
+          return null;
+        }}
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+        }}
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={20}
+        windowSize={10}
+        getItemLayout={(data, index) => {
+          // Estimate item height for better scrollToIndex performance
+          // Average message height: ~64px (adjust based on your UI)
+          const ITEM_HEIGHT_ESTIMATE = 64;
+          return {
+            length: ITEM_HEIGHT_ESTIMATE,
+            offset: ITEM_HEIGHT_ESTIMATE * index,
+            index,
+          };
+        }}
+        onScrollToIndexFailed={(info) => {
+          // If scrollToIndex fails (item not rendered yet), retry with delay
+          console.log('⚠️ scrollToIndex failed, retrying:', info);
+          setTimeout(() => {
+            if (flatListRef.current && reversedMessages.length > 0) {
+              try {
+                flatListRef.current.scrollToIndex({ index: 0, animated: false });
+              } catch (error) {
+                // Final fallback to offset
+                if (flatListRef.current) {
+                  flatListRef.current.scrollToOffset({ offset: 0, animated: false });
+                }
+              }
+              setIsUserScrolling(false);
+            }
+          }, 100);
+        }}
+      />
 
       {hasNewMessages && (
         <Animated.View style={styles.newMessageBanner}>
@@ -1546,8 +1718,14 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             // When user focuses input, scroll to bottom if they're not actively scrolled up
             // This helps them see the context when typing, but respects their scroll position
             setTimeout(() => {
-              if (!isUserScrolling && scrollViewRef.current) {
-                scrollViewRef.current.scrollToEnd({ animated: true });
+              if (!isUserScrolling && flatListRef.current && reversedMessages.length > 0) {
+                try {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                } catch (error) {
+                  if (flatListRef.current) {
+                    flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+                  }
+                }
               }
             }, 100);
           }}
@@ -1851,7 +2029,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   receivedMessageTime: {
     color: theme.colors.onSurfaceVariant,
   },
-  statusContainer: {
+  messageStatusContainer: {
     marginLeft: 4,
     alignItems: 'center',
     justifyContent: 'center',

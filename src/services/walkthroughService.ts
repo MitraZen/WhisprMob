@@ -1,5 +1,6 @@
 import { WalkthroughStep } from '@/components/Walkthrough';
 import { StorageService } from '@/utils/helpers';
+import { supabase } from '@/config/supabase';
 
 export interface WalkthroughConfig {
   id: string;
@@ -26,42 +27,48 @@ export class WalkthroughService {
         {
           id: 'welcome',
           title: 'Welcome to Whispr! 👋',
-          description: 'Let\'s take a quick tour to help you get started with anonymous messaging and connecting with others.',
+          description:
+            "Let's take a quick tour to help you get started with anonymous messaging and connecting with others.",
           icon: 'hand-left',
           position: 'center',
         },
         {
           id: 'whispr_notes',
           title: 'Send Anonymous Messages 📝',
-          description: 'This is where you can send anonymous messages to the world. Your messages are matched with others based on mood and preferences.',
+          description:
+            'This is where you can send anonymous messages to the world. Your messages are matched with others based on mood and preferences.',
           icon: 'document-text',
           position: 'center',
         },
         {
           id: 'buddies',
           title: 'Connect with Buddies 👥',
-          description: 'When someone responds to your message, they become your buddy. You can chat with them here and see their online status.',
+          description:
+            'When someone responds to your message, they become your buddy. You can chat with them here and see their online status.',
           icon: 'people',
           position: 'center',
         },
         {
           id: 'profile',
           title: 'Manage Your Profile 👤',
-          description: 'Update your profile, mood, and settings. Your mood helps match you with like-minded people.',
+          description:
+            'Update your profile, mood, and settings. Your mood helps match you with like-minded people.',
           icon: 'person',
           position: 'center',
         },
         {
           id: 'nearby',
           title: 'Discover Nearby Users 📍',
-          description: 'Find and connect with users in your area. Great for meeting people nearby!',
+          description:
+            'Find and connect with users in your area. Great for meeting people nearby!',
           icon: 'location',
           position: 'center',
         },
         {
           id: 'live_whisprs',
           title: 'Live Whisprs 🔴',
-          description: 'Join live anonymous chat rooms where you can chat with multiple people at once.',
+          description:
+            'Join live anonymous chat rooms where you can chat with multiple people at once.',
           icon: 'radio',
           position: 'center',
         },
@@ -76,21 +83,24 @@ export class WalkthroughService {
         {
           id: 'compose_message',
           title: 'Compose Your Message ✍️',
-          description: 'Tap here to start typing your anonymous message. Be creative and authentic!',
+          description:
+            'Tap here to start typing your anonymous message. Be creative and authentic!',
           icon: 'create',
           position: 'center',
         },
         {
           id: 'select_mood',
           title: 'Choose Your Mood 😊',
-          description: 'Select your current mood. This helps match you with people who share similar feelings.',
+          description:
+            'Select your current mood. This helps match you with people who share similar feelings.',
           icon: 'happy',
           position: 'center',
         },
         {
           id: 'send_message',
           title: 'Send Your Message 🚀',
-          description: 'Tap send to share your message with the world. You\'ll be notified when someone responds!',
+          description:
+            "Tap send to share your message with the world. You'll be notified when someone responds!",
           icon: 'send',
           position: 'center',
         },
@@ -105,21 +115,24 @@ export class WalkthroughService {
         {
           id: 'select_buddy',
           title: 'Select a Buddy 💬',
-          description: 'Tap on any buddy to start chatting. Green dots show who\'s online.',
+          description:
+            "Tap on any buddy to start chatting. Green dots show who's online.",
           icon: 'chatbubble',
           position: 'center',
         },
         {
           id: 'send_message',
           title: 'Send Messages 📤',
-          description: 'Type your message and tap send. Messages are delivered instantly!',
+          description:
+            'Type your message and tap send. Messages are delivered instantly!',
           icon: 'send',
           position: 'center',
         },
         {
           id: 'buddy_actions',
           title: 'Buddy Actions ⚙️',
-          description: 'Long press on a buddy to access options like pin, clear chat, or remove buddy.',
+          description:
+            'Long press on a buddy to access options like pin, clear chat, or remove buddy.',
           icon: 'ellipsis-horizontal',
           position: 'center',
         },
@@ -142,7 +155,10 @@ export class WalkthroughService {
   }
 
   // Cache for walkthrough states to avoid repeated storage calls
-  private static walkthroughCache = new Map<string, { completed: boolean; version: string; timestamp: number }>();
+  private static walkthroughCache = new Map<
+    string,
+    { completed: boolean; version: string; timestamp: number }
+  >();
   private static readonly CACHE_TTL = 30000; // 30 seconds
 
   /**
@@ -157,16 +173,18 @@ export class WalkthroughService {
       }
 
       // Fetch from storage
-      const completed = await StorageService.getItem(`${this.STORAGE_KEY}_${walkthroughId}`);
+      const completed = await StorageService.getItem(
+        `${this.STORAGE_KEY}_${walkthroughId}`,
+      );
       const result = completed === 'true';
-      
+
       // Update cache
       this.walkthroughCache.set(walkthroughId, {
         completed: result,
         version: this.CURRENT_VERSION,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
-      
+
       return result;
     } catch (error) {
       console.error('Error checking walkthrough completion:', error);
@@ -182,16 +200,19 @@ export class WalkthroughService {
       // Batch storage operations
       const operations = [
         StorageService.setItem(`${this.STORAGE_KEY}_${walkthroughId}`, 'true'),
-        StorageService.setItem(`${this.VERSION_KEY}_${walkthroughId}`, this.CURRENT_VERSION)
+        StorageService.setItem(
+          `${this.VERSION_KEY}_${walkthroughId}`,
+          this.CURRENT_VERSION,
+        ),
       ];
-      
+
       await Promise.all(operations);
-      
+
       // Update cache immediately
       this.walkthroughCache.set(walkthroughId, {
         completed: true,
         version: this.CURRENT_VERSION,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     } catch (error) {
       console.error('Error marking walkthrough as completed:', error);
@@ -201,7 +222,10 @@ export class WalkthroughService {
   /**
    * Check if any walkthrough needs to be shown (optimized with single storage call)
    */
-  static async shouldShowWalkthrough(walkthroughId: string, userId?: string): Promise<boolean> {
+  static async shouldShowWalkthrough(
+    walkthroughId: string,
+    userId?: string,
+  ): Promise<boolean> {
     try {
       // If userId is provided, check user-specific walkthrough completion
       if (userId) {
@@ -217,19 +241,19 @@ export class WalkthroughService {
       // Single storage call to get both values
       const [completed, storedVersion] = await Promise.all([
         StorageService.getItem(`${this.STORAGE_KEY}_${walkthroughId}`),
-        StorageService.getItem(`${this.VERSION_KEY}_${walkthroughId}`)
+        StorageService.getItem(`${this.VERSION_KEY}_${walkthroughId}`),
       ]);
-      
+
       const isCompleted = completed === 'true';
       const shouldShow = !isCompleted || storedVersion !== this.CURRENT_VERSION;
-      
+
       // Update cache
       this.walkthroughCache.set(walkthroughId, {
         completed: isCompleted,
         version: (storedVersion as string) || this.CURRENT_VERSION,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
-      
+
       return shouldShow;
     } catch (error) {
       console.error('Error checking if walkthrough should be shown:', error);
@@ -238,17 +262,79 @@ export class WalkthroughService {
   }
 
   /**
-   * Check if walkthrough should be shown for a specific user
+   * Check if user is truly a first-time user (has no activity)
+   * This prevents showing tour to existing users after app data cleanup
    */
-  static async shouldShowWalkthroughForUser(walkthroughId: string, userId: string): Promise<boolean> {
+  private static async isFirstTimeUser(userId: string): Promise<boolean> {
     try {
-      const userWalkthroughs = await StorageService.getItem<{ [key: string]: boolean }>(`${this.USER_WALKTHROUGH_KEY}_${userId}`) || {};
+      // Check if user has any activity: messages, buddies, or notes
+      // Using limit(1) to efficiently check existence without fetching all data
+      const [messagesResult, buddiesResult, notesResult] = await Promise.all([
+        supabase
+          .from('buddy_messages')
+          .select('id')
+          .eq('sender_id', userId)
+          .limit(1),
+        supabase.from('buddies').select('id').eq('user_id', userId).limit(1),
+        supabase
+          .from('whispr_notes')
+          .select('id')
+          .eq('sender_id', userId)
+          .limit(1),
+      ]);
+
+      const hasMessages = messagesResult.data && messagesResult.data.length > 0;
+      const hasBuddies = buddiesResult.data && buddiesResult.data.length > 0;
+      const hasNotes = notesResult.data && notesResult.data.length > 0;
+
+      const isNewUser = !hasMessages && !hasBuddies && !hasNotes;
+      console.log(`🎯 Walkthrough check for user ${userId}:`, {
+        hasMessages,
+        hasBuddies,
+        hasNotes,
+        isFirstTimeUser: isNewUser,
+      });
+
+      return isNewUser;
+    } catch (error) {
+      console.error('Error checking if user is first-time user:', error);
+      // On error, assume user is new (safer to show tour than to hide it)
+      return true;
+    }
+  }
+
+  /**
+   * Check if walkthrough should be shown for a specific user
+   * Only shows for truly first-time users (no activity in database)
+   */
+  static async shouldShowWalkthroughForUser(
+    walkthroughId: string,
+    userId: string,
+  ): Promise<boolean> {
+    try {
+      // First check if user is truly a first-time user (has no activity)
+      // This prevents showing tour to existing users after app data cleanup
+      const isNewUser = await this.isFirstTimeUser(userId);
+      if (!isNewUser) {
+        console.log(
+          `🎯 User ${userId} has existing activity - skipping walkthrough ${walkthroughId}`,
+        );
+        return false;
+      }
+
+      // User is new - check if walkthrough was already completed
+      const userWalkthroughs =
+        (await StorageService.getItem<{ [key: string]: boolean }>(
+          `${this.USER_WALKTHROUGH_KEY}_${userId}`,
+        )) || {};
       const isCompleted = userWalkthroughs[walkthroughId] === true;
-      
+
       // Also check version for user-specific walkthroughs
-      const storedVersion = await StorageService.getItem(`${this.VERSION_KEY}_${walkthroughId}`);
+      const storedVersion = await StorageService.getItem(
+        `${this.VERSION_KEY}_${walkthroughId}`,
+      );
       const versionChanged = storedVersion !== this.CURRENT_VERSION;
-      
+
       return !isCompleted || versionChanged;
     } catch (error) {
       console.error('Error checking user walkthrough:', error);
@@ -259,13 +345,25 @@ export class WalkthroughService {
   /**
    * Mark walkthrough as completed for a specific user
    */
-  static async markWalkthroughCompletedForUser(walkthroughId: string, userId: string): Promise<void> {
+  static async markWalkthroughCompletedForUser(
+    walkthroughId: string,
+    userId: string,
+  ): Promise<void> {
     try {
-      const userWalkthroughs = await StorageService.getItem<{ [key: string]: boolean }>(`${this.USER_WALKTHROUGH_KEY}_${userId}`) || {};
+      const userWalkthroughs =
+        (await StorageService.getItem<{ [key: string]: boolean }>(
+          `${this.USER_WALKTHROUGH_KEY}_${userId}`,
+        )) || {};
       userWalkthroughs[walkthroughId] = true;
-      
-      await StorageService.setItem(`${this.USER_WALKTHROUGH_KEY}_${userId}`, userWalkthroughs);
-      await StorageService.setItem(`${this.VERSION_KEY}_${walkthroughId}`, this.CURRENT_VERSION);
+
+      await StorageService.setItem(
+        `${this.USER_WALKTHROUGH_KEY}_${userId}`,
+        userWalkthroughs,
+      );
+      await StorageService.setItem(
+        `${this.VERSION_KEY}_${walkthroughId}`,
+        this.CURRENT_VERSION,
+      );
     } catch (error) {
       console.error('Error marking user walkthrough as completed:', error);
     }
@@ -277,8 +375,12 @@ export class WalkthroughService {
   static async resetAllWalkthroughs(): Promise<void> {
     try {
       for (const walkthrough of this.walkthroughs) {
-        await StorageService.removeItem(`${this.STORAGE_KEY}_${walkthrough.id}`);
-        await StorageService.removeItem(`${this.VERSION_KEY}_${walkthrough.id}`);
+        await StorageService.removeItem(
+          `${this.STORAGE_KEY}_${walkthrough.id}`,
+        );
+        await StorageService.removeItem(
+          `${this.VERSION_KEY}_${walkthrough.id}`,
+        );
       }
     } catch (error) {
       console.error('Error resetting walkthroughs:', error);
@@ -288,7 +390,11 @@ export class WalkthroughService {
   /**
    * Get walkthrough completion statistics
    */
-  static async getCompletionStats(): Promise<{ completed: number; total: number; percentage: number }> {
+  static async getCompletionStats(): Promise<{
+    completed: number;
+    total: number;
+    percentage: number;
+  }> {
     try {
       let completed = 0;
       const total = this.walkthroughs.length;
@@ -315,16 +421,18 @@ export class WalkthroughService {
    */
   static getWalkthroughsForContext(context: string): WalkthroughConfig[] {
     const contextMap: { [key: string]: string[] } = {
-      'whispr_notes': ['main_app_tour', 'first_message'],
-      'buddies': ['main_app_tour', 'buddy_chat'],
-      'chat': ['buddy_chat'],
-      'profile': ['main_app_tour'],
-      'nearby': ['main_app_tour'],
-      'live_whisprs': ['main_app_tour'],
+      whispr_notes: ['main_app_tour', 'first_message'],
+      buddies: ['main_app_tour', 'buddy_chat'],
+      chat: ['buddy_chat'],
+      profile: ['main_app_tour'],
+      nearby: ['main_app_tour'],
+      live_whisprs: ['main_app_tour'],
     };
 
     const recommendedIds = contextMap[context] || ['main_app_tour'];
-    return this.walkthroughs.filter(w => recommendedIds.includes(w.id) && w.enabled);
+    return this.walkthroughs.filter(
+      w => recommendedIds.includes(w.id) && w.enabled,
+    );
   }
 }
 

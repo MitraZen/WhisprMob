@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  Alert, 
-  ActivityIndicator
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -16,7 +16,10 @@ import { theme, spacing, borderRadius } from '@/utils/theme';
 import { useAuth } from '@/store/AuthContext';
 import { FlexibleDatabaseService } from '@/services/flexibleDatabase';
 import { getUserCountry } from '@/utils/locationService';
-import PermissionService from '@/services/permissionService';
+import PermissionService, {
+  NotificationPermissionResult,
+} from '@/services/permissionService';
+import messaging from '@react-native-firebase/messaging';
 
 interface ProfileCompletionScreenProps {
   onComplete: (profileData: ProfileData) => void;
@@ -31,10 +34,9 @@ interface ProfileData {
   bio: string;
 }
 
-export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = ({ 
-  onComplete, 
-  user
-}) => {
+export const ProfileCompletionScreen: React.FC<
+  ProfileCompletionScreenProps
+> = ({ onComplete, user }) => {
   const [gender, setGender] = useState<ProfileData['gender'] | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
@@ -54,25 +56,27 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
   const detectCountry = async () => {
     setIsDetectingLocation(true);
     setLocationError(null);
-    
+
     try {
       const detectedCountry = await getUserCountry();
       setCountry(detectedCountry);
       console.log('✅ Country detected:', detectedCountry);
     } catch (error) {
       console.error('❌ Country detection failed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
       // Provide user-friendly error messages
       let userMessage = 'Unable to detect your location.';
       if (errorMessage.includes('permission')) {
         userMessage = 'Location permission is required to set your country.';
       } else if (errorMessage.includes('timeout')) {
-        userMessage = 'Location detection timed out. Please check your internet connection.';
+        userMessage =
+          'Location detection timed out. Please check your internet connection.';
       }
-      
+
       setLocationError(userMessage);
-      
+
       // Show alert explaining location is required
       Alert.alert(
         '📍 Location Required',
@@ -90,13 +94,13 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               Alert.alert(
                 'Enable Location',
                 'Please go to:\nSettings > Apps > Whispr > Permissions > Location\n\nEnable location access and return to retry.',
-                [{ text: 'OK' }]
+                [{ text: 'OK' }],
               );
             },
             style: 'default',
           },
         ],
-        { cancelable: false }
+        { cancelable: false },
       );
     } finally {
       setIsDetectingLocation(false);
@@ -111,7 +115,10 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
 
   // Generate years (1900 to current year)
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: currentYear - 1899 }, (_, i) => currentYear - i);
+  const years = Array.from(
+    { length: currentYear - 1899 },
+    (_, i) => currentYear - i,
+  );
 
   // Generate months
   const months = [
@@ -141,7 +148,13 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
   };
 
   const handleComplete = async () => {
-    if (!gender || !selectedYear || !selectedMonth || !selectedDay || !country) {
+    if (
+      !gender ||
+      !selectedYear ||
+      !selectedMonth ||
+      !selectedDay ||
+      !country
+    ) {
       if (!country) {
         Alert.alert(
           'Location Required',
@@ -155,19 +168,24 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               text: 'Cancel',
               style: 'cancel',
             },
-          ]
+          ],
         );
       } else {
-        Alert.alert('Missing Information', 'Please fill in all required fields.');
+        Alert.alert(
+          'Missing Information',
+          'Please fill in all required fields.',
+        );
       }
       return;
     }
 
     // Validate date
-    const dateOfBirth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
+    const dateOfBirth = `${selectedYear}-${selectedMonth
+      .toString()
+      .padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
     const birthDate = new Date(selectedYear, selectedMonth - 1, selectedDay);
     const today = new Date();
-    
+
     if (birthDate > today) {
       Alert.alert('Invalid Date', 'Date of birth cannot be in the future.');
       return;
@@ -175,7 +193,10 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
 
     const age = today.getFullYear() - selectedYear;
     if (age < 13) {
-      Alert.alert('Age Restriction', 'You must be at least 13 years old to use this app.');
+      Alert.alert(
+        'Age Restriction',
+        'You must be at least 13 years old to use this app.',
+      );
       return;
     }
 
@@ -190,56 +211,101 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
 
       console.log('ProfileCompletionScreen - User object:', user);
       console.log('ProfileCompletionScreen - User ID:', user?.id);
-      
+
       // Try different possible ID properties
       const userId = user?.id || user?.user_id || user?.uuid;
       console.log('ProfileCompletionScreen - Resolved User ID:', userId);
-      
+
       if (!userId) {
-        console.error('ProfileCompletionScreen - No user ID found in any property');
+        console.error(
+          'ProfileCompletionScreen - No user ID found in any property',
+        );
         throw new Error('No authenticated user');
       }
 
-          const update: Record<string, any> = {
-            gender: profileData.gender,
-            country: profileData.country,
-            bio: profileData.bio,
-            profile_completed: true,
-            date_of_birth: profileData.dateOfBirth,
-            updated_at: new Date().toISOString(),
-          };
+      const update: Record<string, any> = {
+        gender: profileData.gender,
+        country: profileData.country,
+        bio: profileData.bio,
+        profile_completed: true,
+        date_of_birth: profileData.dateOfBirth,
+        updated_at: new Date().toISOString(),
+      };
 
-      const ok = await FlexibleDatabaseService.updateUserProfile(userId, update);
+      const ok = await FlexibleDatabaseService.updateUserProfile(
+        userId,
+        update,
+      );
       if (!ok) {
         throw new Error('Failed to save profile');
       }
 
       markProfileComplete(true);
-      
+
       // Request notification permission after profile completion
       // Delay to ensure location permission popup has closed
       setTimeout(async () => {
         try {
-          console.log('🔔 ProfileCompletionScreen: Requesting notification permission after profile completion');
+          console.log(
+            '🔔 ProfileCompletionScreen: Requesting notification permission after profile completion',
+          );
           const userSpecificKey = `notificationPermissionAsked_${userId}`;
+          const permanentlyDeniedKey = `notificationPermanentlyDenied_${userId}`;
           const hasAskedBefore = await AsyncStorage.getItem(userSpecificKey);
-          
+
           if (!hasAskedBefore) {
-            const granted = await PermissionService.requestNotificationPermissions();
-            if (granted) {
-              console.log('✅ Notification permission granted after profile completion');
-              await AsyncStorage.setItem(userSpecificKey, 'true');
+            // Use detailed method to get permanent denial status
+            const result: NotificationPermissionResult =
+              await PermissionService.requestNotificationPermissionsDetailed();
+
+            // CRITICAL FIX #1: Always set the flag regardless of result
+            // This prevents re-prompting users who explicitly denied
+            await AsyncStorage.setItem(userSpecificKey, 'true');
+
+            // CRITICAL FIX #4: Track permanent denial separately
+            if (result.permanentlyDenied) {
+              await AsyncStorage.setItem(permanentlyDeniedKey, 'true');
+              console.log(
+                '🔕 Notification permission permanently denied after profile completion',
+              );
+            }
+
+            if (result.granted) {
+              console.log(
+                '✅ Notification permission granted after profile completion',
+              );
+
+              // CRITICAL FIX #2: Save FCM token immediately when granted
+              try {
+                const token = await messaging().getToken();
+                console.log('🔑 FCM Token:', token);
+
+                const { fcmManager } = await import('@/services/FCMManager');
+                await fcmManager.initialize(userId);
+                console.log(
+                  '✅ FCM token saved via FCMManager after profile completion',
+                );
+              } catch (fcmError) {
+                console.warn(
+                  '⚠️ Failed to save FCM token after profile completion:',
+                  fcmError,
+                );
+              }
             } else {
-              console.log('🚫 Notification permission denied after profile completion');
+              console.log(
+                '🚫 Notification permission denied after profile completion',
+              );
             }
           } else {
-            console.log('🔔 Notification permission already asked for this user');
+            console.log(
+              '🔔 Notification permission already asked for this user',
+            );
           }
         } catch (error) {
           console.error('❌ Error requesting notification permission:', error);
         }
       }, 2000);
-      
+
       onComplete(profileData);
     } catch (error) {
       console.error('Profile completion error:', error);
@@ -250,7 +316,10 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Complete Your Profile</Text>
         <Text style={styles.subtitle}>Help others get to know you better</Text>
@@ -263,11 +332,11 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={gender}
-              onValueChange={(value) => setGender(value)}
+              onValueChange={value => setGender(value)}
               style={styles.picker}
             >
               <Picker.Item label="Select Gender" value={null} />
-              {genderOptions.map((option) => (
+              {genderOptions.map(option => (
                 <Picker.Item
                   key={option.value}
                   label={option.label}
@@ -288,12 +357,16 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={selectedYear}
-                  onValueChange={(value) => setSelectedYear(value)}
+                  onValueChange={value => setSelectedYear(value)}
                   style={styles.picker}
                 >
                   <Picker.Item label="Year" value={null} />
-                  {years.map((year) => (
-                    <Picker.Item key={year} label={year.toString()} value={year} />
+                  {years.map(year => (
+                    <Picker.Item
+                      key={year}
+                      label={year.toString()}
+                      value={year}
+                    />
                   ))}
                 </Picker>
               </View>
@@ -305,11 +378,11 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={selectedMonth}
-                  onValueChange={(value) => setSelectedMonth(value)}
+                  onValueChange={value => setSelectedMonth(value)}
                   style={styles.picker}
                 >
                   <Picker.Item label="Month" value={null} />
-                  {months.map((month) => (
+                  {months.map(month => (
                     <Picker.Item
                       key={month.value}
                       label={month.label}
@@ -326,11 +399,11 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={selectedDay}
-                  onValueChange={(value) => setSelectedDay(value)}
+                  onValueChange={value => setSelectedDay(value)}
                   style={styles.picker}
                 >
                   <Picker.Item label="Day" value={null} />
-                  {getDays().map((day) => (
+                  {getDays().map(day => (
                     <Picker.Item key={day} label={day.toString()} value={day} />
                   ))}
                 </Picker>
@@ -344,29 +417,55 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
           <Text style={styles.label}>Country *</Text>
           {isDetectingLocation ? (
             <View style={styles.countryDetectingContainer}>
-              <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginRight: spacing.sm }} />
-              <Text style={styles.countryDetectingText}>Detecting your location...</Text>
+              <ActivityIndicator
+                size="small"
+                color={theme.colors.primary}
+                style={{ marginRight: spacing.sm }}
+              />
+              <Text style={styles.countryDetectingText}>
+                Detecting your location...
+              </Text>
             </View>
           ) : country ? (
             <View style={styles.countryDetectedContainer}>
               <View style={styles.countryDisplay}>
-                <Icon name="location" size={20} color={theme.colors.primary} style={{ marginRight: spacing.sm }} />
+                <Icon
+                  name="location"
+                  size={20}
+                  color={theme.colors.primary}
+                  style={{ marginRight: spacing.sm }}
+                />
                 <Text style={styles.countryDetectedText}>{country}</Text>
-                <Icon name="checkmark-circle" size={20} color="#10b981" style={{ marginLeft: spacing.sm }} />
+                <Icon
+                  name="checkmark-circle"
+                  size={20}
+                  color="#10b981"
+                  style={{ marginLeft: spacing.sm }}
+                />
               </View>
               <TouchableOpacity
                 style={styles.retryButton}
                 onPress={detectCountry}
                 disabled={isDetectingLocation}
               >
-                <Icon name="refresh" size={16} color={theme.colors.primary} style={{ marginRight: spacing.xs }} />
+                <Icon
+                  name="refresh"
+                  size={16}
+                  color={theme.colors.primary}
+                  style={{ marginRight: spacing.xs }}
+                />
                 <Text style={styles.retryButtonText}>Retry</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.countryErrorContainer}>
               <View style={styles.countryErrorDisplay}>
-                <Icon name="location-outline" size={20} color="#ef4444" style={{ marginRight: spacing.sm }} />
+                <Icon
+                  name="location-outline"
+                  size={20}
+                  color="#ef4444"
+                  style={{ marginRight: spacing.sm }}
+                />
                 <Text style={styles.countryErrorText}>
                   {locationError || 'Location not detected'}
                 </Text>
@@ -376,13 +475,19 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
                 onPress={detectCountry}
                 disabled={isDetectingLocation}
               >
-                <Icon name="refresh" size={16} color="#ef4444" style={{ marginRight: spacing.xs }} />
+                <Icon
+                  name="refresh"
+                  size={16}
+                  color="#ef4444"
+                  style={{ marginRight: spacing.xs }}
+                />
                 <Text style={styles.retryButtonTextError}>Retry Detection</Text>
               </TouchableOpacity>
             </View>
           )}
           <Text style={styles.countryHint}>
-            Your country is automatically detected based on your location. Location permission is required.
+            Your country is automatically detected based on your location.
+            Location permission is required.
           </Text>
         </View>
 
@@ -415,7 +520,6 @@ export const ProfileCompletionScreen: React.FC<ProfileCompletionScreenProps> = (
               <Text style={styles.completeButtonText}>Complete Profile</Text>
             )}
           </TouchableOpacity>
-
         </View>
       </View>
     </ScrollView>

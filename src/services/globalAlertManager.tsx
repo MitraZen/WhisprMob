@@ -28,56 +28,30 @@ let globalAlertState: GlobalAlertState = {
 let alertStateListeners: Array<(state: GlobalAlertState) => void> = [];
 
 // ------------------------------
-// 🚀 Override Native Alert
+// 🚀 Native Alert (No Override)
 // ------------------------------
-const originalAlert = Alert.alert;
-
-Alert.alert = (
-  title?: string,
-  message?: string,
-  buttons?: Array<{ text?: string; onPress?: () => void; style?: string }>,
-  options?: any
-): void => {
-  const themedButtons: AlertButton[] =
-    buttons?.map((button) => ({
-      text: button.text || 'OK',
-      onPress: button.onPress,
-      style: (button.style as 'default' | 'cancel' | 'destructive') || 'default',
-    })) || [{ text: 'OK' }];
-
-  globalAlertState = {
-    visible: true,
-    title,
-    message,
-    buttons: themedButtons,
-    options: {
-      icon: options?.icon || 'information-circle',
-      iconColor: options?.iconColor || '#3b82f6',
-    },
-  };
-
-  // Notify all listeners (UI will update)
-  alertStateListeners.forEach((listener) => listener(globalAlertState));
-};
+// Alert.alert() is now using native OS dialogs
+// No interception - all alerts use native system dialogs
 
 // ------------------------------
 // 🪄 Hook: useGlobalAlert
 // ------------------------------
 export const useGlobalAlert = () => {
-  const [alertState, setAlertState] = useState<GlobalAlertState>(globalAlertState);
+  const [alertState, setAlertState] =
+    useState<GlobalAlertState>(globalAlertState);
 
   useEffect(() => {
     const listener = (state: GlobalAlertState) => setAlertState({ ...state });
     alertStateListeners.push(listener);
 
     return () => {
-      alertStateListeners = alertStateListeners.filter((l) => l !== listener);
+      alertStateListeners = alertStateListeners.filter(l => l !== listener);
     };
   }, []);
 
   const handleClose = () => {
     globalAlertState = { visible: false };
-    alertStateListeners.forEach((listener) => listener(globalAlertState));
+    alertStateListeners.forEach(listener => listener(globalAlertState));
   };
 
   return { alertState, handleClose };
@@ -90,7 +64,7 @@ export const showGlobalAlert = (
   title: string,
   message?: string,
   buttons?: AlertButton[],
-  options?: CustomAlertOptions
+  options?: CustomAlertOptions,
 ) => {
   globalAlertState = {
     visible: true,
@@ -99,18 +73,20 @@ export const showGlobalAlert = (
     buttons: buttons || [{ text: 'OK' }],
     options: options || { icon: 'information-circle', iconColor: '#3b82f6' },
   };
-  alertStateListeners.forEach((listener) => listener(globalAlertState));
+  alertStateListeners.forEach(listener => listener(globalAlertState));
 };
 
 export const hideGlobalAlert = () => {
   globalAlertState = { visible: false };
-  alertStateListeners.forEach((listener) => listener(globalAlertState));
+  alertStateListeners.forEach(listener => listener(globalAlertState));
 };
 
 // ------------------------------
 // 🧩 Provider Component
 // ------------------------------
-export const GlobalAlertProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const GlobalAlertProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { alertState, handleClose } = useGlobalAlert();
 
   return (
@@ -132,4 +108,3 @@ export const GlobalAlertProvider: React.FC<{ children: React.ReactNode }> = ({ c
 };
 
 export default GlobalAlertProvider;
-
