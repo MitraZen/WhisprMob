@@ -11,11 +11,17 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
+  Alert,
   Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
-import { spacing, borderRadius, moodConfig, getMoodConfig } from '@/utils/themes';
+import {
+  spacing,
+  borderRadius,
+  moodConfig,
+  getMoodConfig,
+} from '@/utils/themes';
 import { Toast, useToast } from '@/components/Toast';
 interface MoodModalProps {
   visible: boolean;
@@ -45,7 +51,7 @@ export const MoodModal: React.FC<MoodModalProps> = ({
       showToast(
         `You're now feeling ${config.description.toLowerCase()}!`,
         'success',
-        3000
+        3000,
       );
       // Close modal after a short delay to show the toast
       setTimeout(() => {
@@ -53,7 +59,6 @@ export const MoodModal: React.FC<MoodModalProps> = ({
       }, 500);
     } catch (error) {
       console.error('Error updating mood:', error);
-      showToast('Failed to update mood. Please try again.', 'error', 3000);
     }
   };
 
@@ -86,31 +91,41 @@ export const MoodModal: React.FC<MoodModalProps> = ({
 
               {/* Mood Options */}
               <View style={styles.moodsContainer}>
-                {moods.map((mood) => {
+                {moods.map(mood => {
                   const config = getMoodConfig(mood);
                   const isSelected = mood === currentMood;
-                  
+
                   return (
                     <TouchableOpacity
                       key={mood}
                       style={[
                         styles.moodOption,
                         isSelected && styles.moodOptionSelected,
-                        { borderColor: isSelected ? config.color : theme.colors.border }
+                        {
+                          borderColor: isSelected
+                            ? config.color
+                            : theme.colors.border,
+                        },
                       ]}
                       onPress={() => handleMoodSelect(mood)}
                     >
                       <Text style={styles.moodEmoji}>{config.emoji}</Text>
                       <View style={styles.moodTextContainer}>
-                        <Text style={[
-                          styles.moodLabel,
-                          isSelected && { color: config.color }
-                        ]}>
+                        <Text
+                          style={[
+                            styles.moodLabel,
+                            isSelected && { color: config.color },
+                          ]}
+                        >
                           {config.description}
                         </Text>
                       </View>
                       {isSelected && (
-                        <Icon name="checkmark-circle" size={24} color={config.color} />
+                        <Icon
+                          name="checkmark-circle"
+                          size={24}
+                          color={config.color}
+                        />
                       )}
                     </TouchableOpacity>
                   );
@@ -127,7 +142,6 @@ export const MoodModal: React.FC<MoodModalProps> = ({
         message={toast.message}
         type={toast.type}
         duration={toast.duration}
-        action={toast.action}
         onHide={hideToast}
       />
     </>

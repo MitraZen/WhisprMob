@@ -212,24 +212,25 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleCancel}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={handleCancel}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Edit Profile</Text>
-            <TouchableOpacity onPress={handleSave}>
-              <Text style={styles.saveText}>Save</Text>
-            </TouchableOpacity>
-          </View>
+    <>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCancel}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modalContainer}>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={handleCancel}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.title}>Edit Profile</Text>
+              <TouchableOpacity onPress={handleSave}>
+                <Text style={styles.saveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Content */}
             <ScrollView
@@ -441,27 +442,37 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               </View>
             </ScrollView>
 
-          {/* Footer Actions */}
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancel}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleSave}
-              disabled={isLoading}
-            >
-              <Text style={styles.saveButtonText}>
-                {isLoading ? 'Saving...' : 'Save Changes'}
-              </Text>
-            </TouchableOpacity>
+            {/* Footer Actions */}
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={handleCancel}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSave}
+                disabled={isLoading}
+              >
+                <Text style={styles.saveButtonText}>
+                  {isLoading ? 'Saving...' : 'Save Changes'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {/* Toast Notification */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        duration={toast.duration}
+        onHide={hideToast}
+      />
+    </>
   );
 };
 

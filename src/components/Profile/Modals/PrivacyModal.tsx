@@ -4,12 +4,24 @@
  */
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Switch, Dimensions } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  Switch,
+  Dimensions,
+} from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
 import { spacing, borderRadius } from '@/utils/themes';
 import { PrivacySettings } from '@/types/profile.types';
-import { PRIVACY_VISIBILITY_OPTIONS, MESSAGE_ALLOWANCE_OPTIONS } from '@/config/profile.config';
+import {
+  PRIVACY_VISIBILITY_OPTIONS,
+  MESSAGE_ALLOWANCE_OPTIONS,
+} from '@/config/profile.config';
 
 interface PrivacyModalProps {
   visible: boolean;
@@ -69,32 +81,39 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
               <Text style={styles.sectionDescription}>
                 Control who can see your profile information
               </Text>
-              
+
               <View style={styles.options}>
-                {PRIVACY_VISIBILITY_OPTIONS.map((option) => (
+                {PRIVACY_VISIBILITY_OPTIONS.map(option => (
                   <TouchableOpacity
                     key={option.value}
                     style={[
                       styles.option,
-                      privacySettings.profileVisibility === option.value && styles.optionSelected
+                      privacySettings.profileVisibility === option.value &&
+                        styles.optionSelected,
                     ]}
                     onPress={() => handleVisibilityChange(option.value)}
                   >
                     <View style={styles.optionContent}>
-                      <Text style={[
-                        styles.optionLabel,
-                        privacySettings.profileVisibility === option.value && styles.optionLabelSelected
-                      ]}>
+                      <Text
+                        style={[
+                          styles.optionLabel,
+                          privacySettings.profileVisibility === option.value &&
+                            styles.optionLabelSelected,
+                        ]}
+                      >
                         {option.label}
                       </Text>
                       <Text style={styles.optionDescription}>
                         {option.description}
                       </Text>
                     </View>
-                    <View style={[
-                      styles.radioButton,
-                      privacySettings.profileVisibility === option.value && styles.radioButtonSelected
-                    ]}>
+                    <View
+                      style={[
+                        styles.radioButton,
+                        privacySettings.profileVisibility === option.value &&
+                          styles.radioButtonSelected,
+                      ]}
+                    >
                       {privacySettings.profileVisibility === option.value && (
                         <View style={styles.radioButtonInner} />
                       )}
@@ -110,32 +129,39 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
               <Text style={styles.sectionDescription}>
                 Control who can send you messages
               </Text>
-              
+
               <View style={styles.options}>
-                {MESSAGE_ALLOWANCE_OPTIONS.map((option) => (
+                {MESSAGE_ALLOWANCE_OPTIONS.map(option => (
                   <TouchableOpacity
                     key={option.value}
                     style={[
                       styles.option,
-                      privacySettings.allowMessages === option.value && styles.optionSelected
+                      privacySettings.allowMessages === option.value &&
+                        styles.optionSelected,
                     ]}
                     onPress={() => handleMessageAllowanceChange(option.value)}
                   >
                     <View style={styles.optionContent}>
-                      <Text style={[
-                        styles.optionLabel,
-                        privacySettings.allowMessages === option.value && styles.optionLabelSelected
-                      ]}>
+                      <Text
+                        style={[
+                          styles.optionLabel,
+                          privacySettings.allowMessages === option.value &&
+                            styles.optionLabelSelected,
+                        ]}
+                      >
                         {option.label}
                       </Text>
                       <Text style={styles.optionDescription}>
                         {option.description}
                       </Text>
                     </View>
-                    <View style={[
-                      styles.radioButton,
-                      privacySettings.allowMessages === option.value && styles.radioButtonSelected
-                    ]}>
+                    <View
+                      style={[
+                        styles.radioButton,
+                        privacySettings.allowMessages === option.value &&
+                          styles.radioButtonSelected,
+                      ]}
+                    >
                       {privacySettings.allowMessages === option.value && (
                         <View style={styles.radioButtonInner} />
                       )}
@@ -148,7 +174,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
             {/* Toggle Options */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Other Settings</Text>
-              
+
               <View style={styles.toggleOptions}>
                 <View style={styles.toggleOption}>
                   <View style={styles.toggleContent}>
@@ -159,23 +185,35 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                   </View>
                   <Switch
                     value={privacySettings.showOnlineStatus}
-                    onValueChange={(value) => handleToggle('showOnlineStatus', value)}
-                    trackColor={{ false: theme.colors.surfaceVariant, true: theme.colors.primary }}
+                    onValueChange={value =>
+                      handleToggle('showOnlineStatus', value)
+                    }
+                    trackColor={{
+                      false: theme.colors.surfaceVariant,
+                      true: theme.colors.primary,
+                    }}
                     thumbColor={theme.colors.surface}
                   />
                 </View>
 
                 <View style={styles.toggleOption}>
                   <View style={styles.toggleContent}>
-                    <Text style={styles.toggleLabel}>Allow Friend Requests</Text>
+                    <Text style={styles.toggleLabel}>
+                      Allow Friend Requests
+                    </Text>
                     <Text style={styles.toggleDescription}>
                       Let others send you friend requests
                     </Text>
                   </View>
                   <Switch
                     value={privacySettings.allowFriendRequests}
-                    onValueChange={(value) => handleToggle('allowFriendRequests', value)}
-                    trackColor={{ false: theme.colors.surfaceVariant, true: theme.colors.primary }}
+                    onValueChange={value =>
+                      handleToggle('allowFriendRequests', value)
+                    }
+                    trackColor={{
+                      false: theme.colors.surfaceVariant,
+                      true: theme.colors.primary,
+                    }}
                     thumbColor={theme.colors.surface}
                   />
                 </View>
@@ -189,8 +227,13 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                   </View>
                   <Switch
                     value={privacySettings.showActivityFeed}
-                    onValueChange={(value) => handleToggle('showActivityFeed', value)}
-                    trackColor={{ false: theme.colors.surfaceVariant, true: theme.colors.primary }}
+                    onValueChange={value =>
+                      handleToggle('showActivityFeed', value)
+                    }
+                    trackColor={{
+                      false: theme.colors.surfaceVariant,
+                      true: theme.colors.primary,
+                    }}
                     thumbColor={theme.colors.surface}
                   />
                 </View>
@@ -204,8 +247,13 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                   </View>
                   <Switch
                     value={privacySettings.shareLocation}
-                    onValueChange={(value) => handleToggle('shareLocation', value)}
-                    trackColor={{ false: theme.colors.surfaceVariant, true: theme.colors.primary }}
+                    onValueChange={value =>
+                      handleToggle('shareLocation', value)
+                    }
+                    trackColor={{
+                      false: theme.colors.surfaceVariant,
+                      true: theme.colors.primary,
+                    }}
                     thumbColor={theme.colors.surface}
                   />
                 </View>
@@ -219,8 +267,13 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                   </View>
                   <Switch
                     value={privacySettings.showMoodStatus}
-                    onValueChange={(value) => handleToggle('showMoodStatus', value)}
-                    trackColor={{ false: theme.colors.surfaceVariant, true: theme.colors.primary }}
+                    onValueChange={value =>
+                      handleToggle('showMoodStatus', value)
+                    }
+                    trackColor={{
+                      false: theme.colors.surfaceVariant,
+                      true: theme.colors.primary,
+                    }}
                     thumbColor={theme.colors.surface}
                   />
                 </View>
@@ -234,8 +287,11 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                   </View>
                   <Switch
                     value={privacySettings.showLastSeen}
-                    onValueChange={(value) => handleToggle('showLastSeen', value)}
-                    trackColor={{ false: theme.colors.surfaceVariant, true: theme.colors.primary }}
+                    onValueChange={value => handleToggle('showLastSeen', value)}
+                    trackColor={{
+                      false: theme.colors.surfaceVariant,
+                      true: theme.colors.primary,
+                    }}
                     thumbColor={theme.colors.surface}
                   />
                 </View>
@@ -260,151 +316,151 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
   );
 };
 
-const createStyles = (theme: any) => StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    height: Dimensions.get('window').height * 0.85,
-    maxHeight: '90%',
-    flexDirection: 'column',
-    ...theme.shadows.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  title: {
-    ...theme.typography.headlineSmall,
-    color: theme.colors.onSurface,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    ...theme.typography.titleLarge,
-    color: theme.colors.onSurface,
-    fontWeight: 'bold',
-    marginBottom: spacing.xs,
-  },
-  sectionDescription: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.onSurfaceVariant,
-    marginBottom: spacing.md,
-  },
-  options: {
-    gap: spacing.sm,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceVariant,
-  },
-  optionSelected: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.primary + '10',
-  },
-  optionContent: {
-    flex: 1,
-  },
-  optionLabel: {
-    ...theme.typography.titleMedium,
-    color: theme.colors.onSurface,
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-  },
-  optionLabelSelected: {
-    color: theme.colors.primary,
-  },
-  optionDescription: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.onSurfaceVariant,
-  },
-  radioButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioButtonSelected: {
-    borderColor: theme.colors.primary,
-  },
-  radioButtonInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: theme.colors.primary,
-  },
-  toggleOptions: {
-    gap: spacing.md,
-  },
-  toggleOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: theme.colors.surfaceVariant,
-  },
-  toggleContent: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  toggleLabel: {
-    ...theme.typography.titleMedium,
-    color: theme.colors.onSurface,
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-  },
-  toggleDescription: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.onSurfaceVariant,
-  },
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  saveButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    ...theme.typography.titleMedium,
-    color: theme.colors.onPrimary,
-    fontWeight: 'bold',
-  },
-});
-
+const createStyles = (theme: any) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'flex-end',
+    },
+    modalContainer: {
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: borderRadius.xl,
+      borderTopRightRadius: borderRadius.xl,
+      height: Dimensions.get('window').height * 0.85,
+      maxHeight: '90%',
+      flexDirection: 'column',
+      ...theme.shadows.lg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: spacing.lg,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    title: {
+      ...theme.typography.headlineSmall,
+      color: theme.colors.onSurface,
+      fontWeight: 'bold',
+    },
+    closeButton: {
+      padding: spacing.xs,
+    },
+    content: {
+      flex: 1,
+    },
+    contentContainer: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+    },
+    section: {
+      marginBottom: spacing.xl,
+    },
+    sectionTitle: {
+      ...theme.typography.titleLarge,
+      color: theme.colors.onSurface,
+      fontWeight: 'bold',
+      marginBottom: spacing.xs,
+    },
+    sectionDescription: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.onSurfaceVariant,
+      marginBottom: spacing.md,
+    },
+    options: {
+      gap: spacing.sm,
+    },
+    option: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: spacing.md,
+      borderRadius: borderRadius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surfaceVariant,
+    },
+    optionSelected: {
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primary + '10',
+    },
+    optionContent: {
+      flex: 1,
+    },
+    optionLabel: {
+      ...theme.typography.titleMedium,
+      color: theme.colors.onSurface,
+      fontWeight: '600',
+      marginBottom: spacing.xs,
+    },
+    optionLabelSelected: {
+      color: theme.colors.primary,
+    },
+    optionDescription: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.onSurfaceVariant,
+    },
+    radioButton: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: theme.colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    radioButtonSelected: {
+      borderColor: theme.colors.primary,
+    },
+    radioButtonInner: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: theme.colors.primary,
+    },
+    toggleOptions: {
+      gap: spacing.md,
+    },
+    toggleOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: spacing.md,
+      borderRadius: borderRadius.md,
+      backgroundColor: theme.colors.surfaceVariant,
+    },
+    toggleContent: {
+      flex: 1,
+      marginRight: spacing.md,
+    },
+    toggleLabel: {
+      ...theme.typography.titleMedium,
+      color: theme.colors.onSurface,
+      fontWeight: '600',
+      marginBottom: spacing.xs,
+    },
+    toggleDescription: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.onSurfaceVariant,
+    },
+    footer: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    saveButton: {
+      backgroundColor: theme.colors.primary,
+      borderRadius: borderRadius.lg,
+      paddingVertical: spacing.md,
+      alignItems: 'center',
+    },
+    saveButtonText: {
+      ...theme.typography.titleMedium,
+      color: theme.colors.onPrimary,
+      fontWeight: 'bold',
+    },
+  });
