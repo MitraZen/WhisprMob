@@ -73,6 +73,11 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def whisprVersionName = "2.10.0"
+def whisprVersionCode = 113
+def whisprReleaseTag = "I1"
+def whisprTimestamp = new Date().format("yyyy-MM-dd_HH-mm")
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -86,8 +91,8 @@ android {
             applicationId "com.whisprmobiletemp"
             minSdkVersion rootProject.ext.minSdkVersion
             targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 112
-        versionName "2.0.9"
+        versionCode whisprVersionCode
+        versionName whisprVersionName
         
         // NDK configuration for 16 KB page size support
         ndk {
@@ -138,6 +143,19 @@ android {
     
     // Configure native library alignment for 16 KB page sizes
     // This is handled by the AndroidManifest.xml extractNativeLibs="false" setting
+}
+
+android.applicationVariants.all { variant ->
+    if (variant.buildType.name != "release") {
+        return
+    }
+
+    variant.outputs.each { output ->
+        def currentFileName = output.outputFileName ?: "app-release.apk"
+        def extension = currentFileName.substring(currentFileName.lastIndexOf('.'))
+        def baseName = "Whispr_v${whisprVersionName}_${whisprReleaseTag}_${whisprTimestamp}"
+        output.outputFileName = "${baseName}${extension}"
+    }
 }
 
 dependencies {

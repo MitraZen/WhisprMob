@@ -136,27 +136,39 @@ serve(async (req) => {
       }
     }
 
-    // Prepare FCM v1 message with high priority for OnePlus/Xiaomi compatibility
+    // Merge notification fields into data payload so Android treats this as a data message
+    const payloadData = sanitizeData({
+      ...(data || {}),
+      title: notification?.title ?? data?.title ?? '',
+      body: notification?.body ?? data?.body ?? '',
+      priority: 'high',
+      content_available: 'true',
+      type: data?.type ?? 'message'
+    });
+
+    // Prepare FCM v1 message with high priority for Doze/idle delivery
     const fcmMessage = {
       message: {
         token: to,
-        notification: {
-          title: notification.title,
-          body: notification.body
-        },
-        data: data || {},
+        data: payloadData,
         android: {
-          priority: 'high',
-          notification: {
-            channel_id: 'whispr-messages',
-            sound: 'default',
-            vibrate_timings: [300, 100, 300],
-            priority: 'high',
-            visibility: 'public'
+          priority: 'HIGH',
+          direct_boot_ok: true,
+          ttl: '120s', // Give the device more time to deliver while idle
+        },
+        apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-push-type': 'background',
           },
-          ttl: '60s' // 60 seconds TTL for reliable delivery
-        }
-      }
+          payload: {
+            aps: {
+              'content-available': 1,
+              sound: 'default',
+            },
+          },
+        },
+      },
     };
 
     console.log('🔥 Sending FCM v1 message:', JSON.stringify(fcmMessage, null, 2));
@@ -315,4 +327,30 @@ async function signWithPrivateKey(input: string, privateKeyPem: string): Promise
   } catch (error) {
     throw new Error(`JWT signing failed: ${error.message}`);
   }
+}
+
+function sanitizeData(source: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {};
+  Object.entries(source || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+
+    if (typeof value === 'string') {
+      result[key] = value;
+      return;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      result[key] = String(value);
+      return;
+    }
+
+    try {
+      result[key] = JSON.stringify(value);
+    } catch {
+      result[key] = String(value);
+    }
+  });
+  return result;
 }

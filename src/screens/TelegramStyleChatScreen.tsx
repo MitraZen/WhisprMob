@@ -419,9 +419,15 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const messagesEndRef = useRef(0);
   
   const flatListRef = useRef<FlatList<SimpleMessage>>(null);
+  const initialScrollDoneRef = useRef(false);
   const processingMessages = useRef<Set<string>>(new Set());
   const lastAutoScrollTimeRef = useRef<number>(0);
   const autoScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const maintainPositionConfig = useMemo(
+    () => ({ minIndexForVisible: 0 }),
+    [],
+  );
 
   // Filter messages based on search query
   const filteredMessages = useMemo(() => {
@@ -480,20 +486,32 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [buddy?.id, user?.id, onMessagesRead]);
 
-  // Initial scroll to bottom when messages first load (inverted list - scroll to index 0)
+  // Reset initial scroll sentinel when buddy changes
   useEffect(() => {
-    if (!flatListRef.current) return;
-    if (reversedMessages.length === 0) return;
+    initialScrollDoneRef.current = false;
+  }, [buddy?.id]);
+
+  // Initial scroll to bottom when messages first load
+  useEffect(() => {
+    if (initialScrollDoneRef.current) {
+      return;
+    }
+
+    if (!flatListRef.current || reversedMessages.length === 0) {
+      return;
+    }
 
     const tryScroll = () => {
-      if (!flatListRef.current) return;
+      if (!flatListRef.current || initialScrollDoneRef.current) {
+        return;
+      }
+
       try {
         flatListRef.current.scrollToIndex({ index: 0, animated: false });
+        initialScrollDoneRef.current = true;
         setIsUserScrolling(false);
-        console.log('✅ Scrolled to bottom (index 0)');
       } catch (e) {
-        // Retry if scrollToIndex fails (item not rendered yet)
-        setTimeout(() => tryScroll(), 150);
+        setTimeout(tryScroll, 150);
       }
     };
 
@@ -599,11 +617,26 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   // Detect new messages when user is scrolled up and manage ref tracking
   useEffect(() => {
-    // When user is scrolled up and new messages arrive, show banner
+    if (!user?.id) {
+      return;
+    }
+
+    // When user is scrolled up and new messages arrive, only count incoming ones
     if (isUserScrolling && messages.length > messagesEndRef.current) {
-      const newCount = messages.length - messagesEndRef.current;
-      setHasNewMessages(true);
-      setNewMessageCount(newCount);
+      const unseenMessages = messages.slice(messagesEndRef.current);
+      const incomingCount = unseenMessages.filter(
+        message => message.sender_id !== user.id
+      ).length;
+
+      if (incomingCount > 0) {
+        setHasNewMessages(true);
+        setNewMessageCount(incomingCount);
+      } else {
+        // All unseen messages were sent by the current user; treat them as seen
+        messagesEndRef.current = messages.length;
+        setHasNewMessages(false);
+        setNewMessageCount(0);
+      }
     } 
     // When user is at bottom, update ref and clear banner
     else if (!isUserScrolling) {
@@ -615,7 +648,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     else if (messagesEndRef.current === 0 && messages.length > 0) {
       messagesEndRef.current = messages.length;
     }
-  }, [messages.length, isUserScrolling]);
+  }, [messages, isUserScrolling, user?.id]);
 
   // Set up typing indicator realtime channel
   useEffect(() => {
@@ -1216,21 +1249,22 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
     return buddy.name || buddy.display_name || 'Chat';
   };
 
-  // Check if user is near bottom (within 100px)
-  const checkIsNearBottom = (scrollPosition: number, contentHeight: number, scrollViewHeight: number): boolean => {
-    return contentHeight - scrollPosition - scrollViewHeight < 100;
-  };
+  const scrollNearBottomThreshold = 60;
 
   // Scroll handler to detect if user is scrolled away from bottom
   const handleScroll = (event: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const { contentOffset } = event.nativeEvent;
     const scrollPosition = contentOffset.y;
-    const scrollViewHeight = layoutMeasurement.height;
-    const contentHeight = contentSize.height;
-    
-    const isNearBottom = checkIsNearBottom(scrollPosition, contentHeight, scrollViewHeight);
-    
-    setIsUserScrolling(!isNearBottom);
+
+    // For inverted lists, being "at the bottom" means y offset ~= 0 (or negative due to bounce)
+    const isNearBottom = scrollPosition <= scrollNearBottomThreshold;
+
+    setIsUserScrolling(prev => {
+      if (prev === !isNearBottom) {
+        return prev;
+      }
+      return !isNearBottom;
+    });
     scrollPositionRef.current = scrollPosition;
     
     if (isNearBottom) {
@@ -1625,9 +1659,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           }
           return null;
         }}
-        maintainVisibleContentPosition={{
-          minIndexForVisible: 0,
-        }}
+        maintainVisibleContentPosition={
+          isUserScrolling ? undefined : maintainPositionConfig
+        }
         removeClippedSubviews={Platform.OS === 'android'}
         maxToRenderPerBatch={10}
         updateCellsBatchingPeriod={50}
