@@ -65,17 +65,34 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   });
   
   try {
-    // Handle ping messages (wake up realtime)
-    if (remoteMessage.data?.type === 'ping') {
-      console.log('📡 FCM Ping received in background - will reconnect on app open');
-      // Ping will trigger realtime reconnection when app opens
-      // No need to process here - app will handle on foreground
+    // Handle wake/ping messages - fetch messages and let batch system display notifications
+    if (remoteMessage.data?.type === 'ping' || remoteMessage.data?.type === 'wake') {
+      console.log('📡 FCM Wake signal received in background - fetching messages and triggering batch system');
+      
+      // ✅ CRITICAL FIX: Actually fetch messages when woken up
+      // Use setTimeout to avoid blocking the background handler
+      setTimeout(() => {
+        try {
+          // Use require for React Native compatibility in background handlers
+          const { notificationManager } = require('@/services/notificationManager');
+          console.log('📡 Triggering message fetch from background wake signal...');
+          // Poll for new messages - this will trigger the batching system to display notifications
+          notificationManager.pollForNewMessages().catch((error) => {
+            console.error('❌ Error fetching messages from background wake signal:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error requiring notificationManager in background handler:', error);
+        }
+      }, 0);
+      
+      // Return immediately - don't wait for async operations
+      // The message fetch will happen in the background
       return;
     }
     
-    // ✅ Display notification for all other messages
-    // This ensures notifications are shown even if Android doesn't auto-display them
-    // (e.g., due to battery optimization, permission issues, or data-only messages)
+    // ✅ Only display notification if it's NOT a wake signal
+    // For legacy messages or non-wake types, display notification
+    // (This handles edge cases where old FCM messages might still have full data)
     const hasNotificationPayload = !!remoteMessage.notification;
     const notificationTitle = remoteMessage.notification?.title || 
                              remoteMessage.data?.title || 
@@ -86,7 +103,7 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
                             remoteMessage.data?.message || 
                             'You have a new message';
     
-    console.log('📱 Displaying background notification:', {
+    console.log('📱 Displaying background notification (legacy/non-wake):', {
       title: notificationTitle,
       body: notificationBody,
       buddyName: remoteMessage.data?.buddyName,

@@ -1554,18 +1554,45 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         </View>
       )}
 
-      <FlatList
-        ref={flatListRef}
-        data={reversedMessages}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        inverted={true}
-        style={styles.messagesContainer}
-        contentContainerStyle={styles.messagesContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
+      <View style={styles.messagesContainer}>
+        {/* Loading state rendered OUTSIDE FlatList to avoid inverted flip */}
+        {isLoading && messages.length === 0 && (
+          <View style={[styles.loadingContainer, StyleSheet.absoluteFill]}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={styles.loadingText}>Loading messages...</Text>
+          </View>
+        )}
+
+        {/* Empty states rendered OUTSIDE FlatList to avoid inverted flip */}
+        {!isLoading && filteredMessages.length === 0 && searchQuery.trim().length > 0 && (
+          <View style={[styles.emptyContainer, StyleSheet.absoluteFill]}>
+            <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
+            <Text style={styles.emptyText}>No results found</Text>
+            <Text style={styles.emptySubtext}>Try a different search term</Text>
+          </View>
+        )}
+
+        {!isLoading && filteredMessages.length === 0 && searchQuery.trim().length === 0 && (
+          <View style={[styles.emptyContainer, StyleSheet.absoluteFill]}>
+            <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
+            <Text style={styles.emptyText}>No messages yet</Text>
+            <Text style={styles.emptySubtext}>Start a conversation!</Text>
+          </View>
+        )}
+
+        {reversedMessages.length > 0 && (
+          <FlatList
+            ref={flatListRef}
+            data={reversedMessages}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            inverted={true}
+            style={styles.messagesContainer}
+            contentContainerStyle={styles.messagesContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
         onLayout={(event) => {
           // Simplified: Only handle new message auto-scroll when user is at bottom
           if (!flatListRef.current || reversedMessages.length === 0) return;
@@ -1630,35 +1657,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             }, 100);
           }
         }}
-        ListEmptyComponent={() => {
-          if (isLoading && messages.length === 0) {
-            return (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading messages...</Text>
-          </View>
-            );
-          }
-          if (filteredMessages.length === 0 && searchQuery.trim().length > 0) {
-            return (
-          <View style={styles.emptyContainer}>
-            <Icon name="search-outline" size={64} color={theme.colors.onSurfaceVariant} />
-            <Text style={styles.emptyText}>No results found</Text>
-            <Text style={styles.emptySubtext}>Try a different search term</Text>
-          </View>
-            );
-          }
-          if (filteredMessages.length === 0) {
-            return (
-          <View style={styles.emptyContainer}>
-            <Icon name="chatbubbles-outline" size={64} color={theme.colors.onSurfaceVariant} />
-            <Text style={styles.emptyText}>No messages yet</Text>
-            <Text style={styles.emptySubtext}>Start a conversation!</Text>
-          </View>
-            );
-          }
-          return null;
-        }}
+        ListEmptyComponent={() => null}
         maintainVisibleContentPosition={
           isUserScrolling ? undefined : maintainPositionConfig
         }
@@ -1694,7 +1693,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             }
           }, 100);
         }}
-      />
+          />
+        )}
+      </View>
 
       {hasNewMessages && (
         <Animated.View style={styles.newMessageBanner}>

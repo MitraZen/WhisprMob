@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  Animated, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Animated,
   Platform,
-  Alert 
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import DeviceInfo from 'react-native-device-info';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
@@ -25,8 +26,13 @@ const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user 
   const { logout } = useAuth();
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
+  const [appVersion, setAppVersion] = useState('');
   
   const styles = createStyles(theme);
+
+  useEffect(() => {
+    setAppVersion(DeviceInfo.getVersion());
+  }, []);
 
   useEffect(() => {
     // Animate screen entrance
@@ -182,9 +188,9 @@ const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user 
             { transform: [{ translateY: slideAnim }] }
           ]}
         >
-          <Text style={styles.footerText}>
-            Whispr v1.1.4 • Made with ❤️
-          </Text>
+        <Text style={styles.footerText}>
+          {`Whispr v${appVersion || '-'} • Made with ❤️`}
+        </Text>
         </Animated.View>
       </ScrollView>
 

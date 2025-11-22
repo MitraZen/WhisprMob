@@ -15,6 +15,7 @@ import {
   AppStateStatus,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import DeviceInfo from 'react-native-device-info';
 import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
@@ -60,6 +61,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const appState = useRef(AppState.currentState);
   const [appStateVisible, setAppStateVisible] = useState(appState.current);
   const permissionCheckTriggered = useRef(false);
+  const [appVersion, setAppVersion] = useState('');
   // Test states removed for production build
 
   // Debug code removed for production build
@@ -147,6 +149,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     return () => {
       subscription?.remove();
     };
+  }, []);
+
+  useEffect(() => {
+    setAppVersion(DeviceInfo.getVersion());
   }, []);
 
   const loadAppNotificationState = async () => {
@@ -606,7 +612,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <Animated.View
           style={[styles.footer, { transform: [{ translateY: slideAnim }] }]}
         >
-          <Text style={styles.footerText}>Whispr v1.1.4 • Made with ❤️</Text>
+        <Text style={styles.footerText}>
+          {`Whispr v${appVersion || '-'} • Made with ❤️`}
+        </Text>
         </Animated.View>
       </ScrollView>
 
