@@ -791,18 +791,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           await BiometricService.isBiometricAvailable();
 
         if (biometricEnabled && biometricAvailable) {
-          const shouldAuthenticate =
-            await BiometricService.promptBiometricAuth();
-          if (!shouldAuthenticate) {
-            console.log('AuthContext - Biometric authentication cancelled');
-            dispatch({ type: 'SET_LOADING', payload: false });
-            return null;
-          }
-
           try {
             const biometricResult =
               await BiometricService.authenticateWithBiometric();
             if (!biometricResult.success) {
+              if (
+                biometricResult.error === 'Authentication cancelled by user'
+              ) {
+                console.log(
+                  'AuthContext - Biometric authentication cancelled by user',
+                );
+                dispatch({ type: 'SET_LOADING', payload: false });
+                return null;
+              }
+
               console.log('AuthContext - Biometric authentication failed');
               await StorageService.removeItem('user');
               dispatch({ type: 'SET_LOADING', payload: false });

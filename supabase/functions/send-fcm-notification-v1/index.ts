@@ -18,6 +18,8 @@ serve(async (req) => {
     console.log("🔥 Request body keys:", Object.keys(body || {}));
 
     const { to, notification, data, checkOnlineStatus, forceSend } = body;
+    const isNote = data?.type === "note";
+    const effectiveForceSend = isNote ? true : !!forceSend;
 
     if (!to || !notification) {
       console.error("❌ Missing required fields: to or notification");
@@ -61,7 +63,7 @@ serve(async (req) => {
     }
 
     // Optional online check (best-effort)
-    if (checkOnlineStatus && data?.userId) {
+    if (checkOnlineStatus && !effectiveForceSend && data?.userId) {
       console.log("🔍 Checking online status for user:", data.userId);
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -98,7 +100,7 @@ serve(async (req) => {
             const RECENT_SECONDS = 120; // slightly forgiving threshold
             const isActuallyOnline = isOnlineFlag && lastSeenAgeSec <= RECENT_SECONDS;
 
-            if (isActuallyOnline && !forceSend) {
+            if (isActuallyOnline && !effectiveForceSend) {
               console.log("🟢 User considered online (recent). Skipping FCM send.");
               return new Response(
                 JSON.stringify({
@@ -191,13 +193,21 @@ serve(async (req) => {
     }
 
     const resolvedBuddyName = buddyName ?? null;
-    
-    // ✅ Handle note vs message notifications
-    const isNote = data?.type === "note";
-    const notificationTitle = notification?.title ?? 
-      (isNote 
-        ? "New Whispr Note" 
-        : (resolvedBuddyName ?? "New Message"));
+
+    // Prefer caller-provided titles only when they aren't generic placeholders
+    const incomingTitle =
+      typeof notification?.title === "string" ? notification.title.trim() : null;
+    const isGenericMessageTitle =
+      !isNote &&
+      incomingTitle !== null &&
+      incomingTitle.toLowerCase() === "new message";
+    const useIncomingTitle = !!incomingTitle && !isGenericMessageTitle;
+
+    const notificationTitle = useIncomingTitle
+      ? incomingTitle!
+      : (isNote
+          ? "New Whispr Note"
+          : (resolvedBuddyName ?? "New Message"));
     const notificationBody = notification?.body ??
       (isNote
         ? (typeof data?.noteContent === "string" 
@@ -324,6 +334,28 @@ serve(async (req) => {
     console.log("🔥 FCM v1 response:", fcmResult);
 
     if (!fcmResponse.ok) {
+      // ✅ Handle invalid/expired FCM tokens gracefully
+      // UNREGISTERED (404) means token is invalid - this is expected for some users
+      // (e.g., app uninstalled, data cleared, token expired)
+      const isUnregisteredToken = fcmResponse.status === 404 && 
+        fcmResult?.error?.details?.[0]?.errorCode === "UNREGISTERED";
+      
+      if (isUnregisteredToken) {
+        console.warn("⚠️ FCM token is UNREGISTERED (invalid/expired) - this is expected for some users");
+        console.warn("⚠️ Token should be cleaned up from database, but notification attempt completed");
+        // Return success - invalid tokens are expected and shouldn't fail the notification flow
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Notification attempt completed (token was invalid/expired)",
+            warning: "FCM token is UNREGISTERED - should be removed from database",
+            fcmResult,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // Other FCM errors (not UNREGISTERED) - log as error
       console.error("❌ FCM v1 error:", fcmResult);
       return new Response(
         JSON.stringify({

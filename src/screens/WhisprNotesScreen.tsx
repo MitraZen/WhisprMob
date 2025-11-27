@@ -295,7 +295,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         await loadNotes();
         Alert.alert('Already Listened', 'You have already listened to this note.');
       } else {
-        Alert.alert('Error', 'Failed to listen to note: ' + errorMessage);
+      Alert.alert('Error', 'Failed to listen to note: ' + errorMessage);
       }
     } finally {
       setActionLoading(prev => {

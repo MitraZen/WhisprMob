@@ -71,14 +71,33 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
     // 2. If app wakes: Background handler triggers batch system
     // 3. Batch system displays grouped notification (replaces OS notification)
     
-    // ✅ Handle note notifications - show directly (notes don't use batch system)
+    // ✅ Handle note notifications - fetch notes to update cache
+    // ✅ NOTES FIX: Fetch notes in background like messages, but notes don't use batch system
     if (remoteMessage.data?.type === 'note') {
       console.log('📝 FCM Note notification received in background');
       console.log('📱 OS notification already displayed (fallback for lock screen)');
       
-      // Notes are shown directly by OS, no need for batch system
-      // The OS notification is already displayed, so we just return
-      // Realtime will handle note updates when app wakes up
+      // ✅ CRITICAL FIX: Fetch notes to update cache and ensure app has latest data
+      // This ensures notes appear in app when user opens it, even if app was killed
+      // Notes don't use batch system, but we still need to fetch them
+      setTimeout(() => {
+        try {
+          // Use require for React Native compatibility in background handlers
+          const { notificationManager } = require('@/services/notificationManager');
+          console.log('📝 Triggering note fetch from background FCM...');
+          // Poll for new notes - this updates cache and ensures app has latest data
+          // Note: This is separate from message polling, so it won't affect message flow
+          notificationManager.pollForNewMessages().catch((error) => {
+            console.error('❌ Error fetching notes from background FCM:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error requiring notificationManager for notes:', error);
+        }
+      }, 0);
+      
+      // Return immediately - don't wait for async operations
+      // The note fetch will happen in the background
+      // OS notification is already displayed (good for lock screen fallback)
       return;
     }
     

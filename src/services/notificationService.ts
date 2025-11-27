@@ -348,14 +348,14 @@ class NotificationServiceClass implements NotificationService {
       buddyName = buddyName ?? 'New Message';
 
       // Check app-level notifications state
-      const appNotificationsEnabled = await this.isAppNotificationEnabled();
-      if (!appNotificationsEnabled) {
-        console.log('🔕 [NOTIFICATION] App-level notifications are disabled - skipping notification');
-        return 'App-level notifications disabled';
-      }
+    const appNotificationsEnabled = await this.isAppNotificationEnabled();
+    if (!appNotificationsEnabled) {
+      console.log('🔕 [NOTIFICATION] App-level notifications are disabled - skipping notification');
+      return 'App-level notifications disabled';
+    }
 
-      const { AppState } = require('react-native');
-      const currentAppState = AppState.currentState;
+    const { AppState } = require('react-native');
+    const currentAppState = AppState.currentState;
 
       // Smart title selection (explicit title wins unless it's generic fallback)
       const finalTitle =
@@ -372,37 +372,37 @@ class NotificationServiceClass implements NotificationService {
 
       // Duplicate prevention: content-based key (same user + same short content)
       const contentKey = `${finalTitle}-${displayMessage.substring(0, 30)}`;
-
-      if (messageCount && messageCount > 1) {
+    
+    if (messageCount && messageCount > 1) {
         // Batched notification - allow (we update existing notifications)
-        console.log('🔔 [NOTIFICATION] Batched notification - will UPDATE existing notification');
-      } else {
-        if (this.recentNotifications.has(contentKey)) {
-          console.log('🔔 [NOTIFICATION] Exact duplicate prevented:', contentKey);
-          return 'Duplicate notification prevented';
-        }
+      console.log('🔔 [NOTIFICATION] Batched notification - will UPDATE existing notification');
+    } else {
+      if (this.recentNotifications.has(contentKey)) {
+        console.log('🔔 [NOTIFICATION] Exact duplicate prevented:', contentKey);
+        return 'Duplicate notification prevented';
+      }
         // Track for small window
-        this.recentNotifications.add(contentKey);
+      this.recentNotifications.add(contentKey);
         setTimeout(() => this.recentNotifications.delete(contentKey), 3000);
-      }
-
+    }
+    
       // Suppress if user actively in chat
-      if (this.isChatActive) {
+    if (this.isChatActive) {
         console.log('🔔 [NOTIFICATION] Notification suppressed - chat active');
-        return 'Notification suppressed - chat active';
-      }
-
+      return 'Notification suppressed - chat active';
+    }
+    
       const perm = await this.checkNotificationPermission();
       console.log('🔔 Notification permission status:', perm);
-
+    
       if (!perm) {
-        console.warn('🔔 [NOTIFICATION] Permission not granted - requesting');
-        const permissionGranted = await this.requestNotificationPermission();
-        if (!permissionGranted) {
-          console.warn('🔔 [NOTIFICATION] Permission still not granted');
-          return 'Notification permission not granted';
-        }
+      console.warn('🔔 [NOTIFICATION] Permission not granted - requesting');
+      const permissionGranted = await this.requestNotificationPermission();
+      if (!permissionGranted) {
+        console.warn('🔔 [NOTIFICATION] Permission still not granted');
+        return 'Notification permission not granted';
       }
+    }
 
       // Compute stable notification id from buddyId or buddyName
       const idSource = buddyId ?? finalTitle ?? 'whispr';
@@ -415,9 +415,9 @@ class NotificationServiceClass implements NotificationService {
         return Math.abs(h) || 1;
       };
       const notificationId = getNotificationId(idSource);
-
+    
       // Build display title (include message count)
-      const displayTitle = messageCount && messageCount > 1
+    const displayTitle = messageCount && messageCount > 1 
         ? `${finalTitle} (${messageCount} messages)`
         : finalTitle;
 
@@ -439,80 +439,80 @@ class NotificationServiceClass implements NotificationService {
       }
 
       // Fire the local notification
-      try {
-        PushNotification.localNotification({
-          id: notificationId,
-          channelId: 'whispr-messages',
-          title: displayTitle,
-          message: displayMessage,
+    try {
+      PushNotification.localNotification({
+        id: notificationId,
+        channelId: 'whispr-messages',
+        title: displayTitle,
+        message: displayMessage,
           tag: buddyId ?? buddyName,
-          playSound: true,
-          soundName: 'default',
-          vibrate: true,
-          vibration: 300,
-          priority: 'high',
-          importance: 'high',
-          smallIcon: 'ic_notification',
-          largeIcon: 'ic_launcher',
-          userInfo: {
-            id: notificationId,
+        playSound: true,
+        soundName: 'default',
+        vibrate: true,
+        vibration: 300,
+        priority: 'high',
+        importance: 'high',
+        smallIcon: 'ic_notification',
+        largeIcon: 'ic_launcher',
+        userInfo: { 
+          id: notificationId,
             buddyName,
             buddyId,
             messageCount: messageCount ?? 1,
             isBatched: Boolean(messageCount && messageCount > 1),
-          },
+        },
           ...(Platform.OS === 'android' && {
             visibility: 'public',
             autoCancel: true,
             color: '#007AFF',
           }),
-        });
+      });
 
-        console.log('🔔 [NOTIFICATION] ✅ PushNotification.localNotification call completed!');
+      console.log('🔔 [NOTIFICATION] ✅ PushNotification.localNotification call completed!');
         console.log('🔔 [NOTIFICATION] Notification sent successfully!', { notificationId, tag: buddyId ?? buddyName });
-        return 'Message notification sent successfully';
-      } catch (notificationError) {
-        console.error('🔔 [NOTIFICATION] ❌ Error in PushNotification.localNotification:', notificationError);
-        throw notificationError;
-      }
-    } catch (error) {
-      console.error('Error sending message notification:', error);
-      throw error;
+      return 'Message notification sent successfully';
+    } catch (notificationError) {
+      console.error('🔔 [NOTIFICATION] ❌ Error in PushNotification.localNotification:', notificationError);
+      throw notificationError;
     }
-  }
-async showNoteNotification(title: string, content: string): Promise<string> {
-  try {
-    const hasPermission = await this.checkNotificationPermission();
-    if (!hasPermission) {
-      console.warn('Notification permission not granted - requesting');
-      const permissionGranted = await this.requestNotificationPermission();
-      if (!permissionGranted) {
-        console.warn('Permission still not granted');
-        return 'Notification permission not granted';
-      }
-    }
-
-    PushNotification.localNotification({
-      channelId: 'whispr-notes',
-      title: title,
-      message: content,
-      playSound: true,
-      soundName: 'default',
-      vibrate: true,
-      vibration: 300,
-      priority: 'high',
-      importance: 'high',
-      smallIcon: 'ic_notification',
-      largeIcon: 'ic_launcher',
-    });
-
-    console.log('Note notification sent');
-    return 'Note notification sent successfully';
   } catch (error) {
-    console.error('Error sending note notification:', error);
+    console.error('Error sending message notification:', error);
     throw error;
   }
 }
+  async showNoteNotification(title: string, content: string): Promise<string> {
+    try {
+      const hasPermission = await this.checkNotificationPermission();
+      if (!hasPermission) {
+        console.warn('Notification permission not granted - requesting');
+        const permissionGranted = await this.requestNotificationPermission();
+        if (!permissionGranted) {
+          console.warn('Permission still not granted');
+          return 'Notification permission not granted';
+        }
+      }
+
+      PushNotification.localNotification({
+        channelId: 'whispr-notes',
+        title: title,
+        message: content,
+        playSound: true,
+        soundName: 'default',
+        vibrate: true,
+        vibration: 300,
+        priority: 'high',
+        importance: 'high',
+        smallIcon: 'ic_notification',
+        largeIcon: 'ic_launcher',
+      });
+
+      console.log('Note notification sent');
+      return 'Note notification sent successfully';
+    } catch (error) {
+      console.error('Error sending note notification:', error);
+      throw error;
+    }
+  }
   
   async showGeneralNotification(title: string, content: string): Promise<string> {
     try {

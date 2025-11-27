@@ -441,21 +441,21 @@ class NotificationManagerClass implements NotificationManager {
 
             // 🔑 NEW: Only show notifications if polling is the active/fallback channel
             if (shouldNotifyFromPolling) {
-              for (const message of newMessages) {
-                const buddyDisplayName = await this.getBuddyDisplayName(message.senderId);
+            for (const message of newMessages) {
+              const buddyDisplayName = await this.getBuddyDisplayName(message.senderId);
                 await notificationService.showMessageNotification({
                   title: null,
                   message: message.content,
                   buddyName: buddyDisplayName,
                   buddyId: buddy.id
                 });
-                this.performanceMetrics.pollingNotifications++;
-                this.performanceMetrics.totalNotifications++;
+              this.performanceMetrics.pollingNotifications++;
+              this.performanceMetrics.totalNotifications++;
               }
             } else {
               console.log('🔕 [Polling] Skipping notification for these messages because realtime already handled notifications');
             }
-
+            
             // ✅ STILL update cache so we don't re-process these messages later
             this.lastMessageIds[buddy.id] = recentMessages
               .filter(msg => msg.senderId !== this.userId)
@@ -476,8 +476,12 @@ class NotificationManagerClass implements NotificationManager {
   private async checkForNewNotes(): Promise<void> {
     if (!this.userId) return;
 
-    // 🔑 NEW: decide if polling is allowed to show notifications
+    // ✅ NOTES FIX: Always allow note notifications from polling
+    // Notes are broadcast messages and should always be shown, even if realtime is active
+    // This ensures notes appear when app is backgrounded/idle (realtime may be disconnected)
+    // Messages still use the shouldNotifyFromPolling check (different logic)
     const shouldNotifyFromPolling = this.fallbackMode || !this.realtimeActive;
+    const shouldNotifyNotes = true; // ✅ Always show note notifications from polling
 
     try {
       const notes = await BuddiesService.getWhisprNotes(this.userId);
@@ -500,8 +504,9 @@ class NotificationManagerClass implements NotificationManager {
           window.dispatchEvent(event);
         }
         
-        // 🔑 NEW: Only show notifications if polling is the active/fallback channel
-        if (shouldNotifyFromPolling) {
+        // ✅ NOTES FIX: Always show note notifications (notes are broadcast, not realtime-dependent)
+        // This is separate from message notification logic, so it won't affect messages
+        if (shouldNotifyNotes) {
           for (const note of newNotes.slice(0, 10)) {
             await notificationService.showNoteNotification(
               'New Whispr Note',
@@ -511,7 +516,7 @@ class NotificationManagerClass implements NotificationManager {
             this.performanceMetrics.totalNotifications++;
           }
         } else {
-          console.log('🔕 [Polling] Skipping note notifications because realtime is active');
+          console.log('🔕 [Polling] Skipping note notifications (should not happen)');
         }
         
         // ✅ STILL update cache so we don't re-process these notes later

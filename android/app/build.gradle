@@ -73,8 +73,8 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
-def whisprVersionName = "2.14.0"
-def whisprVersionCode = 117
+def whisprVersionName = "2.15.0"
+def whisprVersionCode = 118
 def whisprReleaseTag = "P3"
 def whisprTimestamp = new Date().format("yyyy-MM-dd_HH-mm")
 

@@ -13,6 +13,8 @@ import {
   Linking,
   AppState,
   AppStateStatus,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import DeviceInfo from 'react-native-device-info';
@@ -27,8 +29,9 @@ import {
 import PermissionService from '../services/permissionService';
 import PermissionInitializer from '../services/permissionInitializer';
 import { AdminService } from '@/services/adminService'; // Import admin service
-import BiometricService from '@/services/biometricService';
+import BiometricService, { BiometricType } from '@/services/biometricService';
 import { ThemedAlertLegacy } from '@/components/ThemedAlert';
+import supabase from '@/config/supabase';
 // Test components removed for production build
 
 interface SettingsOption {
@@ -62,6 +65,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [appStateVisible, setAppStateVisible] = useState(appState.current);
   const permissionCheckTriggered = useRef(false);
   const [appVersion, setAppVersion] = useState('');
+  const [showBiometricPasswordModal, setShowBiometricPasswordModal] =
+    useState(false);
+  const [biometricPassword, setBiometricPassword] = useState('');
+  const [biometricPasswordError, setBiometricPasswordError] = useState('');
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [pendingBiometryType, setPendingBiometryType] =
+    useState<BiometricType | null>(null);
+  const biometricPasswordInputRef = useRef<TextInput | null>(null);
   // Test states removed for production build
 
   // Debug code removed for production build
@@ -155,6 +166,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setAppVersion(DeviceInfo.getVersion());
   }, []);
 
+  useEffect(() => {
+    if (showBiometricPasswordModal) {
+      const timer = setTimeout(() => {
+        biometricPasswordInputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+    setBiometricPassword('');
+    setBiometricPasswordError('');
+  }, [showBiometricPasswordModal]);
+
   const loadAppNotificationState = async () => {
     try {
       // Load app-level notification state from AsyncStorage
@@ -207,6 +229,123 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setBiometricEnabled(isEnabled);
     } catch (error) {
       console.error('Error checking biometric status:', error);
+    }
+  };
+
+  const startBiometricEnableFlow = async () => {
+    try {
+      const isAvailable = await BiometricService.isBiometricAvailable();
+      if (!isAvailable) {
+        Alert.alert(
+          'Biometric Not Available',
+          'Biometric authentication is not available on this device. Please check your device settings.',
+        );
+        setBiometricEnabled(false);
+        return;
+      }
+
+      const biometryType = await BiometricService.getBiometricType();
+      if (!biometryType) {
+        Alert.alert(
+          'Biometric Not Available',
+          'No biometric authentication method found on this device.',
+        );
+        setBiometricEnabled(false);
+        return;
+      }
+
+      const shouldEnable = await BiometricService.promptBiometricSetup();
+      if (!shouldEnable) {
+        setBiometricEnabled(false);
+        return;
+      }
+
+      setPendingBiometryType(biometryType);
+      setShowBiometricPasswordModal(true);
+    } catch (error) {
+      console.error('Error preparing biometric enable flow:', error);
+      Alert.alert(
+        'Error',
+        'Unable to start biometric enrollment. Please try again later.',
+      );
+      setBiometricEnabled(false);
+    }
+  };
+
+  const handleCancelBiometricEnable = () => {
+    setShowBiometricPasswordModal(false);
+    setPendingBiometryType(null);
+    setBiometricPassword('');
+    setBiometricPasswordError('');
+    setBiometricEnabled(false);
+  };
+
+  const handleConfirmBiometricEnable = async () => {
+    if (!user?.id || !user?.email) {
+      Alert.alert(
+        'Unable to enable biometric authentication',
+        'Account information is missing. Please sign in again and retry.',
+      );
+      return;
+    }
+
+    if (!biometricPassword.trim()) {
+      setBiometricPasswordError('Password is required to enable biometrics.');
+      return;
+    }
+
+    setBiometricLoading(true);
+    try {
+      const password = biometricPassword.trim();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password,
+      });
+
+      if (error) {
+        setBiometricPasswordError(
+          error.message?.includes('Invalid login credentials')
+            ? 'Incorrect password. Please try again.'
+            : error.message || 'Failed to verify password. Please try again.',
+        );
+        return;
+      }
+
+      const enableResult = await BiometricService.enableBiometric(
+        user.id,
+        password,
+      );
+
+      if (!enableResult.success) {
+        throw new Error(
+          enableResult.error ||
+            'Failed to enable biometric authentication. Please try again.',
+        );
+      }
+
+      setBiometricEnabled(true);
+      setShowBiometricPasswordModal(false);
+      setPendingBiometryType(enableResult.biometryType || pendingBiometryType);
+      setBiometricPassword('');
+      setBiometricPasswordError('');
+      Alert.alert(
+        'Biometric Enabled',
+        `You can now use ${
+          enableResult.biometryType?.name ||
+          pendingBiometryType?.name ||
+          'biometric authentication'
+        } to sign in securely.`,
+      );
+    } catch (error) {
+      console.error('Error enabling biometric authentication:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred while enabling biometric authentication.',
+      );
+    } finally {
+      setBiometricLoading(false);
     }
   };
 
@@ -271,93 +410,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleBiometricToggle = async (value: boolean) => {
+    if (biometricLoading) {
+      return;
+    }
+
+    if (value) {
+      await startBiometricEnableFlow();
+      return;
+    }
+
     try {
-      if (value) {
-        // Enable biometric authentication
-        const isAvailable = await BiometricService.isBiometricAvailable();
-        if (!isAvailable) {
-          Alert.alert(
-            'Biometric Not Available',
-            'Biometric authentication is not available on this device. Please check your device settings.',
-            [{ text: 'OK' }],
-          );
-          return;
-        }
-
-        const biometryType = await BiometricService.getBiometricType();
-        if (!biometryType) {
-          Alert.alert(
-            'Biometric Not Available',
-            'No biometric authentication method found on this device.',
-            [{ text: 'OK' }],
-          );
-          return;
-        }
-
-        // Prompt user to enable biometric authentication
-        const shouldEnable = await BiometricService.promptBiometricSetup();
-        if (!shouldEnable) {
-          return;
-        }
-
-        // For now, we'll need the user's password to enable biometric auth
-        // In a real implementation, you might want to prompt for password here
+      setBiometricLoading(true);
+      const result = await BiometricService.disableBiometric();
+      if (result.success) {
+        setBiometricEnabled(false);
         Alert.alert(
-          'Enable Biometric Authentication',
-          `To enable ${biometryType.name} authentication, you'll need to sign in again. This will securely store your credentials for future biometric access.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Continue',
-              onPress: () => {
-                // Navigate to sign in screen or prompt for password
-                Alert.alert(
-                  'Password Required',
-                  'Please enter your password to enable biometric authentication.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Enter Password',
-                      onPress: () => {
-                        // This would typically open a password input modal
-                        // For now, we'll show a placeholder
-                        Alert.alert(
-                          'Info',
-                          'Password input would be implemented here. For now, biometric authentication is ready to be enabled.',
-                        );
-                      },
-                    },
-                  ],
-                );
-              },
-            },
-          ],
+          'Biometric Disabled',
+          'Biometric authentication has been disabled successfully.',
+          [{ text: 'OK' }],
         );
       } else {
-        // Disable biometric authentication
-        const result = await BiometricService.disableBiometric();
-        if (result.success) {
-          setBiometricEnabled(false);
-          Alert.alert(
-            'Biometric Disabled',
-            'Biometric authentication has been disabled successfully.',
-            [{ text: 'OK' }],
-          );
-        } else {
-          Alert.alert(
-            'Error',
-            result.error || 'Failed to disable biometric authentication.',
-            [{ text: 'OK' }],
-          );
-        }
+        setBiometricEnabled(true);
+        Alert.alert(
+          'Error',
+          result.error || 'Failed to disable biometric authentication.',
+          [{ text: 'OK' }],
+        );
       }
     } catch (error) {
       console.error('Error toggling biometric authentication:', error);
+      setBiometricEnabled(true);
       Alert.alert(
         'Error',
         'An unexpected error occurred while updating biometric settings.',
         [{ text: 'OK' }],
       );
+    } finally {
+      setBiometricLoading(false);
     }
   };
 
@@ -493,6 +582,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <Switch
           value={biometricEnabled}
           onValueChange={handleBiometricToggle}
+          disabled={biometricLoading}
           trackColor={{
             false: theme.colors.border,
             true: theme.colors.primary + '40',
@@ -619,6 +709,77 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </ScrollView>
 
       <NavigationMenu currentScreen="settings" onNavigate={onNavigate} />
+
+      {/* Biometric password confirmation */}
+      <Modal
+        visible={showBiometricPasswordModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCancelBiometricEnable}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.biometricModalContent}>
+            <Text style={styles.biometricModalTitle}>Enter Password</Text>
+            <Text style={styles.biometricModalDescription}>
+              {`Confirm your password to store encrypted credentials for ${
+                pendingBiometryType?.name ?? 'biometric authentication'
+              }.`}
+            </Text>
+            <TextInput
+              ref={biometricPasswordInputRef}
+              style={styles.biometricInput}
+              secureTextEntry
+              value={biometricPassword}
+              placeholder="Password"
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              onChangeText={text => {
+                setBiometricPassword(text);
+                if (biometricPasswordError) {
+                  setBiometricPasswordError('');
+                }
+              }}
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmBiometricEnable}
+            />
+            {biometricPasswordError ? (
+              <Text style={styles.biometricErrorText}>
+                {biometricPasswordError}
+              </Text>
+            ) : null}
+            <View style={styles.biometricActions}>
+              <TouchableOpacity
+                style={styles.modalActionButton}
+                onPress={handleCancelBiometricEnable}
+                disabled={biometricLoading}
+              >
+                <Text style={styles.modalActionButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalActionButton,
+                  styles.modalPrimaryButton,
+                  biometricLoading && styles.modalPrimaryButtonDisabled,
+                ]}
+                onPress={handleConfirmBiometricEnable}
+                disabled={biometricLoading}
+              >
+                {biometricLoading ? (
+                  <ActivityIndicator color={theme.colors.onPrimary} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.modalActionButtonText,
+                      styles.modalPrimaryButtonText,
+                    ]}
+                  >
+                    Enable
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Notification Settings Dialog */}
       <Modal
@@ -889,6 +1050,67 @@ const createStyles = (theme: any) =>
     },
     settingsButton: {
       padding: spacing.sm,
+    },
+    biometricModalContent: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: borderRadius.xl,
+      width: '100%',
+      maxWidth: 420,
+      padding: spacing.lg,
+      ...theme.shadows.lg,
+    },
+    biometricModalTitle: {
+      ...theme.typography.headlineSmall,
+      color: theme.colors.onSurface,
+      fontWeight: 'bold',
+      marginBottom: spacing.sm,
+    },
+    biometricModalDescription: {
+      ...theme.typography.bodyMedium,
+      color: theme.colors.onSurfaceVariant,
+      marginBottom: spacing.md,
+    },
+    biometricInput: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: borderRadius.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      color: theme.colors.onSurface,
+      ...theme.typography.bodyMedium,
+    },
+    biometricErrorText: {
+      color: theme.colors.error,
+      ...theme.typography.bodySmall,
+      marginTop: spacing.xs,
+    },
+    biometricActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginTop: spacing.lg,
+    },
+    modalActionButton: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      borderRadius: borderRadius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      marginLeft: spacing.sm,
+    },
+    modalActionButtonText: {
+      ...theme.typography.bodyMedium,
+      color: theme.colors.onSurface,
+    },
+    modalPrimaryButton: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    modalPrimaryButtonDisabled: {
+      opacity: 0.7,
+    },
+    modalPrimaryButtonText: {
+      color: theme.colors.onPrimary,
+      fontWeight: '600',
     },
   });
 

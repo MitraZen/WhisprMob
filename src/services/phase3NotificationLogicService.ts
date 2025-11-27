@@ -208,9 +208,9 @@ class Phase3NotificationLogicService {
       // The FCM notification is shown by OS automatically, and our batch notification with same tag/ID should replace it
       // Using a small delay ensures the FCM notification is processed first
       setTimeout(() => {
-        // ✅ Call synchronously without await to prevent blocking
-        // NOTE: Batch already has the new message added (line 99-104), so messageCount will be correct
-        this.showBatchNotificationSync(buddyName);
+      // ✅ Call synchronously without await to prevent blocking
+      // NOTE: Batch already has the new message added (line 99-104), so messageCount will be correct
+      this.showBatchNotificationSync(buddyName);
       }, 200); // 200ms delay to let FCM notification appear first, then replace it
       
     } else {
@@ -444,7 +444,7 @@ class Phase3NotificationLogicService {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;
     }
-    
+
     // ✅ Cleanup FCM notification tracking cleanup interval
     if (this.fcmNotificationCleanupInterval) {
       clearInterval(this.fcmNotificationCleanupInterval);

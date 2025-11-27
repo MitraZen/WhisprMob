@@ -129,7 +129,7 @@ export class BiometricService {
    */
   static async disableBiometric(): Promise<BiometricResult> {
     try {
-      await Keychain.resetInternetCredentials(this.SERVICE_NAME);
+      await Keychain.resetInternetCredentials({ server: this.SERVICE_NAME });
       console.log('✅ Biometric authentication disabled');
       
       return {
