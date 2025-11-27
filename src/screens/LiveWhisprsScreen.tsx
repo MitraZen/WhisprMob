@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,8 @@ import {
   Platform,
   Text,
   TouchableOpacity,
+  ActivityIndicator,
+  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
@@ -17,6 +19,38 @@ import GradientBackground from '@/components/GradientBackground';
 
 type DistanceFilter = '50km' | '100km' | 'beyond';
 
+interface DistanceRange {
+  min: number; // in meters
+  max: number; // in meters
+  label: string;
+  icon: string;
+  description: string;
+}
+
+const DISTANCE_RANGES: Record<DistanceFilter, DistanceRange> = {
+  '50km': {
+    min: 0,
+    max: 50000,
+    label: 'Local',
+    icon: '📍',
+    description: 'Within 50km',
+  },
+  '100km': {
+    min: 50000, // ✅ EXCLUSIVE: Start where 50km ends
+    max: 100000,
+    label: 'Regional',
+    icon: '🌍',
+    description: '50-100km away',
+  },
+  'beyond': {
+    min: 100000, // ✅ EXCLUSIVE: Start where 100km ends
+    max: Infinity,
+    label: 'Global',
+    icon: '🚀',
+    description: 'Beyond 100km',
+  },
+};
+
 interface LiveWhisprsScreenProps {
   onNavigate: (screen: string) => void;
 }
@@ -26,6 +60,16 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   const styles = createStyles(theme, isDark);
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState<DistanceFilter>('50km');
+  const [filterLoading, setFilterLoading] = useState(false);
+  // Counts disabled per user request
+  // const [filterCounts, setFilterCounts] = useState<Record<DistanceFilter, number | null>>({
+  //   '50km': null,
+  //   '100km': null,
+  //   'beyond': null,
+  // });
+  // const [countsLoading, setCountsLoading] = useState(true);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const handleRecordWhispr = () => {
     setShowRecordModal(true);
@@ -40,23 +84,68 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
     setShowRecordModal(false);
   };
 
-  const getDistanceFilterRadius = (filter: DistanceFilter): number => {
-    switch (filter) {
-      case '50km':
-        return 50000; // 50km in meters
-      case '100km':
-        return 100000; // 100km in meters
-      case 'beyond':
-        return 1000000; // 1000km in meters (effectively unlimited)
-      default:
-        return 50000;
+  // ✅ PERFORMANCE: Debounce filter changes to avoid excessive re-renders
+  const handleFilterChange = useCallback((filter: DistanceFilter) => {
+    // Don't do anything if already selected
+    if (filter === distanceFilter) return;
+
+    // Clear existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
     }
+
+    // Show loading state immediately for better UX
+    setFilterLoading(true);
+
+    // Debounce the actual filter change
+    debounceTimerRef.current = setTimeout(() => {
+      setDistanceFilter(filter);
+      // Loading will be cleared by WhisperFeed's onFilterLoadingChange callback
+    }, 300);
+  }, [distanceFilter]);
+
+  // DISABLED: Count fetching - counts are not shown per user request
+  // useEffect(() => {
+  //   const fetchFilterCounts = async () => {
+  //     // Count fetching disabled
+  //   };
+  //   fetchFilterCounts();
+  // }, []);
+
+  // ✅ UI/UX: Fade animation when filter changes
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(fadeAnim, {
+        toValue: 0.3,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [distanceFilter, fadeAnim]);
+
+  // Cleanup debounce timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const getDistanceFilterRadius = (filter: DistanceFilter): { min: number; max: number } => {
+    const range = DISTANCE_RANGES[filter];
+    return { min: range.min, max: range.max };
   };
 
   return (
     <GradientBackground variant="default">
       <StatusBar
-        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+        barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor="transparent"
         translucent={true}
       />
@@ -83,32 +172,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
         </Text>
         <View style={styles.filterButtons}>
           {(['50km', '100km', 'beyond'] as DistanceFilter[]).map((filter) => {
-            const getFilterIcon = (filterType: DistanceFilter) => {
-              switch (filterType) {
-                case '50km':
-                  return '📍';
-                case '100km':
-                  return '🌍';
-                case 'beyond':
-                  return '🚀';
-                default:
-                  return '📍';
-              }
-            };
-
-            const getFilterLabel = (filterType: DistanceFilter) => {
-              switch (filterType) {
-                case '50km':
-                  return 'Local';
-                case '100km':
-                  return 'Regional';
-                case 'beyond':
-                  return 'Global';
-                default:
-                  return 'Local';
-              }
-            };
-
+            const range = DISTANCE_RANGES[filter];
             const isSelected = distanceFilter === filter;
             
             return (
@@ -126,10 +190,18 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
                     shadowColor: isSelected ? theme.colors.primary : 'transparent',
                   }
                 ]}
-                onPress={() => setDistanceFilter(filter)}
+                onPress={() => handleFilterChange(filter)}
                 activeOpacity={0.7}
+                disabled={filterLoading && !isSelected}
               >
                 <View style={styles.filterButtonContent}>
+                  {filterLoading && isSelected ? (
+                    <ActivityIndicator 
+                      size="small" 
+                      color={theme.colors.surface} 
+                      style={{ marginRight: spacing.xs }}
+                    />
+                  ) : null}
                   <Text
                     style={[
                       styles.filterButtonText,
@@ -140,22 +212,37 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
                       }
                     ]}
                   >
-                    {getFilterLabel(filter)}
+                    {range.label}
                   </Text>
                   <Text style={styles.filterIcon}>
-                    {getFilterIcon(filter)}
+                    {range.icon}
                   </Text>
                 </View>
+                {/* ✅ UI/UX: Preview stat under filter button */}
+                <Text style={[
+                  styles.filterPreviewText,
+                  { color: isSelected ? theme.colors.surface : theme.colors.onSurfaceVariant }
+                ]}>
+                  {range.description}
+                </Text>
               </TouchableOpacity>
             );
           })}
         </View>
+        {/* Note about future update */}
+        <Text style={[styles.filterNote, { color: theme.colors.onSurfaceVariant }]}>
+          **Local Whisprs will unlock in a future update
+        </Text>
       </View>
 
-      <WhisprFeed 
-        onRecordWhispr={handleRecordWhispr}
-        distanceRadius={getDistanceFilterRadius(distanceFilter)}
-      />
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <WhisprFeed 
+          onRecordWhispr={handleRecordWhispr}
+          distanceRange={getDistanceFilterRadius(distanceFilter)}
+          distanceFilter={distanceFilter}
+          onFilterLoadingChange={setFilterLoading}
+        />
+      </Animated.View>
 
       <Modal
         visible={showRecordModal}
@@ -186,13 +273,11 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    backdropFilter: 'blur(10px)',
   },
   backButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
     backgroundColor: theme.colors.surfaceVariant,
-    backdropFilter: 'blur(10px)',
   },
   headerTitle: {
     fontSize: 20,
@@ -206,7 +291,6 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    backdropFilter: 'blur(10px)',
   },
   filterTitle: {
     fontSize: 16,
@@ -221,7 +305,7 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   filterButton: {
     flex: 1,
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
@@ -233,7 +317,7 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 1,
     elevation: 1,
-    minHeight: 32,
+    minHeight: 48,
   },
   filterButtonContent: {
     flexDirection: 'row',
@@ -247,6 +331,32 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   },
   filterIcon: {
     fontSize: 14,
+  },
+  countBadge: {
+    minWidth: 22,
+    height: 20,
+    paddingHorizontal: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  filterNote: {
+    fontSize: 10,
+    fontStyle: 'italic',
+    marginTop: 8,
+    textAlign: 'center',
+    opacity: 0.7,
+  },
+  filterPreviewText: {
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: 'center',
+    opacity: 0.8,
   },
 });
 

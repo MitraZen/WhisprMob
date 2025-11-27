@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Platform,
   FlatList,
+  SectionList,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
@@ -22,9 +23,13 @@ import AnonymousChatModal from './AnonymousChatModal';
 import AnonymousChatService from '@/services/anonymousChatService';
 import { supabase } from '@/config/supabase';
 
+type DistanceFilter = '50km' | '100km' | 'beyond';
+
 interface WhisperFeedProps {
   onRecordWhispr?: () => void;
-  distanceRadius?: number; // Distance radius in meters
+  distanceRange?: { min: number; max: number }; // EXCLUSIVE distance range in meters
+  distanceFilter?: DistanceFilter; // Current filter for empty state messaging
+  onFilterLoadingChange?: (loading: boolean) => void; // Callback to notify parent of loading state
 }
 
 interface WhisprItemProps {
@@ -100,67 +105,61 @@ const WhisprItem = React.memo<WhisprItemProps>(({ whispr, onFeel }) => {
   const styles = useMemo(() => StyleSheet.create({
     container: {
       backgroundColor: moodColors.background,
-      borderRadius: borderRadius.lg,
-      marginBottom: spacing.lg,
-      padding: spacing.lg,
-      borderWidth: 2,
+      borderRadius: borderRadius.sm,
+      marginBottom: spacing.xs / 2,
+      padding: spacing.sm,
+      borderWidth: 1,
       borderColor: moodColors.primary,
       shadowColor: moodColors.primary,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 3,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 1,
+      elevation: 1,
     },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: spacing.md,
+      marginBottom: 2,
     },
     moodInfo: {
       flexDirection: 'row',
       alignItems: 'center',
     },
     moodEmoji: {
-      fontSize: 20,
-      marginRight: spacing.xs,
+      fontSize: 14,
+      marginRight: 3,
     },
     moodText: {
-      fontSize: 14,
+      fontSize: 11,
       fontWeight: '600',
       color: moodColors.text,
     },
     timeText: {
-      fontSize: 12,
+      fontSize: 9,
       color: moodColors.accent,
     },
     content: {
-      fontSize: 16,
-      lineHeight: 24,
-      color: moodColors.text,
-      marginBottom: spacing.md,
-    },
-    characterCount: {
       fontSize: 12,
-      color: moodColors.accent,
-      textAlign: 'right',
-      marginBottom: spacing.md,
+      lineHeight: 16,
+      color: moodColors.text,
+      marginBottom: 2,
     },
     feelButton: {
       backgroundColor: moodColors.primary,
-      borderRadius: borderRadius.full,
-      paddingVertical: spacing.md,
-      paddingHorizontal: spacing.lg,
+      borderRadius: borderRadius.sm,
+      paddingVertical: 4,
+      paddingHorizontal: spacing.sm,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: spacing.md,
+      marginTop: 2,
     },
     feelButtonText: {
       color: theme.colors.onPrimary,
-      fontSize: 16,
+      fontSize: 11,
       fontWeight: '600',
-      marginLeft: spacing.sm,
+      marginLeft: 3,
     },
     reactionsContainer: {
       flexDirection: 'row',
@@ -233,11 +232,6 @@ const WhisprItem = React.memo<WhisprItemProps>(({ whispr, onFeel }) => {
 
       {/* Content */}
       <Text style={styles.content}>{whispr.content}</Text>
-      
-      {/* Character Count */}
-      <Text style={styles.characterCount}>
-        {whispr.character_count} characters
-      </Text>
 
       {/* Chat Button */}
       <TouchableOpacity
@@ -247,7 +241,7 @@ const WhisprItem = React.memo<WhisprItemProps>(({ whispr, onFeel }) => {
       >
         <Icon
           name={isFeeling ? 'chatbubbles' : 'chatbubble-outline'}
-          size={24}
+          size={14}
           color={theme.colors.onPrimary}
         />
         <Text style={styles.feelButtonText}>
@@ -262,36 +256,84 @@ const WhisprItem = React.memo<WhisprItemProps>(({ whispr, onFeel }) => {
 // Memoized key extractor for FlatList
 const keyExtractor = (item: TextWhispr) => item.id;
 
-const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadius = 50000 }) => {
+const WhisperFeed: React.FC<WhisperFeedProps> = ({ 
+  onRecordWhispr, 
+  distanceRange = { min: 0, max: 50000 },
+  distanceFilter = '50km',
+  onFilterLoadingChange
+}) => {
+  // Safety check: ensure distanceRange is valid
+  const safeDistanceRange = distanceRange || { min: 0, max: 50000 };
   const theme = useTheme();
   const [whisprs, setWhisprs] = useState<TextWhispr[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedWhisprForChat, setSelectedWhisprForChat] = useState<string | null>(null);
+  const [showJumpToTop, setShowJumpToTop] = useState(false);
+  const flatListRef = useRef<FlatList | SectionList>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  // ✅ STATE MANAGEMENT: Notify parent of loading state changes
+  React.useEffect(() => {
+    if (onFilterLoadingChange) {
+      onFilterLoadingChange(loading);
+    }
+  }, [loading, onFilterLoadingChange]);
 
   // Debug: Track selectedWhisprForChat state changes
   useEffect(() => {
     console.log('🎯 selectedWhisprForChat state changed:', selectedWhisprForChat);
   }, [selectedWhisprForChat]);
 
+  // Location fetching disabled per user request
+
   const loadWhisprs = useCallback(async () => {
     try {
       setError(null);
-      console.log(`📍 Loading whisprs within ${distanceRadius}m radius...`);
-      const nearbyWhisprs = await TextWhisperService.getNearbyTextWhisprs(20, distanceRadius);
-      setWhisprs(nearbyWhisprs);
+      setLoading(true);
+      const range = safeDistanceRange;
+      const rangeDesc = range.max === Infinity 
+        ? `${range.min / 1000}km+` 
+        : `${range.min / 1000}-${range.max / 1000}km`;
+      console.log(`📍 Loading whisprs in EXCLUSIVE range: ${rangeDesc}...`);
+      console.log(`📍 Distance range:`, range);
+      
+      // Fetch whisprs up to max range using the proven method
+      const maxRadius = range.max === Infinity ? undefined : range.max;
+      const allWhisprs = await TextWhisperService.getNearbyTextWhisprs(100, maxRadius);
+      
+      console.log(`📍 Fetched ${allWhisprs.length} whisprs - showing all active whisprs (location filtering disabled)`);
+      
+      // Show all active whisprs regardless of filter - location filtering disabled per user request
+      setWhisprs(allWhisprs);
     } catch (error) {
       console.error('Error loading whisprs:', error);
       setError(error instanceof Error ? error.message : 'Failed to load whisprs');
+      // On error, try to show whisprs without exclusive filtering
+      try {
+        const maxRadius = safeDistanceRange.max === Infinity ? undefined : safeDistanceRange.max;
+        console.log('⚠️ Falling back to basic filtering...');
+        const fallbackWhisprs = await TextWhisperService.getNearbyTextWhisprs(20, maxRadius);
+        setWhisprs(fallbackWhisprs);
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        setWhisprs([]);
+      }
     } finally {
       setLoading(false);
+      // Notify parent that loading is complete
+      if (onFilterLoadingChange) {
+        onFilterLoadingChange(false);
+      }
     }
-  }, [distanceRadius]);
+  }, [safeDistanceRange, onFilterLoadingChange]);
 
   useEffect(() => {
     loadWhisprs();
   }, [loadWhisprs]);
+
+  // Location-based filtering disabled per user request
 
   // Set up real-time subscription for new whisprs
   useEffect(() => {
@@ -306,10 +348,31 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
           schema: 'public',
           table: 'whisprs'
         },
-        (payload) => {
+        async (payload) => {
           console.log('🆕 New whispr created:', payload.new);
-          // Refresh the feed when a new whispr is created
-          loadWhisprs();
+          const newWhispr = payload.new as any;
+
+          // Convert to TextWhispr format and add to list (location filtering disabled)
+          const textWhispr: TextWhispr = {
+            id: newWhispr.id,
+            content: newWhispr.content,
+            character_count: newWhispr.character_count,
+            mood: newWhispr.mood,
+            is_anonymous: newWhispr.is_anonymous,
+            created_at: newWhispr.created_at,
+            expires_at: newWhispr.expires_at,
+            radius_meters: newWhispr.radius_meters,
+          };
+
+          // Add to beginning of list (most recent first)
+          setWhisprs(prev => {
+            // Check if already exists (avoid duplicates)
+            if (prev.some(w => w.id === textWhispr.id)) {
+              return prev;
+            }
+            return [textWhispr, ...prev];
+          });
+          console.log('✅ Added new whispr to feed');
         }
       )
       .on(
@@ -319,10 +382,37 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
           schema: 'public',
           table: 'whisprs'
         },
-        (payload) => {
+        async (payload) => {
           console.log('🔄 Whispr updated:', payload.new);
-          // Refresh the feed when a whispr is updated (e.g., expired)
-          loadWhisprs();
+          const updatedWhispr = payload.new as any;
+
+          setWhisprs(prev => {
+            // Remove if expired (location filtering disabled)
+            const isExpired = new Date(updatedWhispr.expires_at) <= new Date();
+            if (isExpired) {
+              return prev.filter(w => w.id !== updatedWhispr.id);
+            }
+
+            // Update existing whispr
+            const textWhispr: TextWhispr = {
+              id: updatedWhispr.id,
+              content: updatedWhispr.content,
+              character_count: updatedWhispr.character_count,
+              mood: updatedWhispr.mood,
+              is_anonymous: updatedWhispr.is_anonymous,
+              created_at: updatedWhispr.created_at,
+              expires_at: updatedWhispr.expires_at,
+              radius_meters: updatedWhispr.radius_meters,
+            };
+
+            const index = prev.findIndex(w => w.id === updatedWhispr.id);
+            if (index >= 0) {
+              const newList = [...prev];
+              newList[index] = textWhispr;
+              return newList;
+            }
+            return prev;
+          });
         }
       )
       .subscribe((status) => {
@@ -343,13 +433,45 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
       console.log('🧹 Cleaning up whisprs subscription');
       channel.unsubscribe();
     };
-  }, [loadWhisprs]);
+  }, []);
 
+  // ✅ FEED INTERACTION: Enhanced pull-to-refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadWhisprs();
-    setRefreshing(false);
+    try {
+      await loadWhisprs();
+    } catch (error) {
+      console.error('Error refreshing whisprs:', error);
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadWhisprs]);
+
+  // ✅ FEED INTERACTION: Jump to top handler
+  const handleJumpToTop = useCallback(() => {
+    if (flatListRef.current) {
+      if ('scrollToOffset' in flatListRef.current) {
+        (flatListRef.current as FlatList).scrollToOffset({ offset: 0, animated: true });
+      } else if ('scrollToLocation' in flatListRef.current) {
+        (flatListRef.current as SectionList).scrollToLocation({ sectionIndex: 0, itemIndex: 0, animated: true });
+      }
+    }
+  }, []);
+
+  // ✅ FEED INTERACTION: Track scroll position for jump-to-top button
+  const handleScroll = useCallback(
+    Animated.event(
+      [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+      {
+        useNativeDriver: false,
+        listener: (event: any) => {
+          const offsetY = event.nativeEvent.contentOffset.y;
+          setShowJumpToTop(offsetY > 300); // Show button after scrolling 300px
+        },
+      }
+    ),
+    []
+  );
 
   const handleWhisprFeel = useCallback((updatedWhispr: TextWhispr) => {
     // Open chat modal instead of updating whispr
@@ -368,6 +490,85 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
     );
   }, []);
 
+  // ✅ STATE MANAGEMENT: Enhanced empty state messages based on filter
+  const getEmptyStateMessage = useCallback((filter: DistanceFilter) => {
+    switch (filter) {
+      case '50km':
+        return {
+          emoji: '📍',
+          title: 'No whisprs within 50km',
+          subtitle: 'Try expanding your search to see more whisprs!',
+          suggestion: 'Switch to Regional (100km) or Global view',
+        };
+      case '100km':
+        return {
+          emoji: '🌍',
+          title: 'No whisprs within 100km',
+          subtitle: 'Expand to Global view to see whisprs from anywhere!',
+          suggestion: 'Switch to Global view',
+        };
+      case 'beyond':
+        return {
+          emoji: '🚀',
+          title: 'No whisprs available',
+          subtitle: 'Be the first to share a whispr in your area!',
+          suggestion: 'Create your first whispr',
+        };
+      default:
+        return {
+          emoji: '💭',
+          title: 'No whispers near yet',
+          subtitle: 'Start one?',
+          suggestion: '',
+        };
+    }
+  }, []);
+
+  const emptyState = useMemo(() => getEmptyStateMessage(distanceFilter), [distanceFilter, getEmptyStateMessage]);
+
+  // ✅ FEED INTERACTION: Format timestamp for grouping
+  const formatTimeGroup = useCallback((timestamp: string): string => {
+    const now = new Date();
+    const created = new Date(timestamp);
+    const diffMs = now.getTime() - created.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) {
+      return 'Just now';
+    } else if (diffMins < 60) {
+      return `${diffMins} min ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      return created.toLocaleDateString();
+    }
+  }, []);
+
+  // ✅ FEED INTERACTION: Group whisprs by time
+  const groupedWhisprs = useMemo(() => {
+    const groups: Record<string, TextWhispr[]> = {};
+    
+    whisprs.forEach(whispr => {
+      const timeGroup = formatTimeGroup(whispr.created_at);
+      if (!groups[timeGroup]) {
+        groups[timeGroup] = [];
+      }
+      groups[timeGroup].push(whispr);
+    });
+
+    // Convert to array format for SectionList
+    return Object.entries(groups).map(([timeGroup, items]) => ({
+      title: timeGroup,
+      data: items,
+    }));
+  }, [whisprs, formatTimeGroup]);
+
   // Memoized render item for FlatList
   const renderWhisprItem = useCallback(({ item }: { item: TextWhispr }) => (
     <WhisprItem
@@ -375,6 +576,18 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
       onFeel={handleWhisprFeel}
     />
   ), [handleWhisprFeel]);
+
+  // ✅ FEED INTERACTION: Render section header (timestamp grouping)
+  const renderSectionHeader = useCallback(({ section }: { section: { title: string; data: TextWhispr[] } }) => (
+    <View style={[
+      styles.sectionHeader,
+      { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }
+    ]}>
+      <Text style={[styles.sectionHeaderText, { color: theme.colors.onSurfaceVariant }]}>
+        {section.title}
+      </Text>
+    </View>
+  ), [theme.colors]);
 
   // Memoize styles
   const styles = useMemo(() => StyleSheet.create({
@@ -411,8 +624,8 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
       marginLeft: spacing.xs,
     },
     content: {
-      padding: spacing.lg,
-      minHeight: 400, // Ensure minimum height for scrolling
+      padding: spacing.sm,
+      paddingBottom: spacing.md, // Extra bottom padding for last item
     },
     emptyContainer: {
       flex: 1,
@@ -465,6 +678,38 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
       justifyContent: 'center',
       alignItems: 'center',
     },
+    sectionHeader: {
+      paddingVertical: 4,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: 1,
+      backgroundColor: theme.colors.surface,
+    },
+    sectionHeaderText: {
+      fontSize: 10,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+      letterSpacing: 0.3,
+    },
+    jumpToTopButton: {
+      position: 'absolute',
+      bottom: 24,
+      right: 24,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    jumpToTopTouchable: {
+      width: '100%',
+      height: '100%',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
   }), [theme.colors]);
 
   if (loading) {
@@ -507,36 +752,72 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({ onRecordWhispr, distanceRadiu
 
       {whisprs.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>💭</Text>
-          <Text style={styles.emptyText}>No whispers near yet</Text>
-          <Text style={styles.emptySubtext}>
-            Start one?
-          </Text>
+          <Text style={styles.emptyEmoji}>{emptyState.emoji}</Text>
+          <Text style={styles.emptyText}>{emptyState.title}</Text>
+          <Text style={styles.emptySubtext}>{emptyState.subtitle}</Text>
+          {emptyState.suggestion ? (
+            <Text style={[styles.emptySubtext, { fontSize: 14, marginBottom: spacing.md }]}>
+              💡 {emptyState.suggestion}
+            </Text>
+          ) : null}
           <TouchableOpacity style={styles.recordButton} onPress={onRecordWhispr} testID="record-first-button">
             <Icon name="add" size={20} color={theme.colors.onPrimary} />
             <Text style={styles.recordButtonText}>🪶 Share Your Whispr</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={whisprs}
-          renderItem={renderWhisprItem}
-          keyExtractor={keyExtractor}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-          }
-          showsVerticalScrollIndicator={true}
-          contentContainerStyle={styles.content}
-          // Ensure proper scrolling
-          nestedScrollEnabled={true}
-          scrollEnabled={true}
-          // Performance optimizations
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          updateCellsBatchingPeriod={50}
-          initialNumToRender={10}
-          windowSize={10}
-        />
+        <>
+          <SectionList
+            ref={flatListRef as any}
+            sections={groupedWhisprs}
+            renderItem={renderWhisprItem}
+            renderSectionHeader={renderSectionHeader}
+            keyExtractor={keyExtractor}
+            stickySectionHeadersEnabled={true}
+            refreshControl={
+              <RefreshControl 
+                refreshing={refreshing} 
+                onRefresh={handleRefresh}
+                tintColor={theme.colors.primary}
+                colors={[theme.colors.primary]}
+              />
+            }
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.content}
+            // Ensure proper scrolling
+            nestedScrollEnabled={true}
+            scrollEnabled={true}
+            // Performance optimizations
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            initialNumToRender={10}
+            windowSize={10}
+          />
+          
+          {/* ✅ FEED INTERACTION: Jump to top floating button */}
+          {showJumpToTop && (
+            <Animated.View
+              style={[
+                styles.jumpToTopButton,
+                {
+                  backgroundColor: theme.colors.primary,
+                  shadowColor: theme.colors.primary,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={handleJumpToTop}
+                activeOpacity={0.8}
+                style={styles.jumpToTopTouchable}
+              >
+                <Icon name="arrow-up" size={24} color={theme.colors.onPrimary} />
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+        </>
       )}
 
       {/* Chat Modal */}

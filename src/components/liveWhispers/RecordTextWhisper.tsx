@@ -40,7 +40,6 @@ const RecordTextWhisper: React.FC<RecordTextWhisperProps> = ({
   const { user, isAuthenticated } = useAuth();
   const [content, setContent] = useState('');
   const [selectedMood, setSelectedMood] = useState('chill');
-  const [isAnonymous, setIsAnonymous] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   
@@ -117,7 +116,7 @@ const RecordTextWhisper: React.FC<RecordTextWhisperProps> = ({
       const whisprId = await TextWhisperService.createTextWhispr({
         content: content.trim(),
         mood: selectedMood,
-        is_anonymous: isAnonymous,
+        is_anonymous: false, // Always false - anonymous toggle removed
         radius_meters: 1000,
         userId: user.id, // Pass the user ID
       });
@@ -235,34 +234,6 @@ const RecordTextWhisper: React.FC<RecordTextWhisperProps> = ({
     },
     moodNameSelected: {
       color: theme.colors.onPrimary,
-    },
-    optionsSection: {
-      marginBottom: spacing.xl,
-    },
-    optionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: spacing.md,
-    },
-    optionLabel: {
-      fontSize: 16,
-      color: theme.colors.onBackground,
-    },
-    toggleSwitch: {
-      width: 50,
-      height: 30,
-      borderRadius: 15,
-      backgroundColor: isAnonymous ? moodColors.primary : theme.colors.outline,
-      justifyContent: 'center',
-      alignItems: isAnonymous ? 'flex-end' : 'flex-start',
-      paddingHorizontal: 2,
-    },
-    toggleThumb: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      backgroundColor: theme.colors.surface,
     },
     previewSection: {
       backgroundColor: moodColors.background,
@@ -395,19 +366,6 @@ const RecordTextWhisper: React.FC<RecordTextWhisperProps> = ({
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
-          </View>
-
-          {/* Options */}
-          <View style={styles.optionsSection}>
-            <View style={styles.optionRow}>
-              <Text style={styles.optionLabel}>Send Anonymously</Text>
-              <TouchableOpacity
-                style={styles.toggleSwitch}
-                onPress={() => setIsAnonymous(!isAnonymous)}
-              >
-                <View style={styles.toggleThumb} />
-              </TouchableOpacity>
             </View>
           </View>
 
