@@ -35,6 +35,7 @@ interface ChatScreenProps {
   user: any;
   onBack?: () => void;
   onMessagesRead?: (buddyId: string) => void;
+  fromNotification?: boolean; // Flag to force fresh data when navigating from notification
 }
 
 interface SimpleMessage {
@@ -384,6 +385,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   onBack,
   onNavigate,
   onMessagesRead,
+  fromNotification = false,
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -455,6 +457,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   useEffect(() => {
     if (buddy?.id && user?.id) {
+      // ✅ loadMessages checks fromNotification internally to skip cache
       loadMessages();
       
       const markAsRead = async () => {
@@ -484,7 +487,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       
       setTimeout(markAsRead, 500);
     }
-  }, [buddy?.id, user?.id, onMessagesRead]);
+  }, [buddy?.id, user?.id, onMessagesRead, fromNotification]);
 
   // Reset initial scroll sentinel when buddy changes
   useEffect(() => {
@@ -852,7 +855,54 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   const loadMessages = async (isRefresh = false, isSilent = false) => {
     try {
-      // ✅ STEP 1: Try to load from cache INSTANTLY
+      // ✅ STEP 1: If fromNotification, skip cache and load fresh immediately
+      if (fromNotification && !isRefresh) {
+        console.log('🔔 Loading fresh messages immediately (fromNotification=true)');
+        setIsLoading(true);
+        
+        try {
+          const freshMessages = await TelegramStyleChatService.getMessages(user.id, buddy.id);
+          const { messageCacheService } = await import('@/services/messageCacheService');
+          messageCacheService.saveMessages(buddy.id, freshMessages);
+          
+          console.log('✅ Fresh messages loaded:', freshMessages.length);
+          setMessages(freshMessages);
+          setIsLoading(false);
+          
+          const freshMessageIds = freshMessages.map(msg => msg.id);
+          messageRepliesService.getRepliesForMessages(freshMessageIds).then(replies => {
+            setRepliesByMessageId(replies || {});
+          });
+          
+          // ✅ Force scroll to bottom after loading fresh messages
+          setTimeout(() => {
+            if (flatListRef.current && freshMessages.length > 0) {
+              try {
+                flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                initialScrollDoneRef.current = true;
+              } catch (e) {
+                console.warn('⚠️ Could not scroll to bottom immediately, will retry:', e);
+                // Retry after a short delay
+                setTimeout(() => {
+                  try {
+                    flatListRef.current?.scrollToIndex({ index: 0, animated: true });
+                  } catch (e2) {
+                    console.warn('⚠️ Retry scroll failed:', e2);
+                  }
+                }, 300);
+              }
+            }
+          }, 100);
+          
+          return;
+        } catch (error) {
+          console.error('❌ Error loading fresh messages:', error);
+          setIsLoading(false);
+          // Fall through to cache loading as fallback
+        }
+      }
+      
+      // ✅ STEP 2: Try to load from cache INSTANTLY (normal flow)
       const { messageCacheService } = await import('@/services/messageCacheService');
       const cachedMessages = await messageCacheService.getMessages(buddy.id);
       
@@ -890,6 +940,17 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
               messageRepliesService.getRepliesForMessages(freshMessageIds).then(replies => {
                 setRepliesByMessageId(replies || {});
               });
+              
+              // ✅ Scroll to bottom when new messages are loaded in background refresh
+              setTimeout(() => {
+                if (flatListRef.current && freshMessages.length > 0) {
+                  try {
+                    flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                  } catch (e) {
+                    console.warn('⚠️ Could not scroll to bottom after background refresh:', e);
+                  }
+                }
+              }, 100);
             } else {
               console.log('✓ Background refresh - no changes');
             }
@@ -1581,18 +1642,18 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         )}
 
         {reversedMessages.length > 0 && (
-          <FlatList
-            ref={flatListRef}
-            data={reversedMessages}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            inverted={true}
-            style={styles.messagesContainer}
-            contentContainerStyle={styles.messagesContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
+      <FlatList
+        ref={flatListRef}
+        data={reversedMessages}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        inverted={true}
+        style={styles.messagesContainer}
+        contentContainerStyle={styles.messagesContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         onLayout={(event) => {
           // Simplified: Only handle new message auto-scroll when user is at bottom
           if (!flatListRef.current || reversedMessages.length === 0) return;
@@ -1693,7 +1754,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
             }
           }, 100);
         }}
-          />
+      />
         )}
       </View>
 

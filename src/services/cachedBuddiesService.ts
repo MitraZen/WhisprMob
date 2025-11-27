@@ -373,11 +373,17 @@ export class CachedBuddiesService {
     
     const result = await BuddiesService.listenToNote(noteId, userId);
     
-    // Invalidate both Whispr notes cache and buddies cache
+    // ✅ CRITICAL FIX: Invalidate cache immediately and force refresh
     QueryCache.invalidateWhisprNotes(userId);
     QueryCache.invalidateBuddies(userId);
     
+    // ✅ Also clear any cached note_recipients data if it exists
+    // This ensures the next query will fetch fresh data
     console.log('🎧 Cache invalidated for notes and buddies after listening to note');
+    
+    // ✅ Small delay to ensure database transaction is committed
+    // This prevents race conditions where cache is cleared before DB update completes
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     return result;
   }

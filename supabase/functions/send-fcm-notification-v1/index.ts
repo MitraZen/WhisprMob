@@ -14,12 +14,13 @@ serve(async (req) => {
     console.log("🔥 Edge Function called with method:", req.method);
 
     const body = await req.json();
-    console.log("🔥 Request body:", JSON.stringify(body, null, 2));
+    // Log only keys to avoid leaking secrets
+    console.log("🔥 Request body keys:", Object.keys(body || {}));
 
     const { to, notification, data, checkOnlineStatus, forceSend } = body;
 
     if (!to || !notification) {
-      console.error("❌ Missing required fields");
+      console.error("❌ Missing required fields: to or notification");
       return new Response(
         JSON.stringify({ error: "Missing required fields: to, notification" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -29,10 +30,6 @@ serve(async (req) => {
     // Firebase configuration
     const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
     const serviceAccountKey = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_KEY");
-
-    console.log("🔥 Firebase Project ID exists:", !!projectId);
-    console.log("🔥 Service Account Key exists:", !!serviceAccountKey);
-    console.log("🔥 Project ID:", projectId);
 
     if (!projectId || !serviceAccountKey) {
       console.error("❌ Missing Firebase configuration");
@@ -45,26 +42,25 @@ serve(async (req) => {
       );
     }
 
-    // Parse service account key
-    let serviceAccount;
+    // Parse service account (must not log private_key)
+    let serviceAccount: any;
     try {
-      console.log("🔥 Raw Service Account Key (truncated):", serviceAccountKey.substring(0, 100) + "...");
       serviceAccount = JSON.parse(serviceAccountKey);
-      console.log("🔥 Service Account parsed successfully");
-      console.log("🔥 Service Account client_email:", serviceAccount.client_email);
+      if (!serviceAccount?.client_email || !serviceAccount?.private_key) {
+        throw new Error("Service account missing client_email or private_key");
+      }
     } catch (error) {
-      console.error("❌ Failed to parse Service Account Key:", error);
+      console.error("❌ Failed to parse Service Account Key");
       return new Response(
         JSON.stringify({
           error: "Invalid Service Account Key format",
-          details: error.message,
-          rawKey: typeof serviceAccountKey === "string" ? serviceAccountKey.substring(0, 200) : null,
+          details: String(error?.message ?? error),
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // --- safer online-check with last_seen threshold (60 seconds)
+    // Optional online check (best-effort)
     if (checkOnlineStatus && data?.userId) {
       console.log("🔍 Checking online status for user:", data.userId);
       try {
@@ -73,7 +69,7 @@ serve(async (req) => {
 
         if (supabaseUrl && supabaseServiceKey) {
           const response = await fetch(
-            `${supabaseUrl}/rest/v1/user_profiles?id=eq.${data.userId}&select=is_online,last_seen`,
+            `${supabaseUrl}/rest/v1/user_profiles?id=eq.${encodeURIComponent(data.userId)}&select=is_online,last_seen`,
             {
               headers: {
                 Authorization: `Bearer ${supabaseServiceKey}`,
@@ -89,7 +85,6 @@ serve(async (req) => {
             const isOnlineFlag = !!userProfile?.is_online;
             const lastSeenStr = userProfile?.last_seen ?? null;
 
-            // Parse lastSeen and compute recency
             let lastSeenAgeSec = Infinity;
             if (lastSeenStr) {
               const lastSeenTs = Date.parse(lastSeenStr);
@@ -100,8 +95,7 @@ serve(async (req) => {
 
             console.log("🔍 Online check raw:", { isOnlineFlag, lastSeenStr, lastSeenAgeSec });
 
-            // Only consider "online" if flag is true AND lastSeen is very recent (<= 60s).
-            const RECENT_SECONDS = 60;
+            const RECENT_SECONDS = 120; // slightly forgiving threshold
             const isActuallyOnline = isOnlineFlag && lastSeenAgeSec <= RECENT_SECONDS;
 
             if (isActuallyOnline && !forceSend) {
@@ -130,61 +124,179 @@ serve(async (req) => {
           console.warn("⚠️ Missing Supabase credentials; proceeding with FCM.");
         }
       } catch (err) {
-        console.warn("⚠️ Error checking online status; proceeding with FCM:", err);
+        console.warn("⚠️ Error checking online status; proceeding with FCM:", String(err));
       }
     }
 
-    // ==== FCM WAKE-UP STRATEGY: Data-only message to wake app, batch system handles all display
-    // FCM should only wake the app - batch system will handle all notification display
-    // This prevents duplicate notifications (FCM + batch system)
-    // Data-only messages wake app via content-available, but don't auto-display notification
+    // ---------------------------
+    // Resolve buddyName (robust)
+    // ---------------------------
+    const extractBuddyNameFromData = (d: any) => {
+      return (
+        d?.buddyName ??
+        d?.buddy_name ??
+        d?.senderName ??
+        d?.sender_name ??
+        d?.name ??
+        d?.displayName ??
+        null
+      );
+    };
+
+    let buddyName = extractBuddyNameFromData(data);
+
+    async function resolveBuddyNameFromSupabase(userId?: string | null) {
+      if (!userId) return null;
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!supabaseUrl || !supabaseServiceKey) return null;
+
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/user_profiles?id=eq.${encodeURIComponent(userId)}&select=display_name,full_name,username`,
+          {
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              apikey: supabaseServiceKey,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!res.ok) {
+          console.warn("⚠️ Supabase lookup failed status:", res.status);
+          return null;
+        }
+
+        const rows = await res.json();
+        const profile = rows?.[0] ?? null;
+        if (!profile) return null;
+
+        return profile.display_name ?? profile.full_name ?? profile.username ?? null;
+      } catch (err) {
+        console.warn("⚠️ Supabase lookup error:", String(err));
+        return null;
+      }
+    }
+
+    if (!buddyName) {
+      const resolveId = data?.buddyId ?? data?.senderId ?? data?.userId ?? null;
+      if (resolveId) {
+        try {
+          buddyName = await resolveBuddyNameFromSupabase(resolveId);
+        } catch {
+          // ignore - best-effort
+        }
+      }
+    }
+
+    const resolvedBuddyName = buddyName ?? null;
     
-    // Minimal data payload - just enough to wake app
-    // Batch system will fetch messages via realtime and display grouped notifications
+    // ✅ Handle note vs message notifications
+    const isNote = data?.type === "note";
+    const notificationTitle = notification?.title ?? 
+      (isNote 
+        ? "New Whispr Note" 
+        : (resolvedBuddyName ?? "New Message"));
+    const notificationBody = notification?.body ??
+      (isNote
+        ? (typeof data?.noteContent === "string" 
+            ? data.noteContent.substring(0, 100) 
+            : (resolvedBuddyName 
+                ? `${resolvedBuddyName}: New note` 
+                : "You have a new Whispr note"))
+        : (typeof data?.message === "string" 
+            ? data.message.substring(0, 100) 
+            : "You have a new message"));
+
+    // Compute notification ID (same logic as client-side) to ensure replacement
+    // For notes, use noteId; for messages, use buddyId/senderId
+    const buddyIdForId = isNote 
+      ? (data?.noteId ?? data?.senderId ?? "") 
+      : (data?.buddyId ?? data?.senderId ?? "");
+    const buddyNameForId = String(resolvedBuddyName ?? "");
+    const idSource = buddyIdForId || buddyNameForId || (isNote ? "whispr-notes" : "whispr");
+    const getNotificationId = (source: string): number => {
+      let hash = 0;
+      for (let i = 0; i < source.length; i++) {
+        hash = ((hash << 5) - hash) + source.charCodeAt(i);
+        hash = hash & hash;
+      }
+      return Math.abs(hash) || 1;
+    };
+    const computedNotificationId = getNotificationId(idSource);
+
+    // Data payload (sanitized) - handle both notes and messages
     const payloadData = sanitizeData({
-      type: "wake", // Signal that this is a wake-up, batch system handles display
+      type: isNote ? "note" : "wake",
       userId: data?.userId ?? data?.receiverId ?? "",
-      buddyId: data?.buddyId ?? "",
-      // Don't include message content - batch system will fetch and display
+      buddyId: data?.buddyId ?? data?.senderId ?? "",
+      messageId: data?.messageId ?? "",
+      noteId: data?.noteId ?? "", // ✅ Add noteId for notes
+      senderId: data?.senderId ?? "",
+      message: data?.message ?? "",
+      noteContent: data?.noteContent ?? "", // ✅ Add noteContent for notes
+      mood: data?.mood ?? "", // ✅ Add mood for notes
+      senderName: data?.senderName ?? "", // ✅ Add senderName for notes
+      buddyName: String(resolvedBuddyName ?? ""),
       priority: "high",
       content_available: "true",
+      notificationId: String(computedNotificationId), // ✅ Add notification ID to data payload
     });
 
-    // Data-only FCM message - wakes app but doesn't auto-display notification
-    // Batch system will handle all notification display when app processes realtime messages
+    // Build FCM v1 message (hybrid)
     const fcmMessage = {
       message: {
         token: to,
-        // NO notification block - data-only message wakes app via content-available
-        // This prevents OS from auto-displaying notification
-        // Batch system will display grouped notifications when app processes realtime
+        notification: {
+          title: notificationTitle,
+          body: notificationBody,
+        },
         data: payloadData,
         android: {
-          priority: "HIGH", // High priority ensures wake-up even in Doze mode
-          ttl: "120s", // Give device time to deliver while idle
-          direct_boot_ok: true, // Works even in Direct Boot mode
-          // NO notification block - data-only message wakes app via content-available
-          // Batch system will display notifications when app processes realtime
+          priority: "high",
+          ttl: "3600s",
+          direct_boot_ok: true,
+          collapse_key: isNote 
+            ? (payloadData.noteId || "notes") 
+            : (payloadData.buddyId || "messages"),
+          notification: {
+            title: notificationTitle,
+            body: notificationBody,
+            channel_id: isNote ? "whispr-notes" : "whispr-messages", // ✅ Use different channel for notes
+            sound: "default",
+            visibility: "PUBLIC",
+            tag: isNote 
+              ? (payloadData.noteId || payloadData.senderId || "whispr-notes") 
+              : (payloadData.buddyId || payloadData.buddyName || "whispr"), // ✅ Add tag for grouping/replacement
+          },
         },
         apns: {
           headers: {
-            // High priority for background wake-up
             "apns-priority": "10",
-            // Background push type for data-only messages
-            "apns-push-type": "background",
+            "apns-push-type": "alert",
+            "apns-collapse-id": isNote 
+              ? (payloadData.noteId ?? "notes") 
+              : (payloadData.buddyId ?? "messages"),
           },
           payload: {
             aps: {
-              // content-available wakes app without showing notification
+              alert: {
+                title: notificationTitle,
+                body: notificationBody,
+              },
               "content-available": 1,
-              // NO alert - batch system handles notification display
+              sound: "default",
+              badge: 1,
             },
           },
         },
       },
     };
 
-    console.log("🔥 Sending FCM v1 message:", JSON.stringify(fcmMessage, null, 2));
+    // Minimal safe debug
+    console.log("🔎 Resolved buddyName:", resolvedBuddyName);
+    console.log("🔎 Final notification title:", notificationTitle);
 
     // Get access token
     const accessToken = await getFirebaseAccessToken(serviceAccount);
@@ -201,12 +313,11 @@ serve(async (req) => {
       body: JSON.stringify(fcmMessage),
     });
 
-    let fcmResult;
+    let fcmResult: any = null;
     try {
       fcmResult = await fcmResponse.json();
     } catch (err) {
-      console.error("❌ Failed to parse FCM response JSON:", err);
-      fcmResult = null;
+      console.error("❌ Failed to parse FCM response JSON:", String(err));
     }
 
     console.log("🔥 FCM v1 response status:", fcmResponse.status);
@@ -234,19 +345,20 @@ serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("❌ Edge Function error:", error);
+    console.error("❌ Edge Function error:", String(error));
     return new Response(
       JSON.stringify({
         error: "Internal server error",
-        details: error?.message ?? String(error),
-        stack: error?.stack ?? null,
+        details: String(error?.message ?? error),
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
 
-// Function to get Firebase access token using JWT
+// -----------------------------
+// Firebase access token helpers
+// -----------------------------
 async function getFirebaseAccessToken(serviceAccount: any): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
 
@@ -260,8 +372,8 @@ async function getFirebaseAccessToken(serviceAccount: any): Promise<string> {
 
   const header = { alg: "RS256", typ: "JWT" };
 
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const encodedHeader = base64UrlEncodeFromBuffer(new TextEncoder().encode(JSON.stringify(header)));
+  const encodedPayload = base64UrlEncodeFromBuffer(new TextEncoder().encode(JSON.stringify(payload)));
   const signatureInput = `${encodedHeader}.${encodedPayload}`;
 
   const signature = await signWithPrivateKey(signatureInput, serviceAccount.private_key);
@@ -283,13 +395,17 @@ async function getFirebaseAccessToken(serviceAccount: any): Promise<string> {
   return tokenData.access_token;
 }
 
-// Base64 URL encoding
-function base64UrlEncode(str: string): string {
-  // btoa exists in Deno runtime
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+// Binary-safe base64url from ArrayBuffer/Uint8Array
+function base64UrlEncodeFromBuffer(buffer: Uint8Array | ArrayBuffer): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
-// Sign with private key using Web Crypto API (Deno supports subtle)
+// Sign JWT input using PKCS#8 private key (PEM)
 async function signWithPrivateKey(input: string, privateKeyPem: string): Promise<string> {
   try {
     const privateKeyData = privateKeyPem
@@ -312,18 +428,15 @@ async function signWithPrivateKey(input: string, privateKeyPem: string): Promise
     const encoder = new TextEncoder();
     const data = encoder.encode(input);
     const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, data);
-    const signatureArray = new Uint8Array(signature);
-    // Convert signature bytes to binary string for base64 encoding
-    let binary = "";
-    for (let i = 0; i < signatureArray.byteLength; i++) {
-      binary += String.fromCharCode(signatureArray[i]);
-    }
-    return base64UrlEncode(binary);
+    return base64UrlEncodeFromBuffer(new Uint8Array(signature));
   } catch (error) {
-    throw new Error(`JWT signing failed: ${error?.message ?? String(error)}`);
+    throw new Error(`JWT signing failed: ${String(error)}`);
   }
 }
 
+// -----------------------------
+// sanitizeData (unchanged)
+// -----------------------------
 function sanitizeData(source: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
   Object.entries(source || {}).forEach(([key, value]) => {

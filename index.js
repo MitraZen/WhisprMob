@@ -65,18 +65,51 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   });
   
   try {
+    // ==== HYBRID APPROACH: Handle wake signals with notification fallback ====
+    // With hybrid FCM messages (data + notification):
+    // 1. OS auto-displays notification on lock screen (fallback if app doesn't wake)
+    // 2. If app wakes: Background handler triggers batch system
+    // 3. Batch system displays grouped notification (replaces OS notification)
+    
+    // ✅ Handle note notifications - show directly (notes don't use batch system)
+    if (remoteMessage.data?.type === 'note') {
+      console.log('📝 FCM Note notification received in background');
+      console.log('📱 OS notification already displayed (fallback for lock screen)');
+      
+      // Notes are shown directly by OS, no need for batch system
+      // The OS notification is already displayed, so we just return
+      // Realtime will handle note updates when app wakes up
+      return;
+    }
+    
     // Handle wake/ping messages - fetch messages and let batch system display notifications
     if (remoteMessage.data?.type === 'ping' || remoteMessage.data?.type === 'wake') {
       console.log('📡 FCM Wake signal received in background - fetching messages and triggering batch system');
+      console.log('📱 OS notification already displayed (fallback for lock screen) - batch system will replace it');
+      
+      // ✅ CRITICAL FIX: Mark that FCM notification was shown for this buddy
+      // This prevents the batch system from showing a duplicate notification
+      try {
+        const { phase3NotificationLogicService } = require('@/services/phase3NotificationLogicService');
+        const buddyId = remoteMessage.data?.buddyId || remoteMessage.data?.senderId;
+        const buddyName = remoteMessage.data?.buddyName;
+        phase3NotificationLogicService.markFcmNotificationShown(buddyId, buddyName);
+        console.log('✅ Marked FCM notification shown for buddy:', { buddyId, buddyName });
+      } catch (error) {
+        console.error('❌ Error marking FCM notification shown:', error);
+      }
       
       // ✅ CRITICAL FIX: Actually fetch messages when woken up
       // Use setTimeout to avoid blocking the background handler
+      // Note: The OS shows the FCM notification automatically from the notification payload
+      // The batch system will check if FCM was shown and skip showing duplicate notification
       setTimeout(() => {
         try {
           // Use require for React Native compatibility in background handlers
           const { notificationManager } = require('@/services/notificationManager');
           console.log('📡 Triggering message fetch from background wake signal...');
-          // Poll for new messages - this will trigger the batching system to display notifications
+          // Poll for new messages - this will trigger the batching system
+          // Batch system will check if FCM was shown and skip duplicate notification
           notificationManager.pollForNewMessages().catch((error) => {
             console.error('❌ Error fetching messages from background wake signal:', error);
           });
@@ -87,6 +120,8 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
       
       // Return immediately - don't wait for async operations
       // The message fetch will happen in the background
+      // Note: OS notification is already displayed (good for lock screen fallback)
+      // Batch system will check if FCM was shown and skip duplicate notification
       return;
     }
     
@@ -109,6 +144,18 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
       buddyName: remoteMessage.data?.buddyName,
       hasNotificationPayload,
     });
+    
+    // ✅ CRITICAL FIX: Mark that FCM notification was shown for this buddy
+    // This prevents the batch system from showing a duplicate notification
+    try {
+      const { phase3NotificationLogicService } = require('@/services/phase3NotificationLogicService');
+      const buddyId = remoteMessage.data?.buddyId || remoteMessage.data?.senderId;
+      const buddyName = remoteMessage.data?.buddyName;
+      phase3NotificationLogicService.markFcmNotificationShown(buddyId, buddyName);
+      console.log('✅ Marked FCM notification shown for buddy (legacy):', { buddyId, buddyName });
+    } catch (error) {
+      console.error('❌ Error marking FCM notification shown (legacy):', error);
+    }
     
     // Extract data from FCM message (buddyName, buddyId, etc.)
     const userInfo = {

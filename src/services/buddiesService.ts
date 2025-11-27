@@ -644,11 +644,35 @@ export class BuddiesService {
       const userProfile = await this.getUserProfile(userId);
       const userMood = userProfile?.mood || 'happy';
       
-      // Get notes from ALL users (excluding current user) with optimized query
-      // Users can listen to notes from existing buddies without triggering add buddy
-      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=20`;
+      // ✅ FIX: Always filter by note_recipients to exclude notes user has already listened/rejected
+      // This ensures notes don't disappear for other users when one user listens
+      let data: any[];
       
-      const data = await this.request('GET', queryString);
+      // First, get all active notes
+      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=20`;
+      data = await this.request('GET', queryString) || [];
+      
+      // ✅ CRITICAL FIX: Always filter by note_recipients (even if RPC function exists)
+      // This ensures notes user has already listened/rejected are excluded
+      try {
+        const { data: recipientData, error: recipientError } = await supabase
+          .from('note_recipients')
+          .select('note_id, status')
+          .eq('recipient_id', userId)
+          .in('status', ['listened', 'rejected']);
+        
+        if (recipientError) {
+          console.error('❌ Error fetching note_recipients:', recipientError);
+        }
+        
+        if (recipientData && recipientData.length > 0) {
+          const excludedNoteIds = new Set(recipientData.map(r => r.note_id));
+          data = data.filter((note: any) => !excludedNoteIds.has(note.id));
+        }
+      } catch (filterError) {
+        console.error('❌ Error filtering by note_recipients:', filterError);
+        // Don't fail - just show all notes if filtering fails
+      }
 
       if (!data) {
         return [];
@@ -730,10 +754,31 @@ export class BuddiesService {
   // Get a limited number of notes for new users
   static async getNewUserNotes(userId: string, limit: number = 5): Promise<WhisprNote[]> {
     try {
-      // For new users, get a small sample of recent notes
-      const data = await this.request('GET', 
-        `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=${limit}`
-      );
+      // ✅ FIX: Use same filtering logic as getWhisprNotes
+      // First, get all active notes
+      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=${limit}`;
+      let data = await this.request('GET', queryString) || [];
+      
+      // ✅ CRITICAL FIX: Always filter by note_recipients to exclude notes user has already listened/rejected
+      try {
+        const { data: recipientData, error: recipientError } = await supabase
+          .from('note_recipients')
+          .select('note_id, status')
+          .eq('recipient_id', userId)
+          .in('status', ['listened', 'rejected']);
+        
+        if (recipientError) {
+          console.error('❌ Error fetching note_recipients:', recipientError);
+        }
+        
+        if (recipientData && recipientData.length > 0) {
+          const excludedNoteIds = new Set(recipientData.map(r => r.note_id));
+          data = data.filter((note: any) => !excludedNoteIds.has(note.id));
+        }
+      } catch (filterError) {
+        console.error('❌ Error filtering by note_recipients:', filterError);
+        // Don't fail - just show all notes if filtering fails
+      }
 
       if (!data) {
         return [];
@@ -767,9 +812,29 @@ export class BuddiesService {
         p_response_type: 'listen'
       });
       console.log('🎧 BuddiesService.listenToNote result:', result);
+      
+      // ✅ FIX: Handle "already responded" case gracefully
+      if (result && result.already_responded === true) {
+        console.log('🎧 Note already responded to, returning success with flag');
+        return {
+          success: false,
+          already_responded: true,
+          error: result.error || 'Note already responded to'
+        };
+      }
+      
       return result;
     } catch (error) {
       console.error('🎧 BuddiesService.listenToNote error:', error);
+      // ✅ FIX: Check if error message indicates already responded
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('already responded') || errorMessage.includes('P0001')) {
+        return {
+          success: false,
+          already_responded: true,
+          error: 'Note already responded to by this user'
+        };
+      }
       throw error;
     }
   }

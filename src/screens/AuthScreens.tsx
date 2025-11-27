@@ -325,26 +325,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess, onB
         Alert.alert('Sign In Failed', error);
       } else if (user) {
         await setAuthenticatedUser(user);
-        
-        // Offer to enable biometric authentication if available and not already enabled
-        if (biometricAvailable && !biometricEnabled) {
-          const shouldEnable = await BiometricService.promptBiometricSetup();
-          if (shouldEnable) {
-            try {
-              const result = await BiometricService.enableBiometric(user.id, password);
-              if (result.success) {
-                Alert.alert(
-                  'Biometric Authentication Enabled',
-                  `${result.biometryType?.name} authentication has been enabled for faster future sign-ins.`,
-                  [{ text: 'OK' }]
-                );
-              }
-            } catch (error) {
-              console.error('Error enabling biometric authentication:', error);
-            }
-          }
-        }
-        
+        // ✅ Biometric authentication is only available through Settings - no automatic prompts
         onSignInSuccess(user);
       }
     } catch (error) {

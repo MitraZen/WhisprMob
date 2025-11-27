@@ -387,6 +387,15 @@ class NotificationManagerClass implements NotificationManager {
       return;
     }
 
+    // 🔑 NEW: decide if polling is allowed to show notifications
+    const shouldNotifyFromPolling = this.fallbackMode || !this.realtimeActive;
+
+    if (!shouldNotifyFromPolling) {
+      console.log('🔕 [Polling] Realtime is active and not in fallback - polling will sync data ONLY (no notifications)');
+    } else {
+      console.log('🔔 [Polling] Realtime not healthy / in fallback - polling WILL show notifications');
+    }
+
     try {
       // ✅ PERFORMANCE FIX: Process buddies asynchronously to prevent UI freeze
       // Process in smaller batches with delays to avoid blocking
@@ -429,17 +438,25 @@ class NotificationManagerClass implements NotificationManager {
           
           if (newMessages.length > 0) {
             console.log(`📨 Polling: Found ${newMessages.length} new messages for ${buddy.name}`);
-            for (const message of newMessages) {
-              const buddyDisplayName = await this.getBuddyDisplayName(message.senderId);
-              await notificationService.showMessageNotification(
-                'New Message',
-                message.content,
-                buddyDisplayName
-              );
-              this.performanceMetrics.pollingNotifications++;
-              this.performanceMetrics.totalNotifications++;
+
+            // 🔑 NEW: Only show notifications if polling is the active/fallback channel
+            if (shouldNotifyFromPolling) {
+              for (const message of newMessages) {
+                const buddyDisplayName = await this.getBuddyDisplayName(message.senderId);
+                await notificationService.showMessageNotification({
+                  title: null,
+                  message: message.content,
+                  buddyName: buddyDisplayName,
+                  buddyId: buddy.id
+                });
+                this.performanceMetrics.pollingNotifications++;
+                this.performanceMetrics.totalNotifications++;
+              }
+            } else {
+              console.log('🔕 [Polling] Skipping notification for these messages because realtime already handled notifications');
             }
-            
+
+            // ✅ STILL update cache so we don't re-process these messages later
             this.lastMessageIds[buddy.id] = recentMessages
               .filter(msg => msg.senderId !== this.userId)
               .slice(-50)
@@ -458,6 +475,9 @@ class NotificationManagerClass implements NotificationManager {
 
   private async checkForNewNotes(): Promise<void> {
     if (!this.userId) return;
+
+    // 🔑 NEW: decide if polling is allowed to show notifications
+    const shouldNotifyFromPolling = this.fallbackMode || !this.realtimeActive;
 
     try {
       const notes = await BuddiesService.getWhisprNotes(this.userId);
@@ -480,15 +500,21 @@ class NotificationManagerClass implements NotificationManager {
           window.dispatchEvent(event);
         }
         
-        for (const note of newNotes.slice(0, 10)) {
-          await notificationService.showNoteNotification(
-            'New Whispr Note',
-            note.content
-          );
-          this.performanceMetrics.pollingNotifications++;
-          this.performanceMetrics.totalNotifications++;
+        // 🔑 NEW: Only show notifications if polling is the active/fallback channel
+        if (shouldNotifyFromPolling) {
+          for (const note of newNotes.slice(0, 10)) {
+            await notificationService.showNoteNotification(
+              'New Whispr Note',
+              note.content
+            );
+            this.performanceMetrics.pollingNotifications++;
+            this.performanceMetrics.totalNotifications++;
+          }
+        } else {
+          console.log('🔕 [Polling] Skipping note notifications because realtime is active');
         }
         
+        // ✅ STILL update cache so we don't re-process these notes later
         this.lastNoteIds = notes
           .filter(note => note.senderId !== this.userId)
           .slice(-50)

@@ -241,7 +241,21 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     try {
       const result = await CachedBuddiesService.listenToWhisprNote(noteId, user.id);
       console.log('🎧 Listen result:', result);
+      // ✅ FIX: Handle "already responded" case
+      if (result?.already_responded === true) {
+        // Note was already listened to - just remove it from the list
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+        // ✅ CRITICAL FIX: Force refresh with delay to ensure DB is synced
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await loadNotes(true); // Force manual refresh
+        Alert.alert('Already Listened', 'You have already listened to this note.');
+        return;
+      }
+      
       if (result?.success) {
+        // ✅ FIX: Remove note from local state immediately (optimistic update)
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+        
         // Show success message with buddy creation info
         const buddyCreated = result.buddy_created;
         const message = buddyCreated 
@@ -250,8 +264,10 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         
         Alert.alert('Note Listened! 👂', message);
         
-        // Refresh notes to update the list
-        await loadNotes();
+        // ✅ CRITICAL FIX: Force refresh notes with delay to ensure DB transaction committed
+        // Use a small delay to ensure database transaction is committed before refreshing
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await loadNotes(true); // Force manual refresh to bypass cache
         
         // If a buddy was created, trigger a global event to refresh buddies screen
         if (buddyCreated) {
@@ -270,7 +286,17 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     } catch (error) {
       console.error('🎧 Error listening to note:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', 'Failed to listen to note: ' + errorMessage);
+      
+      // ✅ FIX: Handle "already responded" error gracefully
+      if (errorMessage.includes('already responded') || errorMessage.includes('P0001')) {
+        // Note was already listened to - just remove it from the list
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+        // Refresh to get updated list
+        await loadNotes();
+        Alert.alert('Already Listened', 'You have already listened to this note.');
+      } else {
+        Alert.alert('Error', 'Failed to listen to note: ' + errorMessage);
+      }
     } finally {
       setActionLoading(prev => {
         const newSet = new Set(prev);

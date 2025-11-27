@@ -645,6 +645,47 @@ class RealtimeService {
 
   private async handleNewNote(payload: any): Promise<void> {
     try {
+      if (!payload || !payload.new) {
+        console.warn('📝 Invalid note payload structure:', payload);
+        return;
+      }
+
+      const note = payload.new;
+      const noteId = note.id;
+      const senderId = note.sender_id;
+
+      // Skip if note is from current user
+      if (senderId === this.userId) {
+        console.log('📝 Note from current user, skipping notification:', senderId);
+        // Still dispatch UI event and invalidate cache for UI consistency
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          const event = new CustomEvent('notes-updated', {
+            detail: { 
+              type: 'notes-updated',
+              newNotesCount: 1,
+              userId: this.userId,
+              source: 'realtime'
+            }
+          });
+          window.dispatchEvent(event);
+        }
+        QueryCache.invalidateWhisprNotes(this.userId || '');
+        return;
+      }
+
+      // Check app state
+      const { AppState } = require('react-native');
+      const appState = AppState.currentState;
+      const isAppActive = appState === 'active';
+
+      console.log('📝 New note received via realtime:', {
+        noteId,
+        senderId,
+        content: note.content?.substring(0, 50),
+        appState,
+        isAppActive
+      });
+
       // Dispatch event to notify UI components
       if (typeof window !== 'undefined' && window.dispatchEvent) {
         const event = new CustomEvent('notes-updated', {
@@ -661,7 +702,38 @@ class RealtimeService {
       // Invalidate notes cache
       QueryCache.invalidateWhisprNotes(this.userId || '');
       
-      console.log('✅ Note update processed and cache invalidated');
+      // Show notification (works in both foreground and background)
+      // Notes are broadcast, so we show notifications for all relevant notes
+      try {
+        const noteContent = note.content || 'New Whispr Note';
+        const notificationKey = `note-${noteId}`;
+        
+        // Prevent duplicate notifications
+        if (!this.recentNotifications.has(notificationKey)) {
+          console.log('🔔 Showing note notification:', { noteId, senderId });
+          
+          await notificationService.showNoteNotification(
+            'New Whispr Note',
+            noteContent.length > 100 ? noteContent.substring(0, 100) + '...' : noteContent
+          );
+          
+          // Add to recent notifications to prevent duplicates
+          this.recentNotifications.add(notificationKey);
+          
+          // Clean up old entries (keep only last 100 notifications)
+          if (this.recentNotifications.size > 100) {
+            const firstKey = Array.from(this.recentNotifications)[0];
+            this.recentNotifications.delete(firstKey);
+          }
+        } else {
+          console.log('🔕 Duplicate note notification prevented:', notificationKey);
+        }
+      } catch (notificationError) {
+        console.error('❌ Error showing note notification:', notificationError);
+        // Don't throw - continue with cache invalidation
+      }
+      
+      console.log('✅ Note update processed, cache invalidated, and notification shown');
       
     } catch (error) {
       console.error('❌ Error processing note notification:', error);

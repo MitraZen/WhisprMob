@@ -14,6 +14,7 @@ interface UserBatch {
   messages: BatchedMessage[];
   timerId: NodeJS.Timeout | null;
   lastNotificationTime: number;
+  lastShownMessageCount: number; // Track how many messages were shown in last notification
 }
 
 class Phase3NotificationLogicService {
@@ -27,6 +28,11 @@ class Phase3NotificationLogicService {
   private batchDelay = 2000; // 2 seconds delay for batching in foreground
   private isAppInBackground = false;
   private appStateSubscription: any = null;
+  
+  // ✅ Track FCM notifications shown by buddy to prevent duplicate batch notifications
+  // Map: buddyId (or buddyName as fallback) -> timestamp when FCM notification was shown
+  private fcmNotificationsShown = new Map<string, number>();
+  private fcmNotificationCleanupInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     console.log('🧠 Phase 3: Initializing notification logic service');
@@ -34,6 +40,80 @@ class Phase3NotificationLogicService {
     console.log('🧠 Phase 3: Initial app state:', this.isAppInBackground ? 'background' : 'foreground');
     
     this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
+    
+    // ✅ Start auto-cleanup for old FCM notification tracking entries
+    this.startFcmNotificationCleanup();
+  }
+  
+  /**
+   * ✅ Mark that an FCM notification was shown for a buddy
+   * This is called from the background handler when FCM message is received
+   * Public method so it can be called from index.js background handler
+   */
+  markFcmNotificationShown(buddyId?: string, buddyName?: string): void {
+    // Use buddyId if available, otherwise fallback to buddyName
+    const key = buddyId || buddyName || 'unknown';
+    const timestamp = Date.now();
+    
+    this.fcmNotificationsShown.set(key, timestamp);
+    console.log('🔔 Phase 3: Marked FCM notification shown for:', {
+      key,
+      timestamp: new Date(timestamp).toISOString(),
+      buddyId,
+      buddyName,
+    });
+  }
+  
+  /**
+   * ✅ Check if FCM notification was shown recently for this buddy
+   * Returns true if FCM was shown within the last 5 seconds
+   */
+  private wasFcmNotificationShownRecently(buddyId?: string, buddyName?: string): boolean {
+    const key = buddyId || buddyName || 'unknown';
+    const fcmShownTime = this.fcmNotificationsShown.get(key);
+    
+    if (!fcmShownTime) {
+      return false; // No FCM notification tracked for this buddy
+    }
+    
+    const timeSinceFcm = Date.now() - fcmShownTime;
+    const RECENT_THRESHOLD_MS = 5000; // 5 seconds
+    
+    const wasRecent = timeSinceFcm < RECENT_THRESHOLD_MS;
+    
+    if (wasRecent) {
+      console.log('🔔 Phase 3: FCM notification was shown recently for:', {
+        key,
+        timeSinceFcm: `${Math.round(timeSinceFcm / 1000)}s ago`,
+        threshold: `${RECENT_THRESHOLD_MS / 1000}s`,
+      });
+    }
+    
+    return wasRecent;
+  }
+  
+  /**
+   * ✅ Auto-cleanup old FCM notification tracking entries
+   * Removes entries older than 10 seconds to prevent memory leaks
+   */
+  private startFcmNotificationCleanup(): void {
+    // Cleanup every 10 seconds
+    this.fcmNotificationCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const MAX_AGE_MS = 10000; // 10 seconds
+      let cleanedCount = 0;
+      
+      for (const [key, timestamp] of this.fcmNotificationsShown.entries()) {
+        if (now - timestamp > MAX_AGE_MS) {
+          this.fcmNotificationsShown.delete(key);
+          cleanedCount++;
+        }
+      }
+      
+      if (cleanedCount > 0) {
+        console.log(`🧹 Phase 3: Cleaned up ${cleanedCount} old FCM notification tracking entries`);
+      }
+    }, 10000); // Run cleanup every 10 seconds
   }
 
   private handleAppStateChange = (nextAppState: AppStateStatus) => {
@@ -90,6 +170,7 @@ class Phase3NotificationLogicService {
         messages: [],
         timerId: null,
         lastNotificationTime: 0,
+        lastShownMessageCount: 0,
       };
       this.batches.set(buddyName, batch);
       console.log('🧠 Phase 3: Created NEW batch for user:', buddyName);
@@ -123,9 +204,14 @@ class Phase3NotificationLogicService {
       console.log('🧠 Phase 3: 🚨 APP IN BACKGROUND - showing notification SYNCHRONOUSLY');
       console.log('🧠 Phase 3: Current batch size BEFORE notification:', batch.messages.length);
       
-      // ✅ Call synchronously without await to prevent blocking
-      // NOTE: Batch already has the new message added (line 99-104), so messageCount will be correct
-      this.showBatchNotificationSync(buddyName);
+      // ✅ CRITICAL FIX: Small delay to ensure FCM notification is shown first, then our batch notification replaces it
+      // The FCM notification is shown by OS automatically, and our batch notification with same tag/ID should replace it
+      // Using a small delay ensures the FCM notification is processed first
+      setTimeout(() => {
+        // ✅ Call synchronously without await to prevent blocking
+        // NOTE: Batch already has the new message added (line 99-104), so messageCount will be correct
+        this.showBatchNotificationSync(buddyName);
+      }, 200); // 200ms delay to let FCM notification appear first, then replace it
       
     } else {
       console.log('🧠 Phase 3: App in FOREGROUND - using timer to batch messages');
@@ -156,6 +242,23 @@ class Phase3NotificationLogicService {
     if (!batch || batch.messages.length === 0) {
       console.warn('🧠 Phase 3: No messages in batch for user:', buddyName);
       return;
+    }
+
+    // ✅ CRITICAL FIX: Check if FCM notification was already shown for this buddy
+    // If FCM was shown recently (within 5 seconds), skip batch notification to prevent duplicates
+    if (this.wasFcmNotificationShownRecently(batch.buddyId, buddyName)) {
+      console.log('🔕 Phase 3: Skipping batch notification - FCM notification already shown recently for:', {
+        buddyName,
+        buddyId: batch.buddyId,
+        messageCount: batch.messages.length,
+        reason: 'FCM notification already displayed',
+      });
+      
+      // Still update the batch tracking to prevent showing duplicate later
+      batch.lastNotificationTime = Date.now();
+      batch.lastShownMessageCount = batch.messages.length;
+      
+      return; // Skip showing batch notification
     }
 
     try {
@@ -221,6 +324,7 @@ class Phase3NotificationLogicService {
       });
 
       batch.lastNotificationTime = Date.now();
+      batch.lastShownMessageCount = messageCount; // Track how many messages were shown
 
       // ✅ CRITICAL FIX: Keep batch for BOTH foreground and background
       // This allows messages to continue accumulating even after showing a notification
@@ -238,6 +342,7 @@ class Phase3NotificationLogicService {
 
   /**
    * ✅ Synchronous flush for background transition
+   * Only shows notifications if there are new messages that haven't been shown yet
    */
   private flushAllBatchesSync(): void {
     console.log('🧠 Phase 3: Flushing all batches SYNC:', this.batches.size);
@@ -248,15 +353,26 @@ class Phase3NotificationLogicService {
     }
 
     for (const [buddyName, batch] of this.batches.entries()) {
-      console.log('🧠 Phase 3: Flushing batch SYNC for:', buddyName);
+      console.log('🧠 Phase 3: Flushing batch SYNC for:', buddyName, {
+        messageCount: batch.messages.length,
+        lastShownCount: batch.lastShownMessageCount,
+        hasNewMessages: batch.messages.length > batch.lastShownMessageCount
+      });
       
       if (batch.timerId) {
         clearTimeout(batch.timerId);
         batch.timerId = null;
       }
 
-      if (batch.messages.length > 0) {
+      // ✅ CRITICAL FIX: Only show notification if there are new messages that haven't been shown
+      // This prevents duplicate notifications when app transitions between background/foreground
+      const hasNewMessages = batch.messages.length > batch.lastShownMessageCount;
+      
+      if (batch.messages.length > 0 && hasNewMessages) {
+        console.log('🧠 Phase 3: Batch has new messages - showing notification');
         this.showBatchNotificationSync(buddyName);
+      } else if (batch.messages.length > 0) {
+        console.log('🧠 Phase 3: Batch has no new messages - skipping notification (already shown)');
       }
     }
 
@@ -328,7 +444,14 @@ class Phase3NotificationLogicService {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;
     }
-
+    
+    // ✅ Cleanup FCM notification tracking cleanup interval
+    if (this.fcmNotificationCleanupInterval) {
+      clearInterval(this.fcmNotificationCleanupInterval);
+      this.fcmNotificationCleanupInterval = null;
+    }
+    
+    this.fcmNotificationsShown.clear();
     this.clearAllBatches();
     
     console.log('✅ Phase 3: Cleanup completed');
