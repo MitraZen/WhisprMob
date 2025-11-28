@@ -411,31 +411,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleBiometricToggle = async (value: boolean) => {
     if (biometricLoading) {
-      return;
-    }
+          return;
+        }
 
     if (value) {
       await startBiometricEnableFlow();
-      return;
-    }
+          return;
+        }
 
     try {
       setBiometricLoading(true);
-      const result = await BiometricService.disableBiometric();
-      if (result.success) {
-        setBiometricEnabled(false);
-        Alert.alert(
-          'Biometric Disabled',
-          'Biometric authentication has been disabled successfully.',
-          [{ text: 'OK' }],
-        );
-      } else {
+        const result = await BiometricService.disableBiometric();
+        if (result.success) {
+          setBiometricEnabled(false);
+          Alert.alert(
+            'Biometric Disabled',
+            'Biometric authentication has been disabled successfully.',
+            [{ text: 'OK' }],
+          );
+        } else {
         setBiometricEnabled(true);
-        Alert.alert(
-          'Error',
-          result.error || 'Failed to disable biometric authentication.',
-          [{ text: 'OK' }],
-        );
+          Alert.alert(
+            'Error',
+            result.error || 'Failed to disable biometric authentication.',
+            [{ text: 'OK' }],
+          );
       }
     } catch (error) {
       console.error('Error toggling biometric authentication:', error);

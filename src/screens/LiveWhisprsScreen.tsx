@@ -17,37 +17,24 @@ import WhisprFeed from '@/components/liveWhispers/WhisperFeed';
 import RecordTextWhisper from '@/components/liveWhispers/RecordTextWhisper';
 import GradientBackground from '@/components/GradientBackground';
 
-type DistanceFilter = '50km' | '100km' | 'beyond';
+type CountryFilter = 'regional' | 'global';
 
-interface DistanceRange {
-  min: number; // in meters
-  max: number; // in meters
+interface FilterConfig {
   label: string;
   icon: string;
   description: string;
 }
 
-const DISTANCE_RANGES: Record<DistanceFilter, DistanceRange> = {
-  '50km': {
-    min: 0,
-    max: 50000,
-    label: 'Local',
-    icon: '📍',
-    description: 'Within 50km',
-  },
-  '100km': {
-    min: 50000, // ✅ EXCLUSIVE: Start where 50km ends
-    max: 100000,
+const FILTER_CONFIG: Record<CountryFilter, FilterConfig> = {
+  'regional': {
     label: 'Regional',
     icon: '🌍',
-    description: '50-100km away',
+    description: 'Same country',
   },
-  'beyond': {
-    min: 100000, // ✅ EXCLUSIVE: Start where 100km ends
-    max: Infinity,
+  'global': {
     label: 'Global',
     icon: '🚀',
-    description: 'Beyond 100km',
+    description: 'All countries',
   },
 };
 
@@ -59,15 +46,12 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   const { theme, isDark } = useTheme();
   const styles = createStyles(theme, isDark);
   const [showRecordModal, setShowRecordModal] = useState(false);
-  const [distanceFilter, setDistanceFilter] = useState<DistanceFilter>('50km');
+  const [countryFilter, setCountryFilter] = useState<CountryFilter>('regional');
   const [filterLoading, setFilterLoading] = useState(false);
-  // Counts disabled per user request
-  // const [filterCounts, setFilterCounts] = useState<Record<DistanceFilter, number | null>>({
-  //   '50km': null,
-  //   '100km': null,
-  //   'beyond': null,
-  // });
-  // const [countsLoading, setCountsLoading] = useState(true);
+  const [filterCounts, setFilterCounts] = useState<{ regional: number | string; global: number | string }>({
+    regional: 0,
+    global: 0,
+  });
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -85,9 +69,9 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   };
 
   // ✅ PERFORMANCE: Debounce filter changes to avoid excessive re-renders
-  const handleFilterChange = useCallback((filter: DistanceFilter) => {
+  const handleFilterChange = useCallback((filter: CountryFilter) => {
     // Don't do anything if already selected
-    if (filter === distanceFilter) return;
+    if (filter === countryFilter) return;
 
     // Clear existing timer
     if (debounceTimerRef.current) {
@@ -99,18 +83,10 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
 
     // Debounce the actual filter change
     debounceTimerRef.current = setTimeout(() => {
-      setDistanceFilter(filter);
+      setCountryFilter(filter);
       // Loading will be cleared by WhisperFeed's onFilterLoadingChange callback
     }, 300);
-  }, [distanceFilter]);
-
-  // DISABLED: Count fetching - counts are not shown per user request
-  // useEffect(() => {
-  //   const fetchFilterCounts = async () => {
-  //     // Count fetching disabled
-  //   };
-  //   fetchFilterCounts();
-  // }, []);
+  }, [countryFilter]);
 
   // ✅ UI/UX: Fade animation when filter changes
   useEffect(() => {
@@ -126,7 +102,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
         useNativeDriver: true,
       }),
     ]).start();
-  }, [distanceFilter, fadeAnim]);
+  }, [countryFilter, fadeAnim]);
 
   // Cleanup debounce timer on unmount
   React.useEffect(() => {
@@ -137,10 +113,6 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
     };
   }, []);
 
-  const getDistanceFilterRadius = (filter: DistanceFilter): { min: number; max: number } => {
-    const range = DISTANCE_RANGES[filter];
-    return { min: range.min, max: range.max };
-  };
 
   return (
     <GradientBackground variant="default">
@@ -165,15 +137,15 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
         <View style={styles.headerSpacer} />
       </View>
       
-      {/* Distance Filter Header */}
+      {/* Country Filter Header */}
       <View style={[styles.filterContainer, { backgroundColor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(255, 255, 255, 0.05)' }]}>
         <Text style={[styles.filterTitle, { color: theme.colors.text }]}>
-          Show whisprs within:
+          Filter by location:
         </Text>
         <View style={styles.filterButtons}>
-          {(['50km', '100km', 'beyond'] as DistanceFilter[]).map((filter) => {
-            const range = DISTANCE_RANGES[filter];
-            const isSelected = distanceFilter === filter;
+          {(['regional', 'global'] as CountryFilter[]).map((filter) => {
+            const config = FILTER_CONFIG[filter];
+            const isSelected = countryFilter === filter;
             
             return (
               <TouchableOpacity
@@ -212,35 +184,51 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
                       }
                     ]}
                   >
-                    {range.label}
+                    {config.label}
                   </Text>
                   <Text style={styles.filterIcon}>
-                    {range.icon}
+                    {config.icon}
                   </Text>
+                  {/* ✅ COUNT BADGE */}
+                  <View style={[
+                    styles.countBadge,
+                    {
+                      backgroundColor: isSelected
+                        ? theme.colors.onPrimary
+                        : theme.colors.primaryContainer,
+                    }
+                  ]}>
+                    <Text style={[
+                      styles.countBadgeText,
+                      {
+                        color: isSelected
+                          ? theme.colors.primary
+                          : theme.colors.onPrimaryContainer,
+                      }
+                    ]}>
+                      {filterCounts[filter]}
+                    </Text>
+                  </View>
                 </View>
                 {/* ✅ UI/UX: Preview stat under filter button */}
                 <Text style={[
                   styles.filterPreviewText,
                   { color: isSelected ? theme.colors.surface : theme.colors.onSurfaceVariant }
                 ]}>
-                  {range.description}
+                  {config.description}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
-        {/* Note about future update */}
-        <Text style={[styles.filterNote, { color: theme.colors.onSurfaceVariant }]}>
-          **Local Whisprs will unlock in a future update
-        </Text>
       </View>
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <WhisprFeed 
           onRecordWhispr={handleRecordWhispr}
-          distanceRange={getDistanceFilterRadius(distanceFilter)}
-          distanceFilter={distanceFilter}
+          countryFilter={countryFilter}
           onFilterLoadingChange={setFilterLoading}
+          onCountsUpdate={setFilterCounts}
         />
       </Animated.View>
 

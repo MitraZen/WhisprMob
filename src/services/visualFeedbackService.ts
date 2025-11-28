@@ -31,12 +31,15 @@ class VisualFeedbackService {
    * Get mood configuration
    */
   getMoodConfig(mood: string): MoodConfig {
+    // ✅ MINIMAL HAPTIC: All moods use a simple, short vibration (50ms)
+    const minimalVibrationPattern = [50]; // Single short tap
+    
     const moodMap: Record<string, MoodConfig> = {
       chill: {
         emoji: '😌',
         color: '#4A90E2',
         description: 'Relaxed and peaceful',
-        vibrationPattern: [0, 200, 100, 300, 100, 200],
+        vibrationPattern: minimalVibrationPattern,
         animationDuration: 3000,
         animationType: 'fade'
       },
@@ -44,7 +47,7 @@ class VisualFeedbackService {
         emoji: '🤩',
         color: '#FF6B6B',
         description: 'Energetic and enthusiastic',
-        vibrationPattern: [0, 100, 50, 100, 50, 100, 50, 100],
+        vibrationPattern: minimalVibrationPattern,
         animationDuration: 2000,
         animationType: 'bounce'
       },
@@ -52,7 +55,7 @@ class VisualFeedbackService {
         emoji: '🧘',
         color: '#51CF66',
         description: 'Serene and tranquil',
-        vibrationPattern: [0, 300, 200, 400, 200, 300],
+        vibrationPattern: minimalVibrationPattern,
         animationDuration: 4000,
         animationType: 'pulse'
       },
@@ -60,7 +63,7 @@ class VisualFeedbackService {
         emoji: '🤔',
         color: '#9775FA',
         description: 'Contemplative and reflective',
-        vibrationPattern: [0, 500, 300, 700, 300, 500],
+        vibrationPattern: minimalVibrationPattern,
         animationDuration: 5000,
         animationType: 'glow'
       },
@@ -68,7 +71,7 @@ class VisualFeedbackService {
         emoji: '😔',
         color: '#868E96',
         description: 'Thoughtful and wistful',
-        vibrationPattern: [0, 400, 200, 600, 200, 400],
+        vibrationPattern: minimalVibrationPattern,
         animationDuration: 3500,
         animationType: 'wave'
       },
@@ -76,7 +79,7 @@ class VisualFeedbackService {
         emoji: '😄',
         color: '#FFD43B',
         description: 'Fun and lighthearted',
-        vibrationPattern: [0, 80, 40, 80, 40, 80, 40, 80, 40, 80],
+        vibrationPattern: minimalVibrationPattern,
         animationDuration: 2500,
         animationType: 'shake'
       }
@@ -86,21 +89,22 @@ class VisualFeedbackService {
       emoji: '💭',
       color: '#868E96',
       description: 'Unknown mood',
-      vibrationPattern: [0, 200, 100, 200],
+      vibrationPattern: minimalVibrationPattern,
       animationDuration: 2000,
       animationType: 'pulse'
     };
   }
 
   /**
-   * Play enhanced vibration pattern for a mood
+   * Play minimal vibration pattern for a mood
+   * ✅ MINIMAL HAPTIC: Just a quick 50ms tap
    */
   async playVibrationPattern(mood: string, options: VisualFeedbackOptions = {}): Promise<void> {
     const { onStart, onEnd, onError } = options;
 
     try {
       if (this.isPlaying) {
-        console.log('⚠️ Vibration already playing, skipping');
+        // Skip if already playing (prevents multiple vibrations)
         return;
       }
 
@@ -108,16 +112,14 @@ class VisualFeedbackService {
       onStart?.();
 
       const moodConfig = this.getMoodConfig(mood);
-      console.log('📳 Playing vibration pattern for mood:', mood, moodConfig.description);
-
-      // Play vibration pattern
+      // ✅ MINIMAL: Just a quick tap, no logging needed
+      
+      // Play minimal vibration (50ms single tap)
       Vibration.vibrate(moodConfig.vibrationPattern);
 
-      // Wait for vibration to complete
-      const totalDuration = moodConfig.vibrationPattern.reduce((sum, duration) => sum + duration, 0);
-      await new Promise(resolve => setTimeout(resolve, totalDuration));
+      // Wait for vibration to complete (50ms)
+      await new Promise(resolve => setTimeout(resolve, 50));
 
-      console.log('✅ Vibration pattern completed');
       onEnd?.();
 
     } catch (error) {

@@ -507,13 +507,13 @@ class NotificationManagerClass implements NotificationManager {
         // ✅ NOTES FIX: Always show note notifications (notes are broadcast, not realtime-dependent)
         // This is separate from message notification logic, so it won't affect messages
         if (shouldNotifyNotes) {
-          for (const note of newNotes.slice(0, 10)) {
-            await notificationService.showNoteNotification(
-              'New Whispr Note',
-              note.content
-            );
-            this.performanceMetrics.pollingNotifications++;
-            this.performanceMetrics.totalNotifications++;
+        for (const note of newNotes.slice(0, 10)) {
+          await notificationService.showNoteNotification(
+            'New Whispr Note',
+            note.content
+          );
+          this.performanceMetrics.pollingNotifications++;
+          this.performanceMetrics.totalNotifications++;
           }
         } else {
           console.log('🔕 [Polling] Skipping note notifications (should not happen)');

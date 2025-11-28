@@ -10,7 +10,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
-  FlatList,
   SectionList,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -23,13 +22,18 @@ import AnonymousChatModal from './AnonymousChatModal';
 import AnonymousChatService from '@/services/anonymousChatService';
 import { supabase } from '@/config/supabase';
 
-type DistanceFilter = '50km' | '100km' | 'beyond';
+type CountryFilter = 'regional' | 'global';
+
+interface FilterCounts {
+  regional: number | string; // number or "20+" format
+  global: number | string;
+}
 
 interface WhisperFeedProps {
   onRecordWhispr?: () => void;
-  distanceRange?: { min: number; max: number }; // EXCLUSIVE distance range in meters
-  distanceFilter?: DistanceFilter; // Current filter for empty state messaging
+  countryFilter: CountryFilter; // Current country filter
   onFilterLoadingChange?: (loading: boolean) => void; // Callback to notify parent of loading state
+  onCountsUpdate?: (counts: FilterCounts) => void; // Callback to update filter counts
 }
 
 interface WhisprItemProps {
@@ -253,91 +257,190 @@ const WhisprItem = React.memo<WhisprItemProps>(({ whispr, onFeel }) => {
   );
 });
 
-// Memoized key extractor for FlatList
-const keyExtractor = (item: TextWhispr) => item.id;
+// Removed - using stableKeyExtractor inside component to prevent re-renders
 
 const WhisperFeed: React.FC<WhisperFeedProps> = ({ 
   onRecordWhispr, 
-  distanceRange = { min: 0, max: 50000 },
-  distanceFilter = '50km',
-  onFilterLoadingChange
+  countryFilter,
+  onFilterLoadingChange,
+  onCountsUpdate
 }) => {
-  // Safety check: ensure distanceRange is valid
-  const safeDistanceRange = distanceRange || { min: 0, max: 50000 };
   const theme = useTheme();
+  const { user } = useAuth();
   const [whisprs, setWhisprs] = useState<TextWhispr[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedWhisprForChat, setSelectedWhisprForChat] = useState<string | null>(null);
   const [showJumpToTop, setShowJumpToTop] = useState(false);
-  const flatListRef = useRef<FlatList | SectionList>(null);
+  const sectionListRef = useRef<SectionList>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
-
-  // ✅ STATE MANAGEMENT: Notify parent of loading state changes
-  React.useEffect(() => {
-    if (onFilterLoadingChange) {
-      onFilterLoadingChange(loading);
-    }
-  }, [loading, onFilterLoadingChange]);
-
-  // Debug: Track selectedWhisprForChat state changes
+  
+  // ✅ STORE USER COUNTRY: For real-time filtering
+  const userCountryRef = useRef<string | null>(null);
+  const countryFilterRef = useRef(countryFilter);
+  
+  // ✅ STORE CREATOR COUNTRIES: For counting regional whisprs
+  const creatorCountryMapRef = useRef<Map<string, string | null>>(new Map());
+  
+  // ✅ STABLE REF: Store callback to prevent dependency changes
+  const onFilterLoadingChangeRef = useRef(onFilterLoadingChange);
+  const onCountsUpdateRef = useRef(onCountsUpdate);
   useEffect(() => {
-    console.log('🎯 selectedWhisprForChat state changed:', selectedWhisprForChat);
-  }, [selectedWhisprForChat]);
+    onFilterLoadingChangeRef.current = onFilterLoadingChange;
+    onCountsUpdateRef.current = onCountsUpdate;
+  }, [onFilterLoadingChange, onCountsUpdate]);
 
-  // Location fetching disabled per user request
+  // ✅ STATE MANAGEMENT: Notify parent of loading state changes (stabilized)
+  React.useEffect(() => {
+    if (onFilterLoadingChangeRef.current) {
+      onFilterLoadingChangeRef.current(loading);
+    }
+  }, [loading]);
 
+  // ✅ UPDATE FILTER REF: Keep filter ref in sync
+  useEffect(() => {
+    countryFilterRef.current = countryFilter;
+  }, [countryFilter]);
+
+  // ✅ FETCH USER COUNTRY: Get user's country for filtering
+  useEffect(() => {
+    const fetchUserCountry = async () => {
+      if (!user) return;
+      
+      const { data: userProfile } = await supabase
+        .from('user_profiles')
+        .select('country')
+        .eq('id', user.id)
+        .single();
+      
+      if (userProfile?.country) {
+        userCountryRef.current = userProfile.country;
+        console.log(`🌍 User country: ${userProfile.country}`);
+      }
+    };
+    
+    fetchUserCountry();
+  }, [user]);
+
+  // ✅ UPDATE CREATOR COUNTRIES: Fetch and cache creator countries for counting
+  const updateCreatorCountries = useCallback(async (whisprsList: TextWhispr[]) => {
+    if (!userCountryRef.current) return;
+    
+    // Get unique creator IDs
+    const creatorIds = [...new Set(whisprsList.map(w => w.user_id).filter(Boolean))];
+    
+    if (creatorIds.length === 0) return;
+    
+    // Fetch creator countries for missing IDs
+    const missingIds = creatorIds.filter(id => !creatorCountryMapRef.current.has(id));
+    
+    if (missingIds.length > 0) {
+      const { data: creatorProfiles } = await supabase
+        .from('user_profiles')
+        .select('id, country')
+        .in('id', missingIds);
+      
+      (creatorProfiles || []).forEach(profile => {
+        creatorCountryMapRef.current.set(profile.id, profile.country || null);
+      });
+    }
+  }, []);
+
+  // ✅ CALCULATE COUNTS: Count from fetched whisprs (client-side, zero DB overhead)
+  const calculateCounts = useCallback((whisprsList: TextWhispr[], userCountry: string | null) => {
+    const limit = 100; // Same limit used in getWhisprsByCountry
+    
+    // Count regional whisprs (same country as user)
+    const regionalCount = userCountry 
+      ? whisprsList.filter(w => {
+          if (!w.user_id) return false;
+          const creatorCountry = creatorCountryMapRef.current.get(w.user_id) || null;
+          return creatorCountry === userCountry;
+        }).length
+      : 0;
+    
+    // Count global whisprs (all whisprs)
+    const globalCount = whisprsList.length;
+    
+    // Format counts with "+" indicator if at limit
+    const formatCount = (count: number, isAtLimit: boolean) => {
+      return isAtLimit ? `${limit}+` : count.toString();
+    };
+    
+    const counts: FilterCounts = {
+      regional: formatCount(regionalCount, regionalCount >= limit),
+      global: formatCount(globalCount, globalCount >= limit),
+    };
+    
+    return counts;
+  }, []);
+
+  // ✅ UPDATE COUNTS: Calculate and notify parent when whisprs change
+  useEffect(() => {
+    if (!onCountsUpdateRef.current || whisprs.length === 0) {
+      // If no whisprs, set counts to 0
+      if (onCountsUpdateRef.current && whisprs.length === 0) {
+        onCountsUpdateRef.current({ regional: '0', global: '0' });
+      }
+      return;
+    }
+    
+    // Update creator countries cache, then calculate counts
+    updateCreatorCountries(whisprs).then(() => {
+      const counts = calculateCounts(whisprs, userCountryRef.current);
+      onCountsUpdateRef.current?.(counts);
+    });
+  }, [whisprs, updateCreatorCountries, calculateCounts]);
+
+  // ✅ STABLE: Memoize loadWhisprs to prevent infinite loops
+  // ✅ COUNTRY FILTERING: Use country-based filtering
   const loadWhisprs = useCallback(async () => {
     try {
       setError(null);
       setLoading(true);
-      const range = safeDistanceRange;
-      const rangeDesc = range.max === Infinity 
-        ? `${range.min / 1000}km+` 
-        : `${range.min / 1000}-${range.max / 1000}km`;
-      console.log(`📍 Loading whisprs in EXCLUSIVE range: ${rangeDesc}...`);
-      console.log(`📍 Distance range:`, range);
+      console.log(`🌍 Loading whisprs with ${countryFilter} filter...`);
       
-      // Fetch whisprs up to max range using the proven method
-      const maxRadius = range.max === Infinity ? undefined : range.max;
-      const allWhisprs = await TextWhisperService.getNearbyTextWhisprs(100, maxRadius);
+      // ✅ FIX: Use getWhisprsByCountry for country-based filtering
+      const filteredWhisprs = await TextWhisperService.getWhisprsByCountry(
+        100, // limit
+        countryFilter
+      );
       
-      console.log(`📍 Fetched ${allWhisprs.length} whisprs - showing all active whisprs (location filtering disabled)`);
+      console.log(`🌍 Fetched ${filteredWhisprs.length} whisprs with ${countryFilter} filter`);
       
-      // Show all active whisprs regardless of filter - location filtering disabled per user request
-      setWhisprs(allWhisprs);
+      // ✅ UPDATE CREATOR COUNTRIES: Cache creator countries for counting (before setting state)
+      await updateCreatorCountries(filteredWhisprs);
+      
+      // ✅ BATCH UPDATE: Set whisprs and loading state together to reduce flicker
+      setWhisprs(filteredWhisprs);
     } catch (error) {
       console.error('Error loading whisprs:', error);
       setError(error instanceof Error ? error.message : 'Failed to load whisprs');
-      // On error, try to show whisprs without exclusive filtering
-      try {
-        const maxRadius = safeDistanceRange.max === Infinity ? undefined : safeDistanceRange.max;
-        console.log('⚠️ Falling back to basic filtering...');
-        const fallbackWhisprs = await TextWhisperService.getNearbyTextWhisprs(20, maxRadius);
-        setWhisprs(fallbackWhisprs);
-      } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
-        setWhisprs([]);
-      }
+      setWhisprs([]);
     } finally {
       setLoading(false);
-      // Notify parent that loading is complete
-      if (onFilterLoadingChange) {
-        onFilterLoadingChange(false);
+      // Notify parent that loading is complete (using ref to avoid dependency)
+      if (onFilterLoadingChangeRef.current) {
+        onFilterLoadingChangeRef.current(false);
       }
     }
-  }, [safeDistanceRange, onFilterLoadingChange]);
+  }, [countryFilter, updateCreatorCountries]);
 
+  // ✅ LOAD ONCE: Only load on mount or when countryFilter changes
   useEffect(() => {
     loadWhisprs();
   }, [loadWhisprs]);
 
-  // Location-based filtering disabled per user request
-
-  // Set up real-time subscription for new whisprs
+  // Set up real-time subscription for new whisprs with country filtering
   useEffect(() => {
-    console.log('🔄 Setting up real-time subscription for whisprs...');
+    if (!user) {
+      console.log('⏳ Waiting for user before setting up subscription...');
+      return;
+    }
+
+    console.log('🔄 Setting up real-time subscription for whisprs with country filtering...');
+    console.log(`🌍 Current filter: ${countryFilterRef.current}`);
     
     const channel = supabase
       .channel('whisprs-feed')
@@ -352,7 +455,58 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
           console.log('🆕 New whispr created:', payload.new);
           const newWhispr = payload.new as any;
 
-          // Convert to TextWhispr format and add to list (location filtering disabled)
+          // ✅ COUNTRY FILTERING: Check if whispr matches current filter
+          const currentFilter = countryFilterRef.current;
+          let shouldInclude = true;
+
+          let creatorCountry: string | null = null;
+          
+          if (currentFilter === 'regional' && userCountryRef.current && newWhispr.user_id) {
+            try {
+              // Get creator country
+              const { data: creatorProfile } = await supabase
+                .from('user_profiles')
+                .select('country')
+                .eq('id', newWhispr.user_id)
+                .single();
+
+              creatorCountry = creatorProfile?.country || null;
+              shouldInclude = creatorCountry === userCountryRef.current;
+
+              if (!shouldInclude) {
+                console.log(`🚫 Filtered out new whispr (creator country: ${creatorCountry}, user country: ${userCountryRef.current})`);
+                return;
+              }
+              
+              // ✅ CACHE CREATOR COUNTRY: Store creator country for counting
+              if (newWhispr.user_id && creatorCountry) {
+                creatorCountryMapRef.current.set(newWhispr.user_id, creatorCountry);
+              }
+            } catch (error) {
+              console.error('❌ Error checking country for new whispr:', error);
+              // Fail closed for regional filter
+              shouldInclude = false;
+            }
+          } else if (newWhispr.user_id) {
+            // For global filter, still cache creator country for counting
+            try {
+              const { data: creatorProfile } = await supabase
+                .from('user_profiles')
+                .select('country')
+                .eq('id', newWhispr.user_id)
+                .single();
+              
+              creatorCountry = creatorProfile?.country || null;
+              if (newWhispr.user_id && creatorCountry) {
+                creatorCountryMapRef.current.set(newWhispr.user_id, creatorCountry);
+              }
+            } catch (error) {
+              // Silently fail - not critical for global filter
+            }
+          }
+          // For 'global' filter, include all whisprs
+
+          // Convert to TextWhispr format and add to list
           const textWhispr: TextWhispr = {
             id: newWhispr.id,
             content: newWhispr.content,
@@ -362,13 +516,15 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
             created_at: newWhispr.created_at,
             expires_at: newWhispr.expires_at,
             radius_meters: newWhispr.radius_meters,
+            user_id: newWhispr.user_id, // Include for counting
           };
 
-          // Add to beginning of list (most recent first)
+          // ✅ OPTIMIZED: Add to beginning of list (most recent first) - only update if new
           setWhisprs(prev => {
-            // Check if already exists (avoid duplicates)
-            if (prev.some(w => w.id === textWhispr.id)) {
-              return prev;
+            // Check if already exists (avoid duplicates and unnecessary re-renders)
+            const exists = prev.some(w => w.id === textWhispr.id);
+            if (exists) {
+              return prev; // Return same reference to prevent re-render
             }
             return [textWhispr, ...prev];
           });
@@ -386,14 +542,25 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
           console.log('🔄 Whispr updated:', payload.new);
           const updatedWhispr = payload.new as any;
 
+          // ✅ OPTIMIZED: Only update if whispr exists and actually changed
           setWhisprs(prev => {
-            // Remove if expired (location filtering disabled)
+            const index = prev.findIndex(w => w.id === updatedWhispr.id);
+            
+            // Remove if expired
             const isExpired = new Date(updatedWhispr.expires_at) <= new Date();
             if (isExpired) {
-              return prev.filter(w => w.id !== updatedWhispr.id);
+              if (index >= 0) {
+                return prev.filter(w => w.id !== updatedWhispr.id);
+              }
+              return prev;
             }
 
-            // Update existing whispr
+            if (index === -1) {
+              return prev; // Not in list, no change needed
+            }
+
+            // Check if whispr actually changed to avoid unnecessary updates
+            const existing = prev[index];
             const textWhispr: TextWhispr = {
               id: updatedWhispr.id,
               content: updatedWhispr.content,
@@ -405,13 +572,20 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
               radius_meters: updatedWhispr.radius_meters,
             };
 
-            const index = prev.findIndex(w => w.id === updatedWhispr.id);
-            if (index >= 0) {
-              const newList = [...prev];
-              newList[index] = textWhispr;
-              return newList;
+            // ✅ COMPARISON: Only update if content actually changed
+            if (
+              existing.content === textWhispr.content &&
+              existing.mood === textWhispr.mood &&
+              existing.is_anonymous === textWhispr.is_anonymous &&
+              existing.expires_at === textWhispr.expires_at
+            ) {
+              return prev; // No change, return same reference
             }
-            return prev;
+
+            // Update only the changed item
+            const newList = [...prev];
+            newList[index] = textWhispr;
+            return newList;
           });
         }
       )
@@ -433,7 +607,7 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
       console.log('🧹 Cleaning up whisprs subscription');
       channel.unsubscribe();
     };
-  }, []);
+  }, [user]);
 
   // ✅ FEED INTERACTION: Enhanced pull-to-refresh
   const handleRefresh = useCallback(async () => {
@@ -449,12 +623,8 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
 
   // ✅ FEED INTERACTION: Jump to top handler
   const handleJumpToTop = useCallback(() => {
-    if (flatListRef.current) {
-      if ('scrollToOffset' in flatListRef.current) {
-        (flatListRef.current as FlatList).scrollToOffset({ offset: 0, animated: true });
-      } else if ('scrollToLocation' in flatListRef.current) {
-        (flatListRef.current as SectionList).scrollToLocation({ sectionIndex: 0, itemIndex: 0, animated: true });
-      }
+    if (sectionListRef.current) {
+      sectionListRef.current.scrollToLocation({ sectionIndex: 0, itemIndex: 0, animated: true });
     }
   }, []);
 
@@ -491,40 +661,33 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
   }, []);
 
   // ✅ STATE MANAGEMENT: Enhanced empty state messages based on filter
-  const getEmptyStateMessage = useCallback((filter: DistanceFilter) => {
+  const getEmptyStateMessage = useCallback((filter: CountryFilter) => {
     switch (filter) {
-      case '50km':
-        return {
-          emoji: '📍',
-          title: 'No whisprs within 50km',
-          subtitle: 'Try expanding your search to see more whisprs!',
-          suggestion: 'Switch to Regional (100km) or Global view',
-        };
-      case '100km':
+      case 'regional':
         return {
           emoji: '🌍',
-          title: 'No whisprs within 100km',
-          subtitle: 'Expand to Global view to see whisprs from anywhere!',
-          suggestion: 'Switch to Global view',
+          title: 'No whisprs from your country',
+          subtitle: 'No one from your country has shared a whispr yet',
+          suggestion: 'Switch to Global view to see whisprs from all countries',
         };
-      case 'beyond':
+      case 'global':
         return {
           emoji: '🚀',
-          title: 'No whisprs available',
-          subtitle: 'Be the first to share a whispr in your area!',
-          suggestion: 'Create your first whispr',
+          title: 'No active whisprs',
+          subtitle: 'Be the first to share a whispr!',
+          suggestion: 'Tap the + button to create your first whispr',
         };
       default:
         return {
           emoji: '💭',
-          title: 'No whispers near yet',
-          subtitle: 'Start one?',
-          suggestion: '',
+          title: 'No whisprs found',
+          subtitle: 'Be the first to share a whispr!',
+          suggestion: 'Tap the + button to create your first whispr',
         };
     }
   }, []);
 
-  const emptyState = useMemo(() => getEmptyStateMessage(distanceFilter), [distanceFilter, getEmptyStateMessage]);
+  const emptyState = useMemo(() => getEmptyStateMessage(countryFilter), [countryFilter, getEmptyStateMessage]);
 
   // ✅ FEED INTERACTION: Format timestamp for grouping
   const formatTimeGroup = useCallback((timestamp: string): string => {
@@ -550,8 +713,12 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
     }
   }, []);
 
-  // ✅ FEED INTERACTION: Group whisprs by time
+  // ✅ FEED INTERACTION: Group whisprs by time (optimized to prevent flicker)
   const groupedWhisprs = useMemo(() => {
+    if (whisprs.length === 0) {
+      return [];
+    }
+    
     const groups: Record<string, TextWhispr[]> = {};
     
     whisprs.forEach(whispr => {
@@ -568,8 +735,11 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
       data: items,
     }));
   }, [whisprs, formatTimeGroup]);
+  
+  // ✅ STABLE: Memoize key extractor to prevent re-renders
+  const stableKeyExtractor = useCallback((item: TextWhispr) => item.id, []);
 
-  // Memoized render item for FlatList
+  // Memoized render item for SectionList
   const renderWhisprItem = useCallback(({ item }: { item: TextWhispr }) => (
     <WhisprItem
       whispr={item}
@@ -768,11 +938,11 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
       ) : (
         <>
           <SectionList
-            ref={flatListRef as any}
+            ref={sectionListRef}
             sections={groupedWhisprs}
             renderItem={renderWhisprItem}
             renderSectionHeader={renderSectionHeader}
-            keyExtractor={keyExtractor}
+            keyExtractor={stableKeyExtractor}
             stickySectionHeadersEnabled={true}
             refreshControl={
               <RefreshControl 

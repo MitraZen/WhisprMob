@@ -1,6 +1,6 @@
 import { supabase } from '@/config/supabase';
 import Geolocation from '@react-native-community/geolocation';
-import CryptoJS from 'crypto-js';
+import GeohashUtil from '@/utils/geohashUtil';
 
 export interface NearbyUser {
   id: string;
@@ -29,9 +29,11 @@ class NearbyService {
 
   /**
    * Get current location with permission handling
+   * Uses network location first (faster), then falls back to GPS if needed
    */
   async getCurrentLocation(): Promise<LocationData> {
     return new Promise((resolve, reject) => {
+      // Try with network location first (faster, less battery)
       Geolocation.getCurrentPosition(
         (position) => {
           const location: LocationData = {
@@ -40,100 +42,78 @@ class NearbyService {
             accuracy: position.coords.accuracy || 0,
           };
           this.currentLocation = location;
-          console.log('📍 Current location:', location);
+          console.log('📍 Current location (network):', location);
           resolve(location);
         },
         (error) => {
-          console.error('❌ Location error:', error);
-          reject(error);
+          console.warn('⚠️ Network location failed, trying high accuracy GPS...', error.message);
+          // Fallback to high accuracy GPS with longer timeout
+          Geolocation.getCurrentPosition(
+            (position) => {
+              const location: LocationData = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy || 0,
+              };
+              this.currentLocation = location;
+              console.log('📍 Current location (GPS):', location);
+              resolve(location);
+            },
+            (gpsError) => {
+              console.error('❌ Location error (both network and GPS failed):', gpsError);
+              reject(gpsError);
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 30000, // ✅ INCREASED: 30 seconds for GPS
+              maximumAge: 60000, // Accept cached location up to 1 minute
+            }
+          );
         },
         {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 10000,
+          enableHighAccuracy: false, // ✅ NETWORK FIRST: Faster, less battery
+          timeout: 20000, // ✅ INCREASED: 20 seconds for network location
+          maximumAge: 300000, // Accept cached location up to 5 minutes
         }
       );
     });
   }
 
   /**
-   * Create geohash bucket for privacy-preserving location sharing
+   * Generate geohash levels for location filtering
+   * - lvl2: ~500km radius (for broad filtering)
+   * - lvl3: ~100km radius (for regional filtering)
    */
-  private createGeoBucket(location: LocationData): string {
-    // Fuzz location by ~100m for privacy
-    const fuzzedLat = Math.round(location.latitude * 1000) / 1000;
-    const fuzzedLng = Math.round(location.longitude * 1000) / 1000;
-    
-    // Create 5-character geohash
-    const geohash = this.encodeGeohash(fuzzedLat, fuzzedLng, 5);
-    
-    // Hash for additional privacy using crypto-js
-    return CryptoJS.SHA256(geohash).toString();
-  }
-
-  /**
-   * Simple geohash encoding
-   */
-  private encodeGeohash(lat: number, lng: number, precision: number): string {
-    const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
-    let isEven = true;
-    let bit = 0;
-    let ch = 0;
-    let geohash = '';
-
-    let latMin = -90;
-    let latMax = 90;
-    let lngMin = -180;
-    let lngMax = 180;
-
-    while (geohash.length < precision) {
-      if (isEven) {
-        const lngMid = (lngMin + lngMax) / 2;
-        if (lng >= lngMid) {
-          ch |= (1 << (4 - bit));
-          lngMin = lngMid;
-        } else {
-          lngMax = lngMid;
-        }
-      } else {
-        const latMid = (latMin + latMax) / 2;
-        if (lat >= latMid) {
-          ch |= (1 << (4 - bit));
-          latMin = latMid;
-        } else {
-          latMax = latMid;
-        }
-      }
-
-      isEven = !isEven;
-
-      if (bit < 4) {
-        bit++;
-      } else {
-        geohash += base32[ch];
-        bit = 0;
-        ch = 0;
-      }
-    }
-
-    return geohash;
+  private generateGeohashLevels(location: LocationData): { lvl2: string; lvl3: string } {
+    return {
+      lvl2: GeohashUtil.generateGeohash(location.latitude, location.longitude, 2),
+      lvl3: GeohashUtil.generateGeohash(location.latitude, location.longitude, 3),
+    };
   }
 
   /**
    * Update user's location in the database
+   * Stores: exact lat/lng (for calculations) + geohash lvl2/lvl3 (for filtering)
    */
   async updateUserLocation(userId: string): Promise<boolean> {
     try {
       const location = await this.getCurrentLocation();
-      const geoBucket = this.createGeoBucket(location);
+      const geohashes = this.generateGeohashLevels(location);
 
-      console.log('🔄 Updating user location:', { userId, geoBucket });
+      console.log('🔄 Updating user location:', { 
+        userId, 
+        lat: location.latitude, 
+        lng: location.longitude,
+        geohash_lvl2: geohashes.lvl2,
+        geohash_lvl3: geohashes.lvl3
+      });
 
       const { error } = await supabase
         .from('user_locations')
         .upsert({
           user_id: userId,
-          geo_bucket: geoBucket,
+          geohash_lvl2: geohashes.lvl2,
+          geohash_lvl3: geohashes.lvl3,
           last_active: new Date().toISOString(),
         });
 
@@ -152,6 +132,7 @@ class NearbyService {
 
   /**
    * Get nearby users based on current location
+   * Uses geohash lvl2/lvl3 for efficient filtering
    */
   async getNearbyUsers(userId: string): Promise<NearbyUser[]> {
     try {
@@ -163,30 +144,42 @@ class NearbyService {
         throw new Error('Unable to get current location');
       }
 
-      // Create multiple geo buckets for broader search
-      const geoBuckets = this.createNearbyGeoBuckets(this.currentLocation);
+      // Get geohash levels for filtering
+      const geohashes = this.getNearbyGeohashes(this.currentLocation);
       
-      console.log('🔍 Fetching nearby users with geo buckets:', geoBuckets);
+      console.log('🔍 Fetching nearby users with geohashes:', geohashes);
 
-      const { data, error } = await supabase.rpc('get_nearby_users', {
-        target_geo_buckets: geoBuckets,
-      });
+      // Query users with matching geohash lvl2 or lvl3
+      const { data, error } = await supabase
+        .from('user_locations')
+        .select('user_id, last_active, geohash_lvl2, geohash_lvl3')
+        .or(`geohash_lvl2.eq.${geohashes.lvl2},geohash_lvl3.eq.${geohashes.lvl3}`)
+        .neq('user_id', userId)
+        .limit(50);
 
       if (error) {
-        console.error('❌ RPC error:', error);
+        console.error('❌ Query error:', error);
         throw error;
       }
 
-      console.log('📊 Raw RPC response:', data);
+      console.log('📊 Raw query response:', data);
+
+      // Get online status for users
+      const userIds = (data || []).map((loc: any) => loc.user_id);
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('id, is_online')
+        .in('id', userIds);
+
+      const onlineMap = new Map((profiles || []).map((p: any) => [p.id, p.is_online]));
 
       // Process and filter results
       const nearbyUsers: NearbyUser[] = (data || [])
-        .filter((user: any) => user.user_id !== userId) // Exclude current user
-        .map((user: any, index: number) => ({
-          id: user.user_id,
+        .map((loc: any, index: number) => ({
+          id: loc.user_id,
           anonymous_id: `U${index + 1}`,
-          last_active: user.last_active,
-          is_online: user.is_online,
+          last_active: loc.last_active,
+          is_online: onlineMap.get(loc.user_id) || false,
         }));
 
       console.log('👥 Processed nearby users:', nearbyUsers);
@@ -198,34 +191,11 @@ class NearbyService {
   }
 
   /**
-   * Create multiple geo buckets for broader nearby search
+   * Get geohash levels for nearby search
+   * Returns current geohash lvl2 and lvl3
    */
-  private createNearbyGeoBuckets(location: LocationData): string[] {
-    const buckets: string[] = [];
-    
-    // Create buckets for current location and nearby areas
-    const offsets = [
-      { lat: 0, lng: 0 },      // Current location
-      { lat: 0.001, lng: 0 },  // North
-      { lat: -0.001, lng: 0 }, // South
-      { lat: 0, lng: 0.001 },  // East
-      { lat: 0, lng: -0.001 }, // West
-      { lat: 0.001, lng: 0.001 },   // Northeast
-      { lat: 0.001, lng: -0.001 },  // Northwest
-      { lat: -0.001, lng: 0.001 },  // Southeast
-      { lat: -0.001, lng: -0.001 }, // Southwest
-    ];
-
-    offsets.forEach(offset => {
-      const bucketLocation: LocationData = {
-        latitude: location.latitude + offset.lat,
-        longitude: location.longitude + offset.lng,
-        accuracy: location.accuracy,
-      };
-      buckets.push(this.createGeoBucket(bucketLocation));
-    });
-
-    return buckets;
+  private getNearbyGeohashes(location: LocationData): { lvl2: string; lvl3: string } {
+    return this.generateGeohashLevels(location);
   }
 
   /**
