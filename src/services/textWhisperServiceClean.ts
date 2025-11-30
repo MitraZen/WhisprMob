@@ -167,12 +167,26 @@ class TextWhisperService {
           countryMap.set(profile.id, profile.country || null);
         });
 
-        // Filter whisprs by country
+        // ✅ DEBUG: Log country mapping for troubleshooting
+        console.log(`🌍 User country: "${userCountry}" (normalized: "${userCountry?.trim().toLowerCase()}")`);
+        console.log(`🌍 Found ${countryMap.size} creator countries in map`);
+
+        // Filter whisprs by country (case-insensitive comparison)
         const filteredWhisprs = whisprsData
           .filter(w => {
             if (!w.user_id) return false; // Skip anonymous/unknown creators
             const creatorCountry = countryMap.get(w.user_id);
-            return creatorCountry === userCountry;
+            // ✅ FIX: Case-insensitive comparison and handle null/undefined
+            if (!creatorCountry || !userCountry) {
+              // Only log if creator country is missing (helps debug missing country data)
+              if (!creatorCountry && w.user_id) {
+                console.log(`⚠️ Creator ${w.user_id.substring(0, 8)}... has no country set for whispr ${w.id.substring(0, 8)}...`);
+              }
+              return false;
+            }
+            const normalizedCreator = creatorCountry.trim().toLowerCase();
+            const normalizedUser = userCountry.trim().toLowerCase();
+            return normalizedCreator === normalizedUser;
           })
           .slice(0, limit)
           .map(w => ({
@@ -196,12 +210,12 @@ class TextWhisperService {
         if (whisprsError) {
           console.error('❌ Error fetching whisprs:', whisprsError);
           throw new Error(`Failed to fetch whisprs: ${whisprsError.message}`);
-        }
+      }
 
         if (!whisprsData || whisprsData.length === 0) {
           console.log('✅ No active whisprs found');
-          return [];
-        }
+        return [];
+      }
 
         const whisprs = whisprsData.map(w => ({
           id: w.id,

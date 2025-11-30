@@ -351,12 +351,14 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
   const calculateCounts = useCallback((whisprsList: TextWhispr[], userCountry: string | null) => {
     const limit = 100; // Same limit used in getWhisprsByCountry
     
-    // Count regional whisprs (same country as user)
+    // Count regional whisprs (same country as user) - case-insensitive
     const regionalCount = userCountry 
       ? whisprsList.filter(w => {
           if (!w.user_id) return false;
           const creatorCountry = creatorCountryMapRef.current.get(w.user_id) || null;
-          return creatorCountry === userCountry;
+          // ✅ FIX: Case-insensitive comparison and handle null/undefined
+          if (!creatorCountry || !userCountry) return false;
+          return creatorCountry.trim().toLowerCase() === userCountry.trim().toLowerCase();
         }).length
       : 0;
     
@@ -471,7 +473,10 @@ const WhisperFeed: React.FC<WhisperFeedProps> = ({
                 .single();
 
               creatorCountry = creatorProfile?.country || null;
-              shouldInclude = creatorCountry === userCountryRef.current;
+              // ✅ FIX: Case-insensitive comparison and handle null/undefined
+              shouldInclude = creatorCountry && userCountryRef.current
+                ? creatorCountry.trim().toLowerCase() === userCountryRef.current.trim().toLowerCase()
+                : false;
 
               if (!shouldInclude) {
                 console.log(`🚫 Filtered out new whispr (creator country: ${creatorCountry}, user country: ${userCountryRef.current})`);

@@ -73,30 +73,29 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
-def whisprVersionName = "2.17.0"
-def whisprVersionCode = 120
+def whisprVersionName = "2.18.0"
+def whisprVersionCode = 121
 def whisprReleaseTag = "P5"
 def whisprTimestamp = new Date().format("yyyy-MM-dd_HH-mm")
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-    compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion = rootProject.ext.buildToolsVersion
+    compileSdk = rootProject.ext.compileSdkVersion
 
-    namespace "com.whisprmobiletemp"
+    namespace = "com.whisprmobiletemp"
     
     // NDK configuration for 16 KB page size support
-        ndkVersion "25.1.8937393"
-        defaultConfig {
-            applicationId "com.whisprmobiletemp"
-            minSdkVersion rootProject.ext.minSdkVersion
-            targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode whisprVersionCode
-        versionName whisprVersionName
+    ndkVersion = "25.1.8937393"
+    defaultConfig {
+        applicationId = "com.whisprmobiletemp"
+        minSdkVersion = rootProject.ext.minSdkVersion
+        targetSdkVersion = rootProject.ext.targetSdkVersion
+        versionCode = whisprVersionCode
+        versionName = whisprVersionName
         
         // NDK configuration for 16 KB page size support
         ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+            abiFilters = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
         }
         
         // Network configuration
@@ -106,28 +105,28 @@ android {
     }
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            storeFile = file('debug.keystore')
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
         }
         release {
-            storeFile file('whispr-production.keystore')
-            storePassword 'android'
-            keyAlias 'whispr-key'
-            keyPassword 'android'
+            storeFile = file('whispr-production.keystore')
+            storePassword = 'android'
+            keyAlias = 'whispr-key'
+            keyPassword = 'android'
         }
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
-            debuggable true
-            minifyEnabled false
+            signingConfig = signingConfigs.debug
+            debuggable = true
+            minifyEnabled = false
         }
         release {
-            signingConfig signingConfigs.release
-            minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            signingConfig = signingConfigs.release
+            minifyEnabled = enableProguardInReleaseBuilds
+            proguardFiles = [getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"]
         }
     }
     

@@ -109,8 +109,8 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
-      }
-    };
+    }
+  };
   }, []);
 
 
@@ -224,12 +224,12 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       </View>
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <WhisprFeed 
-          onRecordWhispr={handleRecordWhispr}
+      <WhisprFeed 
+        onRecordWhispr={handleRecordWhispr}
           countryFilter={countryFilter}
           onFilterLoadingChange={setFilterLoading}
           onCountsUpdate={setFilterCounts}
-        />
+      />
       </Animated.View>
 
       <Modal
