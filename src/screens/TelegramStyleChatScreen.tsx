@@ -28,6 +28,7 @@ import { messageRepliesService, ReplyInfo } from '@/services/messageRepliesServi
 import { CONVERSATION_STATES } from '@/config/profile.config';
 import { BuddiesService } from '@/services/buddiesService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ChatMessageSkeleton } from '@/components/ChatMessageSkeleton';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -392,6 +393,7 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const [messages, setMessages] = useState<SimpleMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [showProfileView, setShowProfileView] = useState(false);
   const [reactionsByMessageId, setReactionsByMessageId] = useState<Record<string, Record<string, number>>>({});
   const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
@@ -457,6 +459,8 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
   useEffect(() => {
     if (buddy?.id && user?.id) {
+      // Reset initial loading state when buddy changes
+      setInitialLoading(true);
       // ✅ loadMessages checks fromNotification internally to skip cache
       loadMessages();
       
@@ -868,6 +872,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           console.log('✅ Fresh messages loaded:', freshMessages.length);
           setMessages(freshMessages);
           setIsLoading(false);
+          // Keep skeleton visible for at least 300ms for better UX
+          setTimeout(() => {
+            setInitialLoading(false);
+          }, 300);
           
           const freshMessageIds = freshMessages.map(msg => msg.id);
           messageRepliesService.getRepliesForMessages(freshMessageIds).then(replies => {
@@ -910,6 +918,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         console.log('⚡ Showing cached messages instantly:', cachedMessages.length);
         setMessages(cachedMessages);
         setIsLoading(false);
+        // Keep skeleton visible for at least 300ms for better UX
+        setTimeout(() => {
+          setInitialLoading(false);
+        }, 300);
         
         const messageIds = cachedMessages.map(msg => msg.id);
         messageRepliesService.getRepliesForMessages(messageIds).then(replies => {
@@ -997,6 +1009,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
       if (!isSilent) {
         setIsLoading(false);
       }
+      // Keep skeleton visible for at least 300ms for better UX
+      setTimeout(() => {
+        setInitialLoading(false);
+      }, 300);
     }
   };
 
@@ -1617,10 +1633,14 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
 
       <View style={styles.messagesContainer}>
         {/* Loading state rendered OUTSIDE FlatList to avoid inverted flip */}
-        {isLoading && messages.length === 0 && (
-          <View style={[styles.loadingContainer, StyleSheet.absoluteFill]}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading messages...</Text>
+        {initialLoading && (
+          <View style={[StyleSheet.absoluteFill, styles.skeletonContainer]}>
+            <ChatMessageSkeleton count={6} />
+          </View>
+        )}
+        {!initialLoading && isLoading && messages.length === 0 && (
+          <View style={[StyleSheet.absoluteFill, styles.skeletonContainer]}>
+            <ChatMessageSkeleton count={6} />
           </View>
         )}
 
@@ -2025,6 +2045,12 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   messagesContainer: {
     flex: 1,
+  },
+  skeletonContainer: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    backgroundColor: theme.colors.background,
   },
   loadingContainer: {
     flex: 1,

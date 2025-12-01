@@ -230,15 +230,77 @@ const AppNavigator = () => {
     }
   }, [isLoading, isAuthenticated, currentScreen]); // Run when app finishes loading
 
+  // ✅ FCM NOTIFICATION NAVIGATION HANDLER
+  // ⚠️ IMPORTANT: This ONLY handles FCM push notifications
+  // Local notifications are handled by the 'navigateToChat' event listener below
+  useEffect(() => {
+    const handleFCMNavigation = (event: any) => {
+      try {
+        console.log('📱 [FCM NAV] Received FCM notification navigation event:', event);
+        const { screen, source, notificationType } = event;
+        
+        // Verify this is from FCM (not local notification)
+        if (source !== 'fcm') {
+          console.log('📱 [FCM NAV] Ignoring non-FCM navigation event');
+          return;
+        }
+        
+        // Only navigate if user is authenticated
+        if (!isAuthenticated) {
+          console.log('📱 [FCM NAV] User not authenticated, deferring navigation');
+          // Store pending navigation to execute after auth
+          const pendingNav = () => {
+            if (isAuthenticated) {
+              console.log('📱 [FCM NAV] Executing deferred navigation:', screen);
+              setCurrentScreen(screen);
+            }
+          };
+          // Try after a delay to allow auth to complete
+          setTimeout(pendingNav, 1000);
+          return;
+        }
+        
+        console.log('📱 [FCM NAV] Navigating to screen:', screen, 'Type:', notificationType);
+        setCurrentScreen(screen);
+        
+        // Update navigation history
+        setNavigationHistory(prev => {
+          const newHistory = [...prev];
+          if (newHistory[newHistory.length - 1] !== screen) {
+            newHistory.push(screen);
+          }
+          return newHistory;
+        });
+      } catch (error) {
+        console.error('📱 [FCM NAV] Error handling FCM navigation:', error);
+      }
+    };
+
+    const subscription = DeviceEventEmitter.addListener('fcmNotificationNavigation', handleFCMNavigation);
+    
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated]);
+
   // When the user becomes authenticated, default to notes screen
+  // ⚠️ NOTE: FCM notifications may override this default navigation
   React.useEffect(() => {
     if (isAuthenticated) {
       const authScreens = new Set(['welcome', 'signin', 'signup', 'mood', 'profileCompletion']);
       if (authScreens.has(currentScreen)) {
-        setCurrentScreen('notes');
+        // Small delay to allow FCM navigation to take precedence
+        const timer = setTimeout(() => {
+          // Only default to notes if still on auth screen (FCM navigation may have changed it)
+          const authScreensCheck = new Set(['welcome', 'signin', 'signup', 'mood', 'profileCompletion']);
+          if (authScreensCheck.has(currentScreen)) {
+            setCurrentScreen('notes');
+          }
+        }, 100);
+        return () => clearTimeout(timer);
       }
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentScreen]);
 
   // Listen for notification tap events to navigate to chat
   useEffect(() => {

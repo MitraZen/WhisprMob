@@ -279,7 +279,11 @@ class NotificationServiceClass implements NotificationService {
   }
 
   /**
-   * ✅ KEPT: Handle notification tap
+   * ✅ Handle LOCAL notification tap
+   * ⚠️ IMPORTANT: This ONLY handles LOCAL notifications (PushNotification.localNotification)
+   * FCM push notifications are handled separately in index.js (getInitialNotification/onNotificationOpenedApp)
+   * 
+   * This handler navigates directly to specific chat (requires buddy lookup)
    */
   private handleNotificationTap(notification: any): void {
     (async () => {

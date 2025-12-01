@@ -251,28 +251,105 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   return Promise.resolve();
 });
 
-// ✅ Handle notification opened app (when app is in killed state)
+/**
+ * ✅ FCM NOTIFICATION NAVIGATION HANDLER
+ * ⚠️ IMPORTANT: This ONLY handles FCM push notifications (from Firebase)
+ * Local notifications (PushNotification.configure) are handled separately in notificationService.ts
+ * 
+ * Simplified approach: Navigate based on notification type
+ * - type: 'note' → Navigate to Notes screen
+ * - type: 'ping' | 'wake' | 'message' → Navigate to Buddies screen
+ */
+const handleFCMNotificationNavigation = (remoteMessage) => {
+  try {
+    const notificationType = remoteMessage.data?.type;
+    console.log('🔔 [FCM] Processing FCM notification navigation:', {
+      type: notificationType,
+      messageId: remoteMessage.messageId,
+    });
+
+    // ⚠️ CRITICAL: Only handle FCM notifications here
+    // Local notifications are handled by PushNotification.configure in notificationService.ts
+    
+    if (!notificationType) {
+      console.log('🔔 [FCM] No notification type found, defaulting to notes');
+      // Emit navigation event for AppNavigator
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit('fcmNotificationNavigation', { screen: 'notes', source: 'fcm' });
+      return;
+    }
+
+    // Determine target screen based on notification type
+    let targetScreen = 'notes'; // Default
+    
+    if (notificationType === 'note') {
+      targetScreen = 'notes';
+      console.log('🔔 [FCM] Note notification → Navigating to Notes screen');
+    } else if (notificationType === 'ping' || notificationType === 'wake' || notificationType === 'message') {
+      targetScreen = 'buddies';
+      console.log('🔔 [FCM] Message/Chat notification → Navigating to Buddies screen');
+    } else {
+      // Unknown type, default to notes
+      console.log('🔔 [FCM] Unknown notification type, defaulting to Notes screen');
+      targetScreen = 'notes';
+    }
+
+    // Emit navigation event for AppNavigator
+    // Use separate event name to distinguish from local notifications
+    const { DeviceEventEmitter } = require('react-native');
+    DeviceEventEmitter.emit('fcmNotificationNavigation', { 
+      screen: targetScreen, 
+      source: 'fcm',
+      notificationType: notificationType,
+      data: remoteMessage.data
+    });
+    
+    console.log('🔔 [FCM] Navigation event emitted:', { screen: targetScreen, type: notificationType });
+  } catch (error) {
+    console.error('❌ [FCM] Error handling FCM notification navigation:', error);
+    // Fallback: emit navigation to notes screen
+    try {
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit('fcmNotificationNavigation', { screen: 'notes', source: 'fcm' });
+    } catch (fallbackError) {
+      console.error('❌ [FCM] Fallback navigation also failed:', fallbackError);
+    }
+  }
+};
+
+// ✅ Handle FCM notification opened app (when app is in background/killed state)
+// ⚠️ FCM-SPECIFIC: Only handles Firebase Cloud Messaging notifications
 messaging().onNotificationOpenedApp(remoteMessage => {
-  console.log('🔔 Notification opened app from background/killed state:', {
+  console.log('🔔 [FCM] FCM notification opened app from background/killed state:', {
     messageId: remoteMessage.messageId,
+    type: remoteMessage.data?.type,
     buddyName: remoteMessage.data?.buddyName,
   });
   
-  // This is handled by the PushNotification.configure onNotification callback
-  // which is set up in notificationService
+  // ⚠️ CRITICAL: This is FCM-specific navigation
+  // Local notifications are handled by PushNotification.configure in notificationService.ts
+  handleFCMNotificationNavigation(remoteMessage);
 });
 
-// ✅ Check if app was opened from a notification (killed state)
+// ✅ Check if app was opened from FCM notification (killed state)
+// ⚠️ FCM-SPECIFIC: Only handles Firebase Cloud Messaging notifications
 messaging()
   .getInitialNotification()
   .then(remoteMessage => {
     if (remoteMessage) {
-      console.log('🔔 App opened from killed state by notification:', {
+      console.log('🔔 [FCM] App opened from killed state by FCM notification:', {
         messageId: remoteMessage.messageId,
+        type: remoteMessage.data?.type,
         buddyName: remoteMessage.data?.buddyName,
       });
-      // This is handled by the PushNotification.configure callbacks
+      
+      // ⚠️ CRITICAL: This is FCM-specific navigation
+      // Local notifications are handled by PushNotification.configure in notificationService.ts
+      handleFCMNotificationNavigation(remoteMessage);
     }
+  })
+  .catch(error => {
+    console.error('❌ [FCM] Error getting initial notification:', error);
   });
 
 // Register app

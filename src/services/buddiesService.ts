@@ -1,6 +1,7 @@
 import { SUPABASE_CONFIG } from '@/config/env';
 import { supabase } from '@/config/supabase';
 import { MoodType } from '@/types';
+import { handleNetworkError } from '@/utils/networkErrorHandler';
 
 const SUPABASE_URL = SUPABASE_CONFIG.url;
 const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
@@ -184,6 +185,13 @@ export class BuddiesService {
       const responseData = await response.json();
       return responseData;
     } catch (error) {
+      // Handle network errors gracefully
+      if (handleNetworkError(error, 'BuddiesService request', true)) {
+        // Network error - return empty array/result instead of throwing
+        // This allows the app to continue functioning offline
+        return [];
+      }
+      // Not a network error, log and throw normally
       console.error('BuddiesService request error:', error);
       throw error;
     }
@@ -205,6 +213,13 @@ export class BuddiesService {
       
       return data;
     } catch (error) {
+      // Handle network errors gracefully
+      if (handleNetworkError(error, `RPC call ${functionName}`, true)) {
+        // Network error - return empty array instead of throwing
+        // This allows the app to continue functioning offline
+        return [];
+      }
+      // Not a network error, log and throw normally
       console.error(`BuddiesService RPC error for ${functionName}:`, error);
       throw error;
     }
@@ -245,9 +260,17 @@ export class BuddiesService {
         return transformedBuddy;
       });
     } catch (error) {
+      // Handle network errors gracefully
+      if (handleNetworkError(error, 'Fetching buddies', true)) {
+        // Network error - return empty array instead of throwing
+        // This allows the app to continue functioning offline
+        return [];
+      }
+      
+      // Not a network error, log normally
       console.error('Error fetching buddies:', error);
       
-      // Retry logic for connection errors
+      // Retry logic for connection errors (non-network errors)
       if (error instanceof Error && (error.message.includes('connection') || error.message.includes('disconnected'))) {
         if (retryCount < maxRetries) {
           console.log(`🔄 Retrying buddies fetch (attempt ${retryCount + 1}/${maxRetries})`);
@@ -662,7 +685,11 @@ export class BuddiesService {
           .in('status', ['listened', 'rejected']);
         
         if (recipientError) {
-          console.error('❌ Error fetching note_recipients:', recipientError);
+          // Handle network errors gracefully (silent for offline scenarios)
+          if (!handleNetworkError(recipientError, 'Fetching note_recipients', true)) {
+            // Not a network error, log normally
+            console.error('❌ Error fetching note_recipients:', recipientError);
+          }
         }
         
         if (recipientData && recipientData.length > 0) {
@@ -670,7 +697,11 @@ export class BuddiesService {
           data = data.filter((note: any) => !excludedNoteIds.has(note.id));
         }
       } catch (filterError) {
-        console.error('❌ Error filtering by note_recipients:', filterError);
+        // Handle network errors gracefully (silent for offline scenarios)
+        if (!handleNetworkError(filterError, 'Filtering by note_recipients', true)) {
+          // Not a network error, log normally
+          console.error('❌ Error filtering by note_recipients:', filterError);
+        }
         // Don't fail - just show all notes if filtering fails
       }
 
@@ -700,6 +731,13 @@ export class BuddiesService {
         updatedAt: new Date(note.updated_at),
       }));
     } catch (error) {
+      // Handle network errors gracefully
+      if (handleNetworkError(error, 'Fetching Whispr notes', true)) {
+        // Network error - return empty array instead of throwing
+        // This allows the app to continue functioning offline
+        return [];
+      }
+      // Not a network error, log and throw normally
       console.error('Error fetching Whispr notes:', error);
       throw error;
     }
@@ -768,7 +806,11 @@ export class BuddiesService {
           .in('status', ['listened', 'rejected']);
         
         if (recipientError) {
-          console.error('❌ Error fetching note_recipients:', recipientError);
+          // Handle network errors gracefully (silent for offline scenarios)
+          if (!handleNetworkError(recipientError, 'Fetching note_recipients', true)) {
+            // Not a network error, log normally
+            console.error('❌ Error fetching note_recipients:', recipientError);
+          }
         }
         
         if (recipientData && recipientData.length > 0) {
@@ -776,7 +818,11 @@ export class BuddiesService {
           data = data.filter((note: any) => !excludedNoteIds.has(note.id));
         }
       } catch (filterError) {
-        console.error('❌ Error filtering by note_recipients:', filterError);
+        // Handle network errors gracefully (silent for offline scenarios)
+        if (!handleNetworkError(filterError, 'Filtering by note_recipients', true)) {
+          // Not a network error, log normally
+          console.error('❌ Error filtering by note_recipients:', filterError);
+        }
         // Don't fail - just show all notes if filtering fails
       }
 
@@ -1028,6 +1074,13 @@ export class BuddiesService {
       }
       return null;
     } catch (error) {
+      // Handle network errors gracefully
+      if (handleNetworkError(error, 'Fetching user profile', true)) {
+        // Network error - return null instead of throwing
+        // This allows the app to continue functioning offline
+        return null;
+      }
+      // Not a network error, log and throw normally
       console.error('Error fetching user profile:', error);
       throw error;
     }

@@ -3,6 +3,7 @@ import { BuddiesService } from './buddiesService';
 import { realtimeService } from './realtimeService';
 import { connectionRecoveryService, ConnectionState } from './connectionRecoveryService';
 import { supabase } from '../config/supabase';
+import { handleNetworkError } from '@/utils/networkErrorHandler';
 
 interface NotificationManager {
   startNotificationService: (userId: string) => Promise<void>;
@@ -183,7 +184,11 @@ class NotificationManagerClass implements NotificationManager {
         this.updatePerformanceMetrics();
         console.log(`📡 Polling cycle completed (${interval}ms interval)`);
       } catch (error) {
-        console.error('❌ Polling cycle error:', error);
+        // Handle network errors gracefully (silent for offline scenarios)
+        if (!handleNetworkError(error, 'Polling cycle', true)) {
+          // Not a network error, log normally
+          console.error('❌ Polling cycle error:', error);
+        }
         this.performanceMetrics.fallbackActivations++;
       }
     }, interval);
@@ -463,13 +468,21 @@ class NotificationManagerClass implements NotificationManager {
               .map(msg => msg.id);
           }
         } catch (error) {
-          console.error(`Error checking messages for buddy ${buddy.id}:`, error);
+          // Handle network errors gracefully (silent for offline scenarios)
+          if (!handleNetworkError(error, `Checking messages for buddy ${buddy.id}`, true)) {
+            // Not a network error, log normally
+            console.error(`Error checking messages for buddy ${buddy.id}:`, error);
+          }
         }
       }
       
       this.lastPollingTime = Date.now();
     } catch (error) {
-      console.error('Error checking for new messages:', error);
+      // Handle network errors gracefully (silent for offline scenarios)
+      if (!handleNetworkError(error, 'Checking for new messages', true)) {
+        // Not a network error, log normally
+        console.error('Error checking for new messages:', error);
+      }
     }
   }
 
@@ -531,7 +544,11 @@ class NotificationManagerClass implements NotificationManager {
           .map(note => note.id);
       }
     } catch (error) {
-      console.error('Error checking for new notes:', error);
+      // Handle network errors gracefully (silent for offline scenarios)
+      if (!handleNetworkError(error, 'Checking for new notes', true)) {
+        // Not a network error, log normally
+        console.error('Error checking for new notes:', error);
+      }
     }
   }
 
@@ -639,7 +656,11 @@ class NotificationManagerClass implements NotificationManager {
       
       return buddyDisplayName;
     } catch (error) {
-      console.error('👤 [Polling] Error fetching buddy name:', error);
+      // Handle network errors gracefully (silent for offline scenarios)
+      if (!handleNetworkError(error, 'Fetching buddy name', true)) {
+        // Not a network error, log normally
+        console.error('👤 [Polling] Error fetching buddy name:', error);
+      }
       return 'Buddy';
     }
   }
