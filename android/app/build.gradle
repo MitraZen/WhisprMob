@@ -73,9 +73,9 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
-def whisprVersionName = "2.18.0"
-def whisprVersionCode = 121
-def whisprReleaseTag = "P5"
+def whisprVersionName = "2.20.0"
+def whisprVersionCode = 123
+def whisprReleaseTag = "P7"
 def whisprTimestamp = new Date().format("yyyy-MM-dd_HH-mm")
 
 android {
@@ -152,7 +152,8 @@ android.applicationVariants.all { variant ->
     variant.outputs.each { output ->
         def currentFileName = output.outputFileName ?: "app-release.apk"
         def extension = currentFileName.substring(currentFileName.lastIndexOf('.'))
-        def baseName = "Whispr_v${whisprVersionName}_${whisprReleaseTag}_${whisprTimestamp}"
+        def dateTime = new Date().format("yyyy-MM-dd_HH-mm")
+        def baseName = "Whispr_v${whisprVersionName}_${whisprReleaseTag}_${dateTime}"
         output.outputFileName = "${baseName}${extension}"
     }
 }

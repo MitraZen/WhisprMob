@@ -505,15 +505,20 @@ class NotificationManagerClass implements NotificationManager {
         }
         
         // ✅ NOTES FIX: Always show note notifications (notes are broadcast, not realtime-dependent)
-        // This is separate from message notification logic, so it won't affect messages
+        // Use batching service to group multiple notes into single notification
         if (shouldNotifyNotes) {
-        for (const note of newNotes.slice(0, 10)) {
-          await notificationService.showNoteNotification(
-            'New Whispr Note',
-            note.content
-          );
-          this.performanceMetrics.pollingNotifications++;
-          this.performanceMetrics.totalNotifications++;
+          const { noteBatchingService } = await import('@/services/noteBatchingService');
+          
+          // Add all new notes to batch (will be grouped into single notification)
+          for (const note of newNotes.slice(0, 10)) {
+            noteBatchingService.addNoteToBatch(
+              note.id,
+              note.content,
+              note.senderId
+              // Note: senderName is not available in note object, would need to be fetched separately
+            );
+            this.performanceMetrics.pollingNotifications++;
+            this.performanceMetrics.totalNotifications++;
           }
         } else {
           console.log('🔕 [Polling] Skipping note notifications (should not happen)');

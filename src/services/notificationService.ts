@@ -13,7 +13,7 @@ if (typeof globalThis !== 'undefined') {
 
 export interface NotificationService {
   showMessageNotification: (arg1: any, arg2?: string, arg3?: string, arg4?: number, arg5?: string) => Promise<string>;
-  showNoteNotification: (title: string, content: string) => Promise<string>;
+  showNoteNotification: (title: string, content: string, noteCount?: number) => Promise<string>;
   showGeneralNotification: (title: string, content: string) => Promise<string>;
   cancelAllNotifications: () => Promise<string>;
   testNotification: () => Promise<string>;
@@ -480,8 +480,15 @@ class NotificationServiceClass implements NotificationService {
     throw error;
   }
 }
-  async showNoteNotification(title: string, content: string): Promise<string> {
+  async showNoteNotification(title: string, content: string, noteCount?: number): Promise<string> {
     try {
+      // Check app-level notifications state
+      const appNotificationsEnabled = await this.isAppNotificationEnabled();
+      if (!appNotificationsEnabled) {
+        console.log('🔕 [NOTIFICATION] App-level notifications are disabled - skipping note notification');
+        return 'App-level notifications disabled';
+      }
+
       const hasPermission = await this.checkNotificationPermission();
       if (!hasPermission) {
         console.warn('Notification permission not granted - requesting');
@@ -492,9 +499,18 @@ class NotificationServiceClass implements NotificationService {
         }
       }
 
+      // Use stable notification ID for batching (allows updates/replacement)
+      const notificationId = 9999; // Stable ID for all note notifications
+
+      // Build display title (include count if batched)
+      const displayTitle = noteCount && noteCount > 1 
+        ? `${title} (${noteCount})`
+        : title;
+
       PushNotification.localNotification({
+        id: notificationId, // Same ID for all note notifications (allows replacement)
         channelId: 'whispr-notes',
-        title: title,
+        title: displayTitle,
         message: content,
         playSound: true,
         soundName: 'default',
@@ -504,9 +520,21 @@ class NotificationServiceClass implements NotificationService {
         importance: 'high',
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
+        tag: 'whispr-notes', // Same tag for all notes (allows Android to group/replace)
+        userInfo: {
+          id: notificationId,
+          type: 'note',
+          noteCount: noteCount ?? 1,
+          isBatched: Boolean(noteCount && noteCount > 1),
+        },
+        ...(Platform.OS === 'android' && {
+          visibility: 'public',
+          autoCancel: true,
+          color: '#007AFF',
+        }),
       });
 
-      console.log('Note notification sent');
+      console.log('📝 Note notification sent', { title: displayTitle, noteCount: noteCount ?? 1 });
       return 'Note notification sent successfully';
     } catch (error) {
       console.error('Error sending note notification:', error);

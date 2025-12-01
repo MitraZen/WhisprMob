@@ -32,6 +32,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [noteAlerts, setNoteAlerts] = useState<number>(0);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [sortOption, setSortOption] = useState<'newest' | 'oldest' | 'mood' | 'shortest' | 'longest'>('newest');
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
   const { enableAdminMode } = useAdmin();
 
   // Animation refs
@@ -234,6 +236,58 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     return `${diffDays}d ago`;
   };
 
+  // Sort notes based on selected option
+  const sortNotes = (notesToSort: WhisprNote[]): WhisprNote[] => {
+    const sorted = [...notesToSort];
+    
+    switch (sortOption) {
+      case 'newest':
+        return sorted.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      
+      case 'oldest':
+        return sorted.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      
+      case 'mood':
+        return sorted.sort((a, b) => {
+          const moodA = (a.mood || 'happy').toLowerCase();
+          const moodB = (b.mood || 'happy').toLowerCase();
+          if (moodA !== moodB) {
+            return moodA.localeCompare(moodB);
+          }
+          // If same mood, sort by newest first
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        });
+      
+      case 'shortest':
+        return sorted.sort((a, b) => {
+          const lengthA = a.content.length;
+          const lengthB = b.content.length;
+          if (lengthA !== lengthB) {
+            return lengthA - lengthB;
+          }
+          // If same length, sort by newest first
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        });
+      
+      case 'longest':
+        return sorted.sort((a, b) => {
+          const lengthA = a.content.length;
+          const lengthB = b.content.length;
+          if (lengthA !== lengthB) {
+            return lengthB - lengthA;
+          }
+          // If same length, sort by newest first
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        });
+      
+      default:
+        return sorted;
+    }
+  };
+
+  // Get sorted notes
+  const sortedNotes = sortNotes(notes);
+
 
   const handleListen = async (noteId: string) => {
     console.log('🎧 Starting to listen to note:', noteId, 'for user:', user.id);
@@ -412,21 +466,78 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
             </Text>
           )}
         </View>
-        <TouchableOpacity 
-          style={styles.alertsButton}
-          onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
-        >
-          <Icon name="notifications" size={24} color={theme.colors.onSurface} />
-          {noteAlerts > 0 && (
-            <View style={styles.alertBadge}>
-              <Text style={styles.alertBadgeText}>
-                {noteAlerts > 99 ? '99+' : noteAlerts}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.sortButton}
+            onPress={() => setShowSortDropdown(!showSortDropdown)}
+            activeOpacity={0.7}
+          >
+            <Icon name="swap-vertical" size={22} color={theme.colors.onSurface} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.alertsButton}
+            onPress={() => setShowAlertsDropdown(!showAlertsDropdown)}
+          >
+            <Icon name="notifications" size={24} color={theme.colors.onSurface} />
+            {noteAlerts > 0 && (
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>
+                  {noteAlerts > 99 ? '99+' : noteAlerts}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
       
+      {/* Sort Dropdown */}
+      {showSortDropdown && (
+        <View style={styles.sortDropdown}>
+          <View style={styles.sortDropdownContent}>
+            <View style={styles.sortHeader}>
+              <Icon name="swap-vertical" size={20} color={theme.colors.primary} />
+              <Text style={styles.sortTitle}>Sort Notes</Text>
+            </View>
+            
+            {[
+              { value: 'newest', label: 'Newest First', icon: 'time-outline' },
+              { value: 'oldest', label: 'Oldest First', icon: 'time' },
+              { value: 'mood', label: 'By Mood', icon: 'happy-outline' },
+              { value: 'shortest', label: 'Shortest First', icon: 'text-outline' },
+              { value: 'longest', label: 'Longest First', icon: 'document-text-outline' },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.sortOption,
+                  sortOption === option.value && styles.sortOptionActive
+                ]}
+                onPress={() => {
+                  setSortOption(option.value as any);
+                  setShowSortDropdown(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <Icon 
+                  name={option.icon} 
+                  size={18} 
+                  color={sortOption === option.value ? theme.colors.primary : theme.colors.onSurface} 
+                />
+                <Text style={[
+                  styles.sortOptionText,
+                  sortOption === option.value && styles.sortOptionTextActive
+                ]}>
+                  {option.label}
+                </Text>
+                {sortOption === option.value && (
+                  <Icon name="checkmark" size={18} color={theme.colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Note Alerts Dropdown */}
       {showAlertsDropdown && (
         <View style={styles.alertsDropdown}>
@@ -493,13 +604,12 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         >
           <View style={styles.sentNotesContent}>
             <View style={styles.sentNotesIcon}>
-              <Icon name="send" size={24} color={theme.colors.primary} />
+              <Icon name="send" size={18} color={theme.colors.primary} />
             </View>
             <View style={styles.sentNotesText}>
               <Text style={styles.sentNotesTitle}>Sent Notes</Text>
-              <Text style={styles.sentNotesSubtitle}>View your shared notes and their impact</Text>
             </View>
-            <Icon name="chevron-forward" size={20} color={theme.colors.onSurfaceVariant} />
+            <Icon name="chevron-forward" size={16} color={theme.colors.onSurfaceVariant} />
           </View>
         </TouchableOpacity>
       </View>
@@ -531,14 +641,14 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
-        ) : notes.length === 0 ? (
+        ) : sortedNotes.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>💭</Text>
             <Text style={styles.emptyText}>No Whispr notes yet</Text>
             <Text style={styles.emptySubtext}>Be the first to share your thoughts!</Text>
           </View>
         ) : (
-          notes.map(note => {
+          sortedNotes.map(note => {
             const expanded = expandedNotes.has(note.id);
             return (
               <TouchableOpacity
@@ -686,6 +796,16 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     marginTop: 2,
     fontSize: 12,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  sortButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
   alertsButton: {
     position: 'relative',
     padding: spacing.sm,
@@ -765,6 +885,52 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   clearAlertsButtonTextDisabled: {
     color: theme.colors.onSurfaceVariant,
   },
+  sortDropdown: {
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  sortDropdownContent: {
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+  },
+  sortHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    gap: spacing.sm,
+  },
+  sortTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    marginVertical: 2,
+    gap: spacing.sm,
+  },
+  sortOptionActive: {
+    backgroundColor: theme.colors.primaryContainer,
+  },
+  sortOptionText: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.onSurface,
+  },
+  sortOptionTextActive: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
   welcomeBanner: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
@@ -781,11 +947,12 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   },
   sentNotesSection: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.xs,
   },
   sentNotesCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...theme.shadows.sm,
@@ -793,12 +960,13 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   sentNotesContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   sentNotesIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.md,
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
     backgroundColor: theme.colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
@@ -808,10 +976,9 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     flex: 1,
   },
   sentNotesTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: theme.colors.onSurface,
-    marginBottom: 2,
   },
   sentNotesSubtitle: {
     fontSize: 12,

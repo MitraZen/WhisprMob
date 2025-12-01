@@ -702,19 +702,23 @@ class RealtimeService {
       // Invalidate notes cache
       QueryCache.invalidateWhisprNotes(this.userId || '');
       
-      // Show notification (works in both foreground and background)
-      // Notes are broadcast, so we show notifications for all relevant notes
+      // Show notification using batching service (groups multiple notes)
       try {
         const noteContent = note.content || 'New Whispr Note';
         const notificationKey = `note-${noteId}`;
         
         // Prevent duplicate notifications
         if (!this.recentNotifications.has(notificationKey)) {
-          console.log('🔔 Showing note notification:', { noteId, senderId });
+          console.log('📝 Adding note to batch:', { noteId, senderId });
           
-          await notificationService.showNoteNotification(
-            'New Whispr Note',
-            noteContent.length > 100 ? noteContent.substring(0, 100) + '...' : noteContent
+          // Use note batching service to group multiple notes
+          const { noteBatchingService } = await import('@/services/noteBatchingService');
+          // Note: sender name is not in the note object, would need to be fetched separately
+          // For now, we'll just use the senderId
+          noteBatchingService.addNoteToBatch(
+            noteId,
+            noteContent,
+            senderId
           );
           
           // Add to recent notifications to prevent duplicates
@@ -729,7 +733,7 @@ class RealtimeService {
           console.log('🔕 Duplicate note notification prevented:', notificationKey);
         }
       } catch (notificationError) {
-        console.error('❌ Error showing note notification:', notificationError);
+        console.error('❌ Error adding note to batch:', notificationError);
         // Don't throw - continue with cache invalidation
       }
       

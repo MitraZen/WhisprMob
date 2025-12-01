@@ -8,6 +8,7 @@ import {
   Animated,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import DeviceInfo from 'react-native-device-info';
@@ -15,6 +16,8 @@ import { spacing, borderRadius } from '@/utils/themes';
 import { useTheme } from '@/store/ThemeContext';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { useAuth } from '@/store/AuthContext';
+import { AdminService } from '@/services/adminService';
+import AdminAnalyticsPanel from '@/components/AdminAnalyticsPanel';
 
 interface SettingsHubScreenProps {
   onNavigate: (screen: string) => void;
@@ -27,12 +30,28 @@ const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user 
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
   const [appVersion, setAppVersion] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   
   const styles = createStyles(theme);
 
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
+    checkAdminStatus();
   }, []);
+
+  const checkAdminStatus = async () => {
+    try {
+      if (user?.id) {
+        const adminStatus = await AdminService.isUserAdmin(user.id);
+        setIsAdmin(adminStatus);
+        console.log('SettingsHubScreen: User admin status:', adminStatus);
+      }
+    } catch (error) {
+      console.error('Failed to check admin status:', error);
+      setIsAdmin(false);
+    }
+  };
 
   useEffect(() => {
     // Animate screen entrance
@@ -68,7 +87,8 @@ const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user 
     );
   };
 
-  const settingsOptions = [
+  // Base settings options (available to all users)
+  const baseSettingsOptions = [
     {
       id: 'profile',
       title: 'Profile Management',
@@ -94,6 +114,23 @@ const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user 
       color: '#dc2626'
     }
   ];
+
+  // Admin-only options
+  const adminOptions = [
+    {
+      id: 'analytics',
+      title: 'Analytics Dashboard',
+      subtitle: 'View user statistics, growth metrics & trending users',
+      icon: 'analytics-outline',
+      onPress: () => setShowAnalytics(true),
+      color: '#8b5cf6'
+    }
+  ];
+
+  // Combine settings options based on admin status
+  const settingsOptions = isAdmin
+    ? [...baseSettingsOptions, ...adminOptions]
+    : baseSettingsOptions;
 
   return (
     <Animated.View 
@@ -195,6 +232,16 @@ const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user 
       </ScrollView>
 
       <NavigationMenu currentScreen="settingsHub" onNavigate={onNavigate} />
+
+      {/* Analytics Dashboard Modal - Admin Only */}
+      <Modal
+        visible={showAnalytics}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAnalytics(false)}
+      >
+        <AdminAnalyticsPanel onClose={() => setShowAnalytics(false)} />
+      </Modal>
     </Animated.View>
   );
 };

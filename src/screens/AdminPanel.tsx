@@ -15,6 +15,7 @@ import { Picker } from '@react-native-picker/picker';
 import { theme, spacing } from '@/utils/theme';
 import { useAdmin } from '@/store/AdminContext';
 import Phase1PerformanceTest from '@/components/Phase1PerformanceTest';
+import AdminAnalyticsPanel from '@/components/AdminAnalyticsPanel';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -50,6 +51,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [adminPassword, setAdminPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showPerformanceTest, setShowPerformanceTest] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [testMessage, setTestMessage] = useState('Hello from Admin!');
   const [buddyList, setBuddyList] = useState<any[]>([]);
@@ -250,6 +252,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Analytics Section - Moved to Top for Easy Access */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>📊 Analytics Dashboard</Text>
+          <Text style={styles.sectionDescription}>
+            View comprehensive analytics including user statistics, growth metrics, and trending users.
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.analyticsButton]} 
+            onPress={() => setShowAnalytics(true)}
+          >
+            <Text style={styles.actionButtonText}>📊 View Analytics Dashboard</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Debug Controls */}
         <View style={styles.section}>
@@ -500,6 +517,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           <Phase1PerformanceTest />
         </View>
       </Modal>
+
+      {/* Analytics Dashboard Modal */}
+      <Modal
+        visible={showAnalytics}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAnalytics(false)}
+      >
+        <AdminAnalyticsPanel onClose={() => setShowAnalytics(false)} />
+      </Modal>
     </View>
   );
 };
@@ -638,6 +665,12 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     marginBottom: spacing.md,
   },
+  sectionDescription: {
+    fontSize: 14,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: spacing.md,
+    lineHeight: 20,
+  },
   controlRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -666,6 +699,9 @@ const styles = StyleSheet.create({
   },
   performanceTestButton: {
     backgroundColor: '#00d4aa', // Teal color for performance test
+  },
+  analyticsButton: {
+    backgroundColor: '#8b5cf6', // Purple color for analytics
   },
   dangerButton: {
     backgroundColor: '#ef4444',
