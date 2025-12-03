@@ -264,6 +264,11 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
         );
 
       case 'interests':
+        // ✅ CRITICAL FIX: Show interests from user_interests table (profileData.interests)
+        // AND interest tokens from user_profiles.interests field (interestTokens)
+        const hasInterestTokens = interestTokens.length > 0;
+        const hasUserInterests = profileData.interests && profileData.interests.length > 0;
+        
         // Group interest tokens by category
         const groupedTokens = interestTokens.reduce((acc, token) => {
           const category = token.category || 'Other';
@@ -293,12 +298,12 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
 
         return (
           <View style={styles.tabContent}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              Interests ({interestTokens.length})
-            </Text>
-            
-            {interestTokens.length > 0 ? (
+            {/* Show Interest Tokens (from user_profiles.interests) */}
+            {hasInterestTokens && (
               <>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                  Interest Tokens ({interestTokens.length})
+                </Text>
                 {Object.entries(groupedTokens).map(([category, tokens]) => (
                   <View key={category} style={styles.interestCategorySection}>
                     <View style={styles.interestCategoryHeader}>
@@ -325,25 +330,21 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
                     </View>
                   </View>
                 ))}
-                
-                {/* Also show legacy interests if any */}
-                {profileData.interests && profileData.interests.length > 0 && (
-                  <>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text, marginTop: 24 }]}>
-                      Additional Interests ({profileData.interests.length})
-                    </Text>
-                    {profileData.interests.map(renderInterestItem)}
-                  </>
-                )}
               </>
-            ) : profileData.interests && profileData.interests.length > 0 ? (
+            )}
+            
+            {/* Show User Interests (from user_interests table) */}
+            {hasUserInterests && (
               <>
-                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginTop: hasInterestTokens ? 24 : 0 }]}>
                   Interests ({profileData.interests.length})
                 </Text>
                 {profileData.interests.map(renderInterestItem)}
               </>
-            ) : (
+            )}
+            
+            {/* Show empty state if no interests at all */}
+            {!hasInterestTokens && !hasUserInterests && (
               <View style={styles.emptyState}>
                 <Text style={[styles.emptyStateText, { color: theme.colors.textSecondary }]}>
                   No interests added yet
@@ -503,6 +504,15 @@ export const EnhancedBuddyProfileView: React.FC<EnhancedBuddyProfileViewProps> =
                     {profileData.basicInfo.location}
                   </Text>
                 </View>
+                {/* ✅ CRITICAL FIX: Add Gender display */}
+                {profileData.basicInfo.gender && profileData.basicInfo.gender !== 'Not specified' && (
+                  <View style={styles.infoItem}>
+                    <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Gender</Text>
+                    <Text style={[styles.infoValue, { color: theme.colors.text }]}>
+                      {profileData.basicInfo.gender}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.infoItem}>
                   <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Joined</Text>
                   <Text style={[styles.infoValue, { color: theme.colors.text }]}>

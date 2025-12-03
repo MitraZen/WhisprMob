@@ -25,6 +25,8 @@ import { GENDER_OPTIONS } from '@/config/profile.config';
 import { calculateAge } from '@/utils/profile.utils';
 import { getUserCountry } from '@/utils/locationService';
 import { Toast, useToast } from '@/components/Toast';
+import { SUPABASE_CONFIG } from '@/config/env';
+import { useAuth } from '@/store/AuthContext';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -60,7 +62,13 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const { toast, showToast, hideToast } = useToast();
+  const { user } = useAuth();
+
+  // Check if username can be changed
+  const canChangeUsername = !profileData.hasChangedUsername;
 
   // Reset edited data when modal opens/closes or profileData changes
   useEffect(() => {
@@ -80,9 +88,51 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     try {
       setIsLoading(true);
 
-      // Don't allow username changes - remove it from the data to save
       const dataToSave = { ...editedData };
-      delete dataToSave.username; // Remove username from save data
+
+      // Handle username change if allowed
+      if (canChangeUsername && editedData.username && editedData.username !== profileData.username) {
+        // Validate username
+        if (editedData.username.length < 3) {
+          Alert.alert('Invalid Username', 'Username must be at least 3 characters long.');
+          setIsLoading(false);
+          return;
+        }
+
+        if (!/^[a-zA-Z0-9_]+$/.test(editedData.username)) {
+          Alert.alert('Invalid Username', 'Username can only contain letters, numbers, and underscores.');
+          setIsLoading(false);
+          return;
+        }
+
+        // Check if username is available
+        if (usernameAvailable === false) {
+          Alert.alert('Username Unavailable', 'This username is already taken. Please choose a different one.');
+          setIsLoading(false);
+          return;
+        }
+
+        // If still checking, wait a bit
+        if (usernameAvailable === null && isCheckingUsername) {
+          Alert.alert('Please Wait', 'Checking username availability...');
+          setIsLoading(false);
+          return;
+        }
+
+        // Username changed and is valid - include it in save data
+        // The updateProfileData function will set has_changed_username = true
+        dataToSave.username = editedData.username;
+        dataToSave.hasChangedUsername = true;
+        
+        // ✅ CRITICAL FIX: Also update display_name if it's still "Anonymous User"
+        // This ensures Profile screen shows the new username instead of "Anonymous User"
+        if (!profileData.displayName || profileData.displayName === 'Anonymous User') {
+          dataToSave.displayName = editedData.username;
+        }
+      } else {
+        // Username not changed or not allowed - remove it from save data
+        delete dataToSave.username;
+      }
 
       await onSave(dataToSave);
       showToast('Profile updated successfully!', 'success', 3000);
@@ -114,6 +164,62 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const handleTextChange = (field: keyof ProfileData, value: string) => {
     setEditedData(prev => ({ ...prev, [field]: value }));
+    
+    // Check username availability when username changes
+    if (field === 'username' && canChangeUsername) {
+      checkUsernameAvailability(value);
+    }
+  };
+
+  const checkUsernameAvailability = async (username: string) => {
+    // Don't check if username hasn't changed
+    if (username === profileData.username) {
+      setUsernameAvailable(null);
+      return;
+    }
+
+    // Validate username format
+    if (username.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+
+    // Validate username format (alphanumeric + underscore only)
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      setUsernameAvailable(false);
+      return;
+    }
+
+    setIsCheckingUsername(true);
+    try {
+      const response = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${encodeURIComponent(username)}`,
+        {
+          method: 'GET',
+          headers: {
+            'apikey': SUPABASE_CONFIG.anonKey,
+            'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        // Username is available if:
+        // 1. No users found with that username, OR
+        // 2. Only the current user has that username (user is keeping their current username)
+        const isAvailable = data.length === 0 || (data.length === 1 && user?.id && data[0].id === user.id);
+        setUsernameAvailable(isAvailable);
+      } else {
+        setUsernameAvailable(null);
+      }
+    } catch (error) {
+      console.error('Error checking username availability:', error);
+      setUsernameAvailable(null);
+    } finally {
+      setIsCheckingUsername(false);
+    }
   };
 
   const handleDateChange = (event: any, date?: Date) => {
@@ -240,16 +346,60 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               {/* Username */}
               <View style={styles.field}>
                 <Text style={styles.label}>Username</Text>
-                <TextInput
-                  style={[styles.input, styles.inputDisabled]}
-                  value={editedData.username}
-                  placeholder="Username"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                  editable={false}
-                />
-                <Text style={styles.disabledHint}>
-                  Username cannot be changed
-                </Text>
+                <View style={styles.usernameContainer}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      !canChangeUsername && styles.inputDisabled,
+                      usernameAvailable === false && styles.inputError,
+                      usernameAvailable === true && styles.inputSuccess,
+                    ]}
+                    value={editedData.username}
+                    placeholder="Username"
+                    placeholderTextColor={theme.colors.onSurfaceVariant}
+                    editable={canChangeUsername}
+                    onChangeText={value => handleTextChange('username', value)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {isCheckingUsername && (
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.primary}
+                      style={styles.usernameCheckIndicator}
+                    />
+                  )}
+                </View>
+                {canChangeUsername ? (
+                  <>
+                    {editedData.username && editedData.username !== profileData.username && (
+                      <>
+                        {usernameAvailable === true && (
+                          <Text style={styles.successHint}>
+                            ✓ Username is available
+                          </Text>
+                        )}
+                        {usernameAvailable === false && (
+                          <Text style={styles.errorHint}>
+                            ✗ Username is already taken
+                          </Text>
+                        )}
+                        {usernameAvailable === null && editedData.username.length >= 3 && (
+                          <Text style={styles.infoHint}>
+                            Checking availability...
+                          </Text>
+                        )}
+                      </>
+                    )}
+                    <Text style={styles.infoHint}>
+                      You can change your username once. Choose carefully.
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.disabledHint}>
+                    Username cannot be changed. You've already used your one-time change.
+                  </Text>
+                )}
               </View>
 
               {/* Bio */}
@@ -537,11 +687,45 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.surface,
       opacity: 0.6,
     },
+    inputError: {
+      borderColor: theme.colors.error || '#ef4444',
+      borderWidth: 2,
+    },
+    inputSuccess: {
+      borderColor: theme.colors.success || '#10b981',
+      borderWidth: 2,
+    },
+    usernameContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      position: 'relative',
+    },
+    usernameCheckIndicator: {
+      position: 'absolute',
+      right: spacing.md,
+    },
     disabledHint: {
       ...theme.typography.bodySmall,
       color: theme.colors.onSurfaceVariant,
       marginTop: spacing.xs,
       fontStyle: 'italic',
+    },
+    successHint: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.success || '#10b981',
+      marginTop: spacing.xs,
+      fontWeight: '500',
+    },
+    errorHint: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.error || '#ef4444',
+      marginTop: spacing.xs,
+      fontWeight: '500',
+    },
+    infoHint: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.onSurfaceVariant,
+      marginTop: spacing.xs,
     },
     textArea: {
       minHeight: 100,

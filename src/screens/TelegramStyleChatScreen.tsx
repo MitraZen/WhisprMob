@@ -29,6 +29,9 @@ import { CONVERSATION_STATES } from '@/config/profile.config';
 import { BuddiesService } from '@/services/buddiesService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessageSkeleton } from '@/components/ChatMessageSkeleton';
+import { useContentModeration } from '@/hooks/useContentModeration';
+import { ModerationWarning } from '@/components/ContentModeration/ModerationWarning';
+import { contentModerationService } from '@/services/contentModerationService';
 
 interface ChatScreenProps {
   onNavigate: (screen: string) => void;
@@ -428,6 +431,11 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const lastAutoScrollTimeRef = useRef<number>(0);
   const autoScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Content moderation
+  const { moderationResult, checkContent, clearResult } = useContentModeration({
+    debounceMs: 500,
+  });
+
   const maintainPositionConfig = useMemo(
     () => ({ minIndexForVisible: 0 }),
     [],
@@ -712,6 +720,9 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   // Emit typing status when user types
   const handleTextChange = (text: string) => {
     setNewMessage(text);
+    
+    // Check content for moderation violations
+    checkContent(text);
     
     const now = Date.now();
     // Throttle typing emissions to every 500ms
@@ -1150,8 +1161,20 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
   const sendMessage = async () => {
     if (!newMessage.trim() || !buddy?.id || !user?.id) return;
 
+    // Check content moderation before sending
+    const moderationCheck = await contentModerationService.checkContent(newMessage.trim());
+    if (!moderationCheck.isAllowed) {
+      Alert.alert(
+        'Message Blocked',
+        moderationCheck.message || 'This message violates community guidelines and cannot be sent.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     const messageContent = newMessage.trim();
     setNewMessage('');
+    clearResult(); // Clear moderation result after sending
     
     // Stop typing indicator when message is sent
     emitTypingStatus(false);
@@ -1821,6 +1844,19 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
         />
       )}
 
+      {/* Content Moderation Warning */}
+      {moderationResult && moderationResult.message && (
+        <ModerationWarning
+          result={moderationResult}
+          onDismiss={clearResult}
+          onEdit={() => {
+            // Focus on input to allow editing
+            // The user can already edit, this just clears the warning
+            clearResult();
+          }}
+        />
+      )}
+
       <View style={styles.inputContainer}>
         <TextInput
           style={[styles.textInput, { color: getTextInputColor(theme) }]}
@@ -1854,10 +1890,10 @@ export const TelegramStyleChatScreen: React.FC<ChatScreenProps> = ({
           style={[
             styles.sendButton,
             { backgroundColor: theme.colors.primary },
-            !newMessage.trim() && styles.sendButtonDisabled,
+            (!newMessage.trim() || (moderationResult && !moderationResult.isAllowed)) && styles.sendButtonDisabled,
           ]}
           onPress={sendMessage}
-          disabled={!newMessage.trim()}
+          disabled={!newMessage.trim() || (moderationResult && !moderationResult.isAllowed)}
         >
             <Icon name="send" size={20} color="white" />
         </TouchableOpacity>

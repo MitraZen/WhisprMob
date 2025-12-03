@@ -5,6 +5,9 @@ import { MoodType } from '@/types';
 import { NavigationMenu } from '@/components/NavigationMenu';
 import { BuddiesService } from '@/services/buddiesService';
 import { useAdmin } from '@/store/AdminContext';
+import { useContentModeration } from '@/hooks/useContentModeration';
+import { ModerationWarning } from '@/components/ContentModeration/ModerationWarning';
+import { contentModerationService } from '@/services/contentModerationService';
 
 interface WhisprComposeScreenProps {
   onNavigate: (screen: string) => void;
@@ -16,6 +19,11 @@ export const WhisprComposeScreen: React.FC<WhisprComposeScreenProps> = ({ onNavi
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [isSending, setIsSending] = useState(false);
   const { enableAdminMode } = useAdmin();
+
+  // Content moderation
+  const { moderationResult, checkContent, clearResult } = useContentModeration({
+    debounceMs: 500,
+  });
 
   const handleSendNote = async () => {
     if (!message.trim()) {
@@ -30,6 +38,17 @@ export const WhisprComposeScreen: React.FC<WhisprComposeScreenProps> = ({ onNavi
 
     if (!user?.id) {
       Alert.alert('Error', 'User not authenticated.');
+      return;
+    }
+
+    // Check content moderation before sending
+    const moderationCheck = await contentModerationService.checkContent(message.trim());
+    if (!moderationCheck.isAllowed) {
+      Alert.alert(
+        'Note Blocked',
+        moderationCheck.message || 'This note violates community guidelines and cannot be sent.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
@@ -127,7 +146,10 @@ export const WhisprComposeScreen: React.FC<WhisprComposeScreenProps> = ({ onNavi
               placeholder="What's on your mind? Share your thoughts with the world..."
               placeholderTextColor="#9ca3af"
               value={message}
-              onChangeText={setMessage}
+              onChangeText={(text) => {
+                setMessage(text);
+                checkContent(text);
+              }}
               multiline
               maxLength={500}
               editable={!isSending}
@@ -150,15 +172,26 @@ export const WhisprComposeScreen: React.FC<WhisprComposeScreenProps> = ({ onNavi
           </View>
         </View>
 
+        {/* Content Moderation Warning */}
+        {moderationResult && moderationResult.message && (
+          <ModerationWarning
+            result={moderationResult}
+            onDismiss={clearResult}
+            onEdit={() => {
+              clearResult();
+            }}
+          />
+        )}
+
         {/* Send Button */}
         <View style={styles.sendButtonContainer}>
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!message.trim() || !selectedMood || isSending) && styles.sendButtonDisabled
+              (!message.trim() || !selectedMood || isSending || (moderationResult && !moderationResult.isAllowed)) && styles.sendButtonDisabled
             ]}
             onPress={handleSendNote}
-            disabled={!message.trim() || !selectedMood || isSending}
+            disabled={!message.trim() || !selectedMood || isSending || (moderationResult && !moderationResult.isAllowed)}
           >
             {isSending ? (
               <ActivityIndicator color="#fff" size="small" />

@@ -85,9 +85,10 @@ class EnhancedBuddyProfileService {
       console.log('🔍 Fetching enhanced buddy profile for user:', userId);
 
       // Fetch basic profile info - user_profiles uses 'id' as primary key
+      // ✅ CRITICAL: Select all fields including gender and interests
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select('*, interests') // Explicitly include interests field
         .eq('id', userId)
         .single();
 
@@ -233,7 +234,21 @@ class EnhancedBuddyProfileService {
           })(),
           location:
             profileData.location || profileData.country || 'Not specified',
-          gender: profileData.gender || 'Not specified',
+          gender: (() => {
+            // Format gender properly using getGenderDisplay if available
+            const gender = profileData.gender || 'Not specified';
+            if (gender === 'Not specified' || !gender) return 'Not specified';
+            // Format common gender values
+            const genderMap: { [key: string]: string } = {
+              'male': 'Male',
+              'female': 'Female',
+              'other': 'Other',
+              'non-binary': 'Non-binary',
+              'prefer-not-to-say': 'Prefer not to say',
+              'prefer_not_to_say': 'Prefer not to say',
+            };
+            return genderMap[gender.toLowerCase()] || gender.charAt(0).toUpperCase() + gender.slice(1);
+          })(),
           mood: profileData.mood || 'happy',
           joinDate: new Date(profileData.created_at),
           isOnline: profileData.is_online || false,

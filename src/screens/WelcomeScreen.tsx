@@ -183,7 +183,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNavigate }) => {
         <View style={styles.actionSection}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => handleNavigate('signup')}
+            onPress={() => handleNavigate('signupOptions')}
             activeOpacity={0.8}
             disabled={isAnimating}
           >

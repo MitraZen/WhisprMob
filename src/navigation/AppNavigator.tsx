@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, BackHandler, Alert, DeviceEventEmitter } from 'react-native';
 import { theme, spacing } from '@/utils/theme';
 import { SignInScreen, SignUpScreen } from '@/screens/AuthScreens';
@@ -27,6 +27,34 @@ import WelcomeScreen from '@/screens/WelcomeScreen';
 import { PasswordResetScreen } from '@/screens/PasswordResetScreen';
 import { VerifyResetCodeScreen } from '@/screens/VerifyResetCodeScreen';
 import { SetNewPasswordScreen } from '@/screens/SetNewPasswordScreen';
+import { SignUpOptionsScreen } from '@/screens/SignUpOptionsScreen';
+
+// Wrapper component to manage loading state for Google Sign-In
+const SignUpOptionsScreenWithLoading: React.FC<{
+  onContinueWithEmail: () => void;
+  onContinueWithGoogle: () => Promise<void>;
+  onBackToWelcome: () => void;
+}> = ({ onContinueWithEmail, onContinueWithGoogle, onBackToWelcome }) => {
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await onContinueWithGoogle();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <SignUpOptionsScreen
+      onContinueWithEmail={onContinueWithEmail}
+      onContinueWithGoogle={handleGoogleSignIn}
+      onBackToWelcome={onBackToWelcome}
+      isLoading={isLoading}
+    />
+  );
+};
 
 const MoodSelectionScreen = ({ onNavigate }: { onNavigate: (screen: string) => void }) => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -129,7 +157,7 @@ const AppNavigator = () => {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentParams, setCurrentParams] = useState<any>(null);
   const [navigationHistory, setNavigationHistory] = useState<string[]>(['welcome']);
-  const { isAuthenticated, isLoading, isProfileComplete, user } = useAuth();
+  const { isAuthenticated, isLoading, isProfileComplete, user, setAuthenticatedUser } = useAuth();
   const { isAdminMode } = useAdmin();
   
   // Store reset flow state
@@ -547,6 +575,30 @@ const AppNavigator = () => {
             setNavigationHistory(['welcome']);
           }}
           onForgotPassword={() => navigate('passwordReset')}
+        />
+      );
+    case 'signupOptions':
+      return (
+        <SignUpOptionsScreenWithLoading
+          onContinueWithEmail={() => navigate('signup')}
+          onContinueWithGoogle={async () => {
+            try {
+              const { AuthService } = await import('@/services/authService');
+              const { user: googleUser, error } = await AuthService.signInWithGoogle();
+              if (error) {
+                Alert.alert('Google Sign-In Failed', error);
+              } else if (googleUser) {
+                await setAuthenticatedUser(googleUser);
+                navigate('notes');
+              }
+            } catch (err) {
+              Alert.alert('Error', 'An unexpected error occurred during Google sign-in');
+            }
+          }}
+          onBackToWelcome={() => {
+            setCurrentScreen('welcome');
+            setNavigationHistory(['welcome']);
+          }}
         />
       );
     case 'signup':

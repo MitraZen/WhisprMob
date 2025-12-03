@@ -5,6 +5,14 @@ import messaging from '@react-native-firebase/messaging';
 import PushNotification from 'react-native-push-notification';
 import App from './App';
 
+// Initialize Google Sign-In
+try {
+  const { initializeGoogleSignIn } = require('@/config/googleSignIn');
+  initializeGoogleSignIn();
+} catch (error) {
+  console.warn('⚠️ Google Sign-In not configured yet. Please follow GOOGLE_SIGNIN_SETUP_GUIDE.md');
+}
+
 // ⚠️ TEMPORARY: Suppress modular API deprecation warnings until migration to v22 modular API is complete
 // TODO: Migrate to modular API when React Native Firebase v22 stable is released
 // See: https://rnfirebase.io/migrating-to-v22

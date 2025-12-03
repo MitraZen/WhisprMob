@@ -29,7 +29,8 @@
   "include": [
     "src/**/*",
     "index.js",
-    "App.tsx"
+    "App.tsx",
+    "src/types/env.d.ts"
   ],
   "exclude": [
     "node_modules/**/*",

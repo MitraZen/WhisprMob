@@ -87,7 +87,7 @@ export interface UseProfileDataReturn {
 }
 
 export const useProfileData = (): UseProfileDataReturn => {
-  const { user } = useAuth();
+  const { user, setAuthenticatedUser } = useAuth();
   
   // ============================================================================
   // State Management
@@ -293,8 +293,19 @@ export const useProfileData = (): UseProfileDataReturn => {
     try {
       setIsLoading(true);
       
+      // ✅ CRITICAL FIX: Update display_name if username changed and display_name is still "Anonymous User"
+      // This ensures Profile screen shows the new username instead of "Anonymous User"
+      const dataToSave = { ...data };
+      if (data.username !== undefined && data.username !== profileData.username) {
+        // If display_name is still "Anonymous User", update it to match username
+        if (!profileData.displayName || profileData.displayName === 'Anonymous User') {
+          dataToSave.displayName = data.username;
+          console.log('✅ Updating display_name to match new username:', data.username);
+        }
+      }
+      
       // Transform data to database format
-      const dbData = transformToDatabaseFormat(data);
+      const dbData = transformToDatabaseFormat(dataToSave);
       
       // Update in database
       await BuddiesService.updateUserProfile(user.id, dbData);
@@ -303,7 +314,15 @@ export const useProfileData = (): UseProfileDataReturn => {
       QueryCache.invalidateUserProfile(user.id);
       
       // Update local state
-      setProfileData(prev => ({ ...prev, ...data }));
+      setProfileData(prev => ({ ...prev, ...dataToSave }));
+      
+      // ✅ CRITICAL FIX: Update AuthContext user if username changed
+      // This ensures Settings Hub and other screens show the updated username
+      if (data.username !== undefined && data.username !== user.username) {
+        const updatedUser = { ...user, username: data.username };
+        await setAuthenticatedUser(updatedUser);
+        console.log('✅ Updated AuthContext user with new username:', data.username);
+      }
       
       // Reload profile data to ensure consistency
       await loadProfileData();

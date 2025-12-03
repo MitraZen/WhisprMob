@@ -12,7 +12,28 @@
           "package_name": "com.whisprmobiletemp"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "333572988445-53574evjg1q57so7lgccdl6fs8m8c92g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.whisprmobiletemp",
+            "certificate_hash": "5d60c6152c4d0a1982b20944305d4ebb13bbea25"
+          }
+        },
+        {
+          "client_id": "333572988445-rfafi65n6eo6238upa24uf923jav7o3f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.whisprmobiletemp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "333572988445-e3n45j843hcmc8ck19bbqnhe5i9rthne.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCD19UlxHyf7vZZfTh53bWvjgCMfi-9HKc"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "333572988445-e3n45j843hcmc8ck19bbqnhe5i9rthne.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

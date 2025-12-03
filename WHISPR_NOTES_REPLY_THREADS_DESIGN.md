@@ -1,4 +1,4 @@
-# Whispr Notes - Reply Threads Design
+ # Whispr Notes - Reply Threads Design
 
 ## 🎯 **Why Replies Work for Whispr Notes**
 

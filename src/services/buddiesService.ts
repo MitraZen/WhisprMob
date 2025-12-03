@@ -48,6 +48,7 @@ export interface WhisprNote {
   expiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  replyCount?: number; // Number of replies to this note
 }
 
 export class BuddiesService {
@@ -671,9 +672,32 @@ export class BuddiesService {
       // This ensures notes don't disappear for other users when one user listens
       let data: any[];
       
-      // First, get all active notes
-      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=20`;
+      // First, get all active notes (explicitly select reply_count)
+      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&select=id,sender_id,content,mood,status,propagation_count,is_active,expires_at,created_at,updated_at,reply_count&order=created_at.desc&limit=20`;
       data = await this.request('GET', queryString) || [];
+      
+      // Lazy sync: Verify and fix reply counts (fire-and-forget, non-blocking)
+      // Only sync notes that have reply_count = 0 but might have replies (optimization)
+      if (data.length > 0) {
+        // Run sync asynchronously without blocking
+        setImmediate(async () => {
+          try {
+            const { supabase } = await import('@/config/supabase');
+            // Only sync notes with reply_count = 0 or NULL (likely candidates for sync)
+            const notesToSync = data
+              .filter((n: any) => !n.reply_count || n.reply_count === 0)
+              .map((n: any) => n.id);
+            
+            if (notesToSync.length > 0) {
+              await supabase.rpc('sync_notes_reply_counts', {
+                p_note_ids: notesToSync
+              });
+            }
+          } catch (syncErr) {
+            // Silent fail - don't log to avoid console spam
+          }
+        });
+      }
       
       // ✅ CRITICAL FIX: Always filter by note_recipients (even if RPC function exists)
       // This ensures notes user has already listened/rejected are excluded
@@ -718,7 +742,7 @@ export class BuddiesService {
       // Limit to 20 notes after filtering
       filteredData = filteredData.slice(0, 20);
 
-      return filteredData.map((note: any) => ({
+      const mappedNotes = filteredData.map((note: any) => ({
         id: note.id,
         senderId: note.sender_id,
         content: note.content,
@@ -729,7 +753,10 @@ export class BuddiesService {
         expiresAt: note.expires_at ? new Date(note.expires_at) : undefined,
         createdAt: new Date(note.created_at),
         updatedAt: new Date(note.updated_at),
+        replyCount: note.reply_count ?? 0, // Use nullish coalescing to handle NULL
       }));
+      
+      return mappedNotes;
     } catch (error) {
       // Handle network errors gracefully
       if (handleNetworkError(error, 'Fetching Whispr notes', true)) {
@@ -793,9 +820,32 @@ export class BuddiesService {
   static async getNewUserNotes(userId: string, limit: number = 5): Promise<WhisprNote[]> {
     try {
       // ✅ FIX: Use same filtering logic as getWhisprNotes
-      // First, get all active notes
-      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&order=created_at.desc&limit=${limit}`;
+      // First, get all active notes (explicitly select reply_count)
+      const queryString = `whispr_notes?status=eq.active&is_active=eq.true&sender_id=neq.${userId}&select=id,sender_id,content,mood,status,propagation_count,is_active,expires_at,created_at,updated_at,reply_count&order=created_at.desc&limit=${limit}`;
       let data = await this.request('GET', queryString) || [];
+      
+      // Lazy sync: Verify and fix reply counts (fire-and-forget, non-blocking)
+      // Only sync notes that have reply_count = 0 but might have replies (optimization)
+      if (data.length > 0) {
+        // Run sync asynchronously without blocking
+        setImmediate(async () => {
+          try {
+            const { supabase } = await import('@/config/supabase');
+            // Only sync notes with reply_count = 0 or NULL (likely candidates for sync)
+            const notesToSync = data
+              .filter((n: any) => !n.reply_count || n.reply_count === 0)
+              .map((n: any) => n.id);
+            
+            if (notesToSync.length > 0) {
+              await supabase.rpc('sync_notes_reply_counts', {
+                p_note_ids: notesToSync
+              });
+            }
+          } catch (syncErr) {
+            // Silent fail - don't log to avoid console spam
+          }
+        });
+      }
       
       // ✅ CRITICAL FIX: Always filter by note_recipients to exclude notes user has already listened/rejected
       try {
@@ -841,6 +891,7 @@ export class BuddiesService {
         expiresAt: note.expires_at ? new Date(note.expires_at) : undefined,
         createdAt: new Date(note.created_at),
         updatedAt: new Date(note.updated_at),
+        replyCount: note.reply_count || 0,
       }));
     } catch (error) {
       console.error('Error fetching new user notes:', error);
@@ -1878,6 +1929,208 @@ export class BuddiesService {
     } catch (error) {
       console.error('❌ Error syncing online status:', error);
       return false;
+    }
+  }
+
+  // ============================================
+  // WHISPR NOTE REPLIES METHODS
+  // ============================================
+
+  /**
+   * Get replies for a note
+   */
+  static async getNoteReplies(
+    noteId: string,
+    includeNested: boolean = true
+  ): Promise<any[]> {
+    try {
+      const { supabase } = await import('@/config/supabase');
+      
+      let query = supabase
+        .from('whispr_note_replies')
+        .select('*')
+        .eq('note_id', noteId)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true });
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('❌ Error fetching replies:', error);
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        return [];
+      }
+      
+      // Organize into thread structure
+      if (includeNested && data) {
+        return this.organizeRepliesIntoThreads(data);
+      }
+      
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error fetching replies:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Organize flat replies into nested thread structure
+   */
+  private static organizeRepliesIntoThreads(replies: any[]): any[] {
+    const replyMap = new Map<string, any>();
+    const rootReplies: any[] = [];
+    
+    // First pass: create map of all replies
+    replies.forEach(reply => {
+      replyMap.set(reply.id, { ...reply, nestedReplies: [] });
+    });
+    
+    // Second pass: organize into tree
+    replies.forEach(reply => {
+      const replyWithNested = replyMap.get(reply.id)!;
+      
+      if (reply.parent_reply_id) {
+        // This is a nested reply
+        const parent = replyMap.get(reply.parent_reply_id);
+        if (parent) {
+          if (!parent.nestedReplies) {
+            parent.nestedReplies = [];
+          }
+          parent.nestedReplies.push(replyWithNested);
+        }
+      } else {
+        // This is a root-level reply
+        rootReplies.push(replyWithNested);
+      }
+    });
+    
+    return rootReplies;
+  }
+  
+  /**
+   * Create a reply
+   */
+  static async createReply(data: {
+    note_id: string;
+    parent_reply_id?: string | null;
+    content: string;
+    is_anonymous?: boolean;
+    mood?: string | null;
+  }): Promise<any> {
+    try {
+      const { supabase } = await import('@/config/supabase');
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) throw new Error('User not authenticated');
+      
+      // Validate content
+      if (!data.content.trim() || data.content.length > 500) {
+        throw new Error('Invalid reply content');
+      }
+      
+      // Check if note exists and is active
+      const { data: note, error: noteError } = await supabase
+        .from('whispr_notes')
+        .select('id, status, is_active')
+        .eq('id', data.note_id)
+        .single();
+      
+      if (noteError || !note) {
+        throw new Error('Note not found');
+      }
+      
+      if (note.status !== 'active' || !note.is_active) {
+        throw new Error('Cannot reply to inactive note');
+      }
+      
+      // Create reply
+      const { data: reply, error: replyError } = await supabase
+        .from('whispr_note_replies')
+        .insert([{
+          note_id: data.note_id,
+          parent_reply_id: data.parent_reply_id || null,
+          user_id: user.id,
+          content: data.content.trim(),
+          is_anonymous: data.is_anonymous ?? true,
+          mood: data.mood || null
+        }])
+        .select()
+        .single();
+      
+      if (replyError) {
+        console.error('❌ Error creating reply:', replyError);
+        throw replyError;
+      }
+      
+      // Sync reply_count after creation (fire-and-forget, non-blocking)
+      // Trigger should handle it, but this ensures accuracy
+      setImmediate(async () => {
+        try {
+            await supabase.rpc('sync_note_reply_count', {
+              p_note_id: data.note_id
+            });
+        } catch (syncErr) {
+          // Silent fail
+        }
+      });
+      
+      return reply;
+    } catch (error) {
+      console.error('Error creating reply:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete a reply (soft delete)
+   */
+  static async deleteReply(replyId: string): Promise<void> {
+    try {
+      const { supabase } = await import('@/config/supabase');
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) throw new Error('User not authenticated');
+      
+      // Get note_id before deleting
+      const { data: reply, error: fetchError } = await supabase
+        .from('whispr_note_replies')
+        .select('note_id')
+        .eq('id', replyId)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      const noteId = reply?.note_id;
+      
+      // Delete the reply
+      const { error } = await supabase
+        .from('whispr_note_replies')
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString()
+        })
+        .eq('id', replyId)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Sync reply_count after deletion (fire-and-forget, non-blocking)
+      if (noteId) {
+        setImmediate(async () => {
+          try {
+            await supabase.rpc('sync_note_reply_count', {
+              p_note_id: noteId
+            });
+          } catch (syncErr) {
+            // Silent fail
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting reply:', error);
+      throw error;
     }
   }
 }

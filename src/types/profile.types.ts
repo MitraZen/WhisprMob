@@ -3,6 +3,7 @@
 export interface ProfileData {
     displayName: string;
     username: string;
+    hasChangedUsername?: boolean; // Track if user has changed username (one-time change allowed)
     bio: string;
     age: string;
     location: string;

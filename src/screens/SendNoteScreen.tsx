@@ -24,6 +24,9 @@ import { MoodType } from '@/types';
 import AIService, { AIEnhancementResult } from '@/services/aiService';
 import { Toast, useToast } from '@/components/Toast';
 import analytics from '@/services/analyticsService';
+import { useContentModeration } from '@/hooks/useContentModeration';
+import { ModerationWarning } from '@/components/ContentModeration/ModerationWarning';
+import { contentModerationService } from '@/services/contentModerationService';
 
 // Configuration interface
 interface SendNoteConfig {
@@ -99,6 +102,11 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({
   // Toast hook
   const { toast, showToast, hideToast } = useToast();
   
+  // Content moderation
+  const { moderationResult, checkContent, clearResult } = useContentModeration({
+    debounceMs: 500,
+  });
+  
   // Send button debouncing
   const sendButtonDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const lastSendTimeRef = useRef<number>(0);
@@ -121,8 +129,9 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({
   }, [selectedMood, finalConfig.allowEmptyMood]);
 
   const canSendNote = useMemo(() => {
-    return isContentValid && isMoodValid && !loading && noteContent.trim().length > 0;
-  }, [isContentValid, isMoodValid, loading, noteContent]);
+    const moderationBlocked = moderationResult && !moderationResult.isAllowed;
+    return isContentValid && isMoodValid && !loading && noteContent.trim().length > 0 && !moderationBlocked;
+  }, [isContentValid, isMoodValid, loading, noteContent, moderationResult]);
 
   const characterCountColor = useMemo(() => {
     const length = noteContent.length;
@@ -179,8 +188,10 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({
   const handleContentChange = useCallback((text: string) => {
     if (text.length <= (finalConfig.maxLength || 500)) {
       setNoteContent(text);
+      // Check content for moderation violations
+      checkContent(text);
     }
-  }, [finalConfig.maxLength]);
+  }, [finalConfig.maxLength, checkContent]);
 
   const handleMoodSelect = useCallback((mood: MoodType) => {
     if (!loading && !aiLoading) {
@@ -444,6 +455,17 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({
       return;
     }
 
+    // Check content moderation before sending
+    const moderationCheck = await contentModerationService.checkContent(noteContent.trim());
+    if (!moderationCheck.isAllowed) {
+      Alert.alert(
+        'Note Blocked',
+        moderationCheck.message || 'This note violates community guidelines and cannot be sent.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     // Track if AI was used
     const aiUsed = aiResult !== null && noteContent.trim() === aiResult.enhancedText;
 
@@ -616,6 +638,17 @@ const SendNoteScreen: React.FC<SendNoteScreenProps> = ({
               <Text style={styles.errorText}>
                 Message must be between {finalConfig.minLength} and {finalConfig.maxLength} characters
               </Text>
+            )}
+
+            {/* Content Moderation Warning */}
+            {moderationResult && moderationResult.message && (
+              <ModerationWarning
+                result={moderationResult}
+                onDismiss={clearResult}
+                onEdit={() => {
+                  clearResult();
+                }}
+              />
             )}
             
             {/* AI Enhancement Button */}

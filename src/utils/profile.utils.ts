@@ -352,6 +352,7 @@ export const transformProfileData = (dbData: any): ProfileData => {
   return {
     displayName: dbData.display_name || dbData.displayName || 'Anonymous User',
     username: dbData.username || 'anonymous',
+    hasChangedUsername: dbData.has_changed_username ?? false,
     bio: dbData.bio || 'No bio yet',
     age: calculateAgeDisplay(dbData.age || dbData.date_of_birth || dateOfBirth),
     location: dbData.location || 'Not specified',
@@ -397,6 +398,14 @@ export const transformToDatabaseFormat = (profileData: Partial<ProfileData>): an
   
   if (profileData.mood !== undefined) {
     dbData.mood = profileData.mood;
+  }
+
+  if (profileData.username !== undefined) {
+    dbData.username = profileData.username;
+  }
+
+  if (profileData.hasChangedUsername !== undefined) {
+    dbData.has_changed_username = profileData.hasChangedUsername;
   }
   
   if (profileData.dateOfBirth) {

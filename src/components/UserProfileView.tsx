@@ -5,6 +5,7 @@ import { BuddiesService } from '@/services/buddiesService';
 import { InterestToken } from '@/types/profile.types';
 import { DEFAULT_INTEREST_TOKENS } from '@/config/profile.config';
 import { supabase } from '@/config/supabase';
+import { getGenderDisplay } from '@/utils/profile.utils';
 
 interface UserProfileViewProps {
   visible: boolean;
@@ -73,7 +74,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             return 'Not specified';
           })(),
           location: profile.location || 'Not specified',
-          gender: profile.gender || 'Not specified',
+          gender: getGenderDisplay(profile.gender), // ✅ Format gender properly
           mood: profile.mood || 'neutral',
           joinDate: new Date(profile.created_at),
           isOnline: profile.is_online || false,

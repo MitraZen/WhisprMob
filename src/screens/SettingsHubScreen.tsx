@@ -24,9 +24,11 @@ interface SettingsHubScreenProps {
   user: any;
 }
 
-const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user }) => {
+const SettingsHubScreen: React.FC<SettingsHubScreenProps> = ({ onNavigate, user: userProp }) => {
   const { theme } = useTheme();
-  const { logout } = useAuth();
+  const { logout, user: userFromAuth } = useAuth();
+  // Use user from AuthContext (which updates when username changes) or fallback to prop
+  const user = userFromAuth || userProp;
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(30));
   const [appVersion, setAppVersion] = useState('');

@@ -13,6 +13,8 @@ import { CachedBuddiesService } from '@/services/cachedBuddiesService';
 import { useAdmin } from '@/store/AdminContext';
 import { WalkthroughManager } from '@/components/WalkthroughManager';
 import GradientBackground from '@/components/GradientBackground';
+import { ReplyThread } from '@/components/WhisprNotes/ReplyThread';
+import { ReplyComposer } from '@/components/WhisprNotes/ReplyComposer';
 
 interface WhisprNotesScreenProps {
   onNavigate: (screen: string) => void;
@@ -32,9 +34,15 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [noteAlerts, setNoteAlerts] = useState<number>(0);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [sortOption, setSortOption] = useState<'newest' | 'oldest' | 'mood' | 'shortest' | 'longest'>('newest');
+  const [sortOption, setSortOption] = useState<'newest' | 'oldest' | 'mood' | 'shortest' | 'longest' | 'most_replies' | 'least_replies'>('newest');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const { enableAdminMode } = useAdmin();
+
+  // Reply state
+  const [replyComposerVisible, setReplyComposerVisible] = useState(false);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [selectedParentReplyId, setSelectedParentReplyId] = useState<string | null>(null);
+  const [selectedNoteContent, setSelectedNoteContent] = useState<string>('');
 
   // Animation refs
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -205,6 +213,9 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         : await BuddiesService.getWhisprNotes(user.id);
       setNotes(notesData);
       setLastUpdated(new Date());
+      
+      // Sync is handled automatically in getWhisprNotes/getNewUserNotes
+      // No need to call it again here to avoid duplicate syncs
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notes');
     } finally {
@@ -277,6 +288,28 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
             return lengthB - lengthA;
           }
           // If same length, sort by newest first
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        });
+      
+      case 'most_replies':
+        return sorted.sort((a, b) => {
+          const repliesA = a.replyCount ?? 0;
+          const repliesB = b.replyCount ?? 0;
+          if (repliesA !== repliesB) {
+            return repliesB - repliesA; // Most replies first
+          }
+          // If same reply count, sort by newest first
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        });
+      
+      case 'least_replies':
+        return sorted.sort((a, b) => {
+          const repliesA = a.replyCount ?? 0;
+          const repliesB = b.replyCount ?? 0;
+          if (repliesA !== repliesB) {
+            return repliesA - repliesB; // Least replies first
+          }
+          // If same reply count, sort by newest first
           return b.createdAt.getTime() - a.createdAt.getTime();
         });
       
@@ -505,6 +538,8 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
               { value: 'mood', label: 'By Mood', icon: 'happy-outline' },
               { value: 'shortest', label: 'Shortest First', icon: 'text-outline' },
               { value: 'longest', label: 'Longest First', icon: 'document-text-outline' },
+              { value: 'most_replies', label: 'Most Replies', icon: 'chatbubbles' },
+              { value: 'least_replies', label: 'Least Replies', icon: 'chatbubble-outline' },
             ].map((option) => (
               <TouchableOpacity
                 key={option.value}
@@ -672,6 +707,18 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                 )}
                 <View style={styles.noteActions}>
                   <TouchableOpacity 
+                    style={[styles.actionButton, styles.replyButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
+                    onPress={() => {
+                      setSelectedNoteId(note.id);
+                      setSelectedParentReplyId(null);
+                      setSelectedNoteContent(note.content);
+                      setReplyComposerVisible(true);
+                    }}
+                    disabled={actionLoading.has(note.id)}
+                  >
+                    <Text style={styles.actionButtonText}>💬 Reply</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
                     style={[styles.actionButton, styles.listenButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
                     onPress={() => handleListen(note.id)}
                     disabled={actionLoading.has(note.id)}
@@ -694,11 +741,46 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                     )}
                   </TouchableOpacity>
                 </View>
+
+                {/* Reply Thread */}
+                <ReplyThread
+                  noteId={note.id}
+                  replyCount={note.replyCount ?? 0}
+                  currentUserId={user?.id}
+                  onReply={(parentReplyId) => {
+                    setSelectedNoteId(note.id);
+                    setSelectedParentReplyId(parentReplyId || null);
+                    setSelectedNoteContent(note.content);
+                    setReplyComposerVisible(true);
+                  }}
+                  onReplyDeleted={() => {
+                    // Reload notes to update reply count
+                    loadNotes();
+                  }}
+                />
               </TouchableOpacity>
             );
           })
         )}
       </ScrollView>
+
+      {/* Reply Composer Modal */}
+      <ReplyComposer
+        visible={replyComposerVisible}
+        noteId={selectedNoteId || ''}
+        parentReplyId={selectedParentReplyId}
+        noteContent={selectedNoteContent}
+        onClose={() => {
+          setReplyComposerVisible(false);
+          setSelectedNoteId(null);
+          setSelectedParentReplyId(null);
+          setSelectedNoteContent('');
+        }}
+        onReplyCreated={async () => {
+          // Reload notes to update reply count
+          await loadNotes();
+        }}
+      />
 
       {/* Demarcation Line */}
       <View style={styles.demarcationContainer}>
@@ -1013,6 +1095,11 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     padding: spacing.sm, 
     borderRadius: borderRadius.md,
     marginHorizontal: spacing.xs,
+  },
+  replyButton: {
+    backgroundColor: theme.colors.primary + '15',
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
   },
   listenButton: { 
     backgroundColor: theme.colors.success + '15',

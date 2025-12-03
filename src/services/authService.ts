@@ -600,6 +600,229 @@ export class AuthService {
     }
   }
 
+  // Sign in with Google using Google Identity Services
+  static async signInWithGoogle(): Promise<{ user: User | null; error: string | null }> {
+    try {
+      // Import Google Sign-In dynamically to avoid issues if package is not installed
+      let GoogleSignin;
+      try {
+        GoogleSignin = (await import('@react-native-google-signin/google-signin')).GoogleSignin;
+      } catch (importError) {
+        return { user: null, error: 'Google Sign-In is not configured. Please follow GOOGLE_SIGNIN_SETUP_GUIDE.md' };
+      }
+      
+      // Check if Google Sign-In is configured (not just initialized with placeholder)
+      const { GOOGLE_SIGNIN_CONFIG } = await import('@/config/googleSignIn');
+      
+      console.log('🔍 Google Sign-In Config Check:', {
+        webClientId: GOOGLE_SIGNIN_CONFIG.webClientId.substring(0, 50) + '...',
+        webClientIdLength: GOOGLE_SIGNIN_CONFIG.webClientId.length,
+      });
+      
+      if (GOOGLE_SIGNIN_CONFIG.webClientId.includes('YOUR_ANDROID_CLIENT_ID') || 
+          GOOGLE_SIGNIN_CONFIG.webClientId.includes('placeholder')) {
+        return { 
+          user: null, 
+          error: 'Google Sign-In is not configured. Please update .env file with your OAuth client ID from Google Cloud Console. See GOOGLE_SIGNIN_SETUP_GUIDE.md for instructions.' 
+        };
+      }
+      
+      console.log('🔍 Starting Google Sign-In with client ID:', GOOGLE_SIGNIN_CONFIG.webClientId.substring(0, 30) + '...');
+      
+      // Check if Google Play Services are available
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.log('✅ Google Play Services available');
+      
+      // Get user info from Google
+      console.log('🔍 Attempting Google Sign-In...');
+      const userInfo = await GoogleSignin.signIn();
+      
+      if (!userInfo.data || !userInfo.data.user) {
+        return { user: null, error: 'Google sign-in failed - no user data received' };
+      }
+
+      const googleUser = userInfo.data.user;
+      const idToken = userInfo.data.idToken;
+      
+      if (!idToken) {
+        return { user: null, error: 'Google sign-in failed - no ID token received' };
+      }
+
+      // Sign in with Supabase using the Google ID token via REST API
+      // Supabase doesn't have a direct signInWithIdToken method, so we use the REST API
+      const authResponse = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/token?grant_type=id_token`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          provider: 'google',
+          id_token: idToken,
+        }),
+      });
+
+      if (!authResponse.ok) {
+        const errorData = await authResponse.json().catch(() => ({}));
+        console.error('Supabase Google sign-in error:', errorData);
+        
+        // Provide helpful error message for audience mismatch
+        if (errorData.error_description && errorData.error_description.includes('audience')) {
+          const clientIdMatch = errorData.error_description.match(/\[([^\]]+)\]/);
+          const clientId = clientIdMatch ? clientIdMatch[1] : 'your Web client ID';
+          return { 
+            user: null, 
+            error: `Supabase configuration error: The Web client ID (${clientId}) is not authorized in Supabase. Please add it to Supabase Dashboard → Authentication → Providers → Google → Authorized Client IDs. See GOOGLE_SIGNIN_SETUP_GUIDE.md for details.` 
+          };
+        }
+        
+        return { user: null, error: errorData.msg || errorData.error_description || 'Failed to authenticate with Supabase' };
+      }
+
+      const authData = await authResponse.json();
+
+      if (!authData?.user) {
+        return { user: null, error: 'Authentication failed - no user data received' };
+      }
+
+      const userId = authData.user.id;
+      const userEmail = authData.user.email || googleUser.email || '';
+      const accessToken = authData.access_token;
+      const refreshToken = authData.refresh_token;
+
+      // Set Supabase session for RLS policies
+      if (accessToken && refreshToken) {
+        try {
+          const { supabase } = await import('@/config/supabase');
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          
+          if (sessionError) {
+            console.warn('⚠️ Failed to set Supabase session:', sessionError.message);
+          } else {
+            console.log('✅ Supabase session established successfully');
+          }
+        } catch (sessionError) {
+          console.error('❌ Error setting Supabase session:', sessionError);
+        }
+      }
+
+      // Check if user profile exists
+      const profileResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?id=eq.${userId}`, {
+        method: 'GET',
+        headers: this.getHeaders(accessToken),
+      });
+
+      let profile;
+      if (profileResponse.ok) {
+        const profiles = await profileResponse.json();
+        profile = profiles && profiles.length > 0 ? profiles[0] : null;
+      }
+
+      // If profile doesn't exist, create one
+      if (!profile) {
+        const anonymousId = `user_${userId.substring(0, 8)}`;
+        const username = googleUser.name?.toLowerCase().replace(/\s+/g, '_') || `user_${userId.substring(0, 8)}`;
+        
+        // Generate a unique username if it already exists
+        let finalUsername = username;
+        let usernameCheck = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/user_profiles?username=ilike.${finalUsername}`, {
+          method: 'GET',
+          headers: this.getHeaders(),
+        });
+        
+        if (usernameCheck.ok) {
+          const existing = await usernameCheck.json();
+          if (existing && existing.length > 0) {
+            finalUsername = `${username}_${Date.now().toString().slice(-6)}`;
+          }
+        }
+
+        const profileResult = await this.createUserProfileWithRetry({
+          id: userId,
+          email: userEmail,
+          username: finalUsername,
+          display_name: googleUser.name || finalUsername,
+          anonymous_id: anonymousId,
+          mood: 'happy', // Default mood for Google sign-in
+          is_online: true,
+          profile_completed: false,
+          avatar_url: googleUser.photo || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+        if (!profileResult.success) {
+          return { user: null, error: profileResult.error || 'Failed to create user profile' };
+        }
+
+        profile = Array.isArray(profileResult.profileData) 
+          ? profileResult.profileData[0] 
+          : profileResult.profileData;
+      }
+
+      // Create User object
+      const user: User = {
+        id: userId,
+        anonymousId: profile.anonymous_id,
+        mood: profile.mood || 'happy',
+        createdAt: new Date(profile.created_at),
+        lastSeen: new Date(profile.last_seen || profile.created_at),
+        email: userEmail,
+        username: profile.username,
+      };
+
+      // Update online status
+      if (accessToken) {
+        await this.updateOnlineStatus(userId, true, accessToken);
+      }
+
+      console.log('✅ Google sign-in successful');
+      return { user, error: null };
+    } catch (error: any) {
+      console.error('❌ Google sign-in error:', error);
+      console.error('❌ Error details:', {
+        code: error.code,
+        message: error.message,
+        error: error.toString(),
+      });
+      
+      // Handle specific Google Sign-In errors
+      if (error.code === 'SIGN_IN_CANCELLED') {
+        return { user: null, error: 'Sign-in was cancelled' };
+      } else if (error.code === 'IN_PROGRESS') {
+        return { user: null, error: 'Sign-in already in progress' };
+      } else if (error.code === 'PLAY_SERVICES_NOT_AVAILABLE') {
+        return { user: null, error: 'Google Play Services not available' };
+      } else if (error.code === 'DEVELOPER_ERROR' || error.message?.includes('DEVELOPER_ERROR')) {
+        // Provide detailed troubleshooting for DEVELOPER_ERROR
+        console.error('❌ DEVELOPER_ERROR - Common causes:');
+        console.error('   1. SHA-1 fingerprint not added to Google Cloud Console');
+        console.error('   2. Wrong OAuth client ID type (should be Android, not Web)');
+        console.error('   3. Package name mismatch');
+        console.error('   4. Changes not propagated yet (wait 5-10 minutes)');
+        console.error('   5. Using wrong client ID for the keystore type');
+        
+        return { 
+          user: null, 
+          error: 'Google Sign-In configuration error. Please verify:\n' +
+                 '1. SHA-1 fingerprint is added to Google Cloud Console\n' +
+                 '2. OAuth client ID is Android type (not Web)\n' +
+                 '3. Package name matches: com.whisprmobiletemp\n' +
+                 '4. Wait 5-10 minutes after adding SHA-1\n' +
+                 'See GOOGLE_SIGNIN_TROUBLESHOOTING_CHECKLIST.md for details'
+        };
+      } else if (error.message) {
+        return { user: null, error: error.message };
+      } else {
+        return { user: null, error: 'Google sign-in failed. Please try again.' };
+      }
+    }
+  }
+
   // Sign out
   static async signOut(): Promise<{ success: boolean; error: string | null }> {
     try {
@@ -955,14 +1178,20 @@ export class AuthService {
       console.log('🌐 Testing network connectivity...');
       
       // Test basic internet connectivity
+      // Use AbortController for timeout (fetch doesn't support timeout directly)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const testResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/`, {
         method: 'GET',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
           'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
         },
-        timeout: 10000, // 10 second timeout
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (testResponse.ok) {
         console.log('🌐 Network connectivity test passed');
