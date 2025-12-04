@@ -191,7 +191,43 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
       
     } catch (error) {
       console.error('Error initializing chat:', error);
-      Alert.alert('Error', 'Failed to initialize chat room');
+      
+      // ✅ RACE CONDITION FIX: Provide user-friendly error messages
+      let errorMessage = 'Failed to initialize chat room';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('duplicate key') || error.message.includes('whispr_chat_rooms_whispr_id_key')) {
+          // This should be handled by createChatRoom now, but just in case
+          errorMessage = 'Another user is joining this chat. Please try again.';
+        } else if (error.message.includes('Chat room is full')) {
+          errorMessage = 'This chat room is already full (2 people).';
+        } else if (error.message.includes('Active chat room already exists')) {
+          // Try to join instead
+          try {
+            const room = await AnonymousChatService.getChatRoom(whisprId);
+            if (room) {
+              await AnonymousChatService.joinChatRoom(room.id, user!.id);
+              setChatRoom(room);
+              await loadChatData(room.id);
+              AnonymousChatService.subscribeToChatRoom(
+                room.id,
+                user!.id,
+                handleNewMessage,
+                handleNewParticipant,
+                handleNewBuddyRequest
+              );
+              startPolling(room.id);
+              return; // Success - exit early
+            }
+          } catch (retryError) {
+            errorMessage = 'Chat room is full or unavailable.';
+          }
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
       onClose();
     } finally {
       setIsLoading(false);

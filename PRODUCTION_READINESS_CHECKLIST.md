@@ -27,6 +27,7 @@
 2. ✅ **`fix_notify_note_changes_null_sender.sql`** - Fixes notification trigger
 3. ⚠️ **`fix_reply_count_trigger.sql`** - **MUST RUN** - Fixes reply count trigger
 4. ⚠️ **`add_lazy_reply_count_sync.sql`** - **MUST RUN** - Adds sync functions
+5. ⚠️ **`enforce_2_participant_limit.sql`** - **MUST RUN** - Prevents race condition in chat rooms (3-user scenario)
 
 ### Migration Execution Order:
 ```sql
@@ -41,6 +42,9 @@ docs/database/migrations/fix_reply_count_trigger.sql
 
 -- 4. Run:
 docs/database/migrations/add_lazy_reply_count_sync.sql
+
+-- 5. Run:
+docs/database/migrations/enforce_2_participant_limit.sql
 ```
 
 ### Optional (For Maintenance):
@@ -114,6 +118,7 @@ These console.logs are **intentional** and help with debugging:
 2. fix_notify_note_changes_null_sender.sql
 3. fix_reply_count_trigger.sql
 4. add_lazy_reply_count_sync.sql
+5. enforce_2_participant_limit.sql (CRITICAL for chat room race condition)
 ```
 
 ### 2. Verify Migrations
@@ -151,8 +156,9 @@ WHERE proname LIKE '%reply%' OR proname LIKE '%sync%';
 - Debug logs cleaned up
 
 ### Database: ⚠️ REQUIRES MIGRATIONS
-- Must run 4 migration files before production
+- Must run 5 migration files before production
 - Migrations are idempotent (safe to run multiple times)
+- **CRITICAL**: `enforce_2_participant_limit.sql` prevents race condition allowing 3 users in chat
 
 ### Testing: ⚠️ RECOMMENDED
 - Functional testing recommended
@@ -164,10 +170,11 @@ WHERE proname LIKE '%reply%' OR proname LIKE '%sync%';
 **Status**: ✅ **READY FOR PRODUCTION** (after running migrations)
 
 **Action Items**:
-1. ✅ Run database migrations (4 files)
+1. ✅ Run database migrations (5 files) - **CRITICAL**: Include `enforce_2_participant_limit.sql`
 2. ✅ Test in staging environment
-3. ✅ Monitor performance after deployment
-4. ⚠️ Consider implementing logging service (future enhancement)
+3. ✅ Test chat room race condition (3 users clicking simultaneously)
+4. ✅ Monitor performance after deployment
+5. ⚠️ Consider implementing logging service (future enhancement)
 
 The code is production-ready, but **database migrations must be run first**!
 

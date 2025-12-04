@@ -77,7 +77,18 @@ class AnonymousChatService {
         console.log('⚠️ Chat room already exists:', existingRoom.id, 'is_active:', existingRoom.is_active);
         
         if (existingRoom.is_active) {
-          throw new Error('Active chat room already exists for this whispr');
+          // ✅ RACE CONDITION FIX: If room is active, try to join it instead of throwing error
+          console.log('⚠️ Active chat room exists, attempting to join:', existingRoom.id);
+          try {
+            await this.joinChatRoom(existingRoom.id, userId);
+            console.log('✅ Successfully joined existing active room');
+            return existingRoom;
+          } catch (joinError) {
+            if (joinError instanceof Error && joinError.message.includes('full')) {
+              throw joinError;
+            }
+            throw new Error('Active chat room already exists for this whispr');
+          }
         } else {
           // Reactivate the existing inactive room
           console.log('🔄 Reactivating existing chat room:', existingRoom.id);
@@ -105,6 +116,7 @@ class AnonymousChatService {
       }
 
       // Create new chat room
+      // ✅ RACE CONDITION FIX: Handle duplicate key error (23505) when two users try to create simultaneously
       const { data: chatRoom, error: roomError } = await supabase
         .from('whispr_chat_rooms')
         .insert({
@@ -116,8 +128,49 @@ class AnonymousChatService {
         .single();
 
       if (roomError) {
-        console.error('❌ Error creating chat room:', roomError);
-        throw new Error(`Failed to create chat room: ${roomError.message}`);
+        // ✅ RACE CONDITION FIX: Check if error is duplicate key violation (23505 = unique_violation)
+        if (roomError.code === '23505' || roomError.message?.includes('duplicate key') || roomError.message?.includes('whispr_chat_rooms_whispr_id_key')) {
+          console.log('⚠️ Race condition detected: Another user created the room simultaneously. Fetching existing room...');
+          
+          // ✅ RACE CONDITION FIX: Small delay to ensure the other transaction commits
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Fetch the room that was just created by the other user
+          const { data: existingRoom, error: fetchError } = await supabase
+            .from('whispr_chat_rooms')
+            .select('*')
+            .eq('whispr_id', whisprId)
+            .single();
+
+          if (fetchError) {
+            console.error('❌ Error fetching existing room after race condition:', fetchError);
+            throw new Error(`Failed to fetch existing room: ${fetchError.message}`);
+          }
+
+          if (!existingRoom) {
+            throw new Error('Room was created but could not be fetched');
+          }
+
+          console.log('✅ Found existing room created by another user:', existingRoom.id);
+          
+          // Try to join the existing room instead
+          try {
+            await this.joinChatRoom(existingRoom.id, userId);
+            console.log('✅ Successfully joined existing room after race condition');
+            return existingRoom;
+          } catch (joinError) {
+            // If join fails (e.g., room is full), throw the original error
+            if (joinError instanceof Error && joinError.message.includes('full')) {
+              throw joinError;
+            }
+            console.error('❌ Error joining room after race condition:', joinError);
+            throw new Error(`Failed to join existing room: ${joinError instanceof Error ? joinError.message : 'Unknown error'}`);
+          }
+        } else {
+          // Other errors - throw normally
+          console.error('❌ Error creating chat room:', roomError);
+          throw new Error(`Failed to create chat room: ${roomError.message}`);
+        }
       }
 
       // Add creator as first participant
@@ -175,6 +228,7 @@ class AnonymousChatService {
       const anonymousName = this.generateAnonymousName();
 
       // Add new participant
+      // ✅ RACE CONDITION FIX: Database trigger enforces limit, but we also check here for better error messages
       const { data: participant, error } = await supabase
         .from('whispr_chat_participants')
         .insert({
@@ -187,6 +241,10 @@ class AnonymousChatService {
         .single();
 
       if (error) {
+        // ✅ RACE CONDITION FIX: Handle database trigger error (P0001) or constraint violations
+        if (error.code === 'P0001' || error.message?.includes('Chat room is full') || error.message?.includes('full')) {
+          throw new Error('Chat room is full. Only 2 people can join a chat room.');
+        }
         throw new Error(`Failed to join chat room: ${error.message}`);
       }
 
