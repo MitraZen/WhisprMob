@@ -661,7 +661,62 @@ export class BuddiesService {
     }
   }
 
-  // Get Whispr notes for the current user
+  // Get user's own Whispr notes (notes sent by the user)
+  static async getMyWhisprNotes(userId: string): Promise<WhisprNote[]> {
+    try {
+      // Get all active notes sent by the user (explicitly select reply_count)
+      const queryString = `whispr_notes?sender_id=eq.${userId}&is_active=eq.true&select=id,sender_id,content,mood,status,propagation_count,is_active,expires_at,created_at,updated_at,reply_count&order=created_at.desc&limit=50`;
+      const data = await this.request('GET', queryString) || [];
+      
+      // Lazy sync: Verify and fix reply counts (fire-and-forget, non-blocking)
+      if (data.length > 0) {
+        setImmediate(async () => {
+          try {
+            const { supabase } = await import('@/config/supabase');
+            const notesToSync = data
+              .filter((n: any) => !n.reply_count || n.reply_count === 0)
+              .map((n: any) => n.id);
+            
+            if (notesToSync.length > 0) {
+              await supabase.rpc('sync_notes_reply_counts', {
+                p_note_ids: notesToSync
+              });
+            }
+          } catch (syncErr) {
+            // Silent fail
+          }
+        });
+      }
+
+      if (!data) {
+        return [];
+      }
+
+      const mappedNotes = data.map((note: any) => ({
+        id: note.id,
+        senderId: note.sender_id,
+        content: note.content,
+        mood: note.mood,
+        status: note.status,
+        propagationCount: note.propagation_count || 0,
+        isActive: note.is_active || false,
+        expiresAt: note.expires_at ? new Date(note.expires_at) : undefined,
+        createdAt: new Date(note.created_at),
+        updatedAt: new Date(note.updated_at),
+        replyCount: note.reply_count ?? 0,
+      }));
+      
+      return mappedNotes;
+    } catch (error) {
+      if (handleNetworkError(error, 'Fetching my Whispr notes', true)) {
+        return [];
+      }
+      console.error('Error fetching my Whispr notes:', error);
+      throw error;
+    }
+  }
+
+  // Get Whispr notes for the current user (notes from other users)
   static async getWhisprNotes(userId: string): Promise<WhisprNote[]> {
     try {
       // Get user's mood for mood-based filtering

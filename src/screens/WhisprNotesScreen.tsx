@@ -36,6 +36,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [sortOption, setSortOption] = useState<'newest' | 'oldest' | 'mood' | 'shortest' | 'longest' | 'most_replies' | 'least_replies'>('newest');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [activeTab, setActiveTab] = useState<'myFeed' | 'sentNotes'>('myFeed'); // Default to 'myFeed'
   const { enableAdminMode } = useAdmin();
 
   // Reply state
@@ -94,7 +95,7 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
   // Load notes
   useEffect(() => {
     if (user?.id) loadNotes();
-  }, [user?.id]);
+  }, [user?.id, activeTab]);
 
   // Listen for real-time updates from notification manager
   useEffect(() => {
@@ -205,16 +206,26 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
     
     setError(null);
     try {
-      const buddies = await BuddiesService.getBuddies(user.id);
-      const userIsNew = !buddies || buddies.length === 0;
-      setIsNewUser(userIsNew);
-      let notesData = userIsNew
-        ? await BuddiesService.getNewUserNotes(user.id, 5)
-        : await BuddiesService.getWhisprNotes(user.id);
+      let notesData: WhisprNote[];
+      
+      if (activeTab === 'sentNotes') {
+        // Load user's own notes
+        notesData = await BuddiesService.getMyWhisprNotes(user.id);
+        setIsNewUser(false); // Not applicable for "Sent Notes"
+      } else {
+        // Load notes from other users (default "My Feed" view)
+        const buddies = await BuddiesService.getBuddies(user.id);
+        const userIsNew = !buddies || buddies.length === 0;
+        setIsNewUser(userIsNew);
+        notesData = userIsNew
+          ? await BuddiesService.getNewUserNotes(user.id, 5)
+          : await BuddiesService.getWhisprNotes(user.id);
+      }
+      
       setNotes(notesData);
       setLastUpdated(new Date());
       
-      // Sync is handled automatically in getWhisprNotes/getNewUserNotes
+      // Sync is handled automatically in getWhisprNotes/getNewUserNotes/getMyWhisprNotes
       // No need to call it again here to avoid duplicate syncs
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notes');
@@ -621,33 +632,46 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
         </View>
       )}
 
-      {/* Welcome Banner for New Users */}
-      {isNewUser && (
+      {/* Tab Selector */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'myFeed' && styles.tabActive]}
+          onPress={() => setActiveTab('myFeed')}
+          activeOpacity={0.7}
+        >
+          <Icon 
+            name="home-outline" 
+            size={18} 
+            color={activeTab === 'myFeed' ? theme.colors.primary : theme.colors.onSurfaceVariant} 
+          />
+          <Text style={[styles.tabText, activeTab === 'myFeed' && styles.tabTextActive]}>
+            My Feed
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'sentNotes' && styles.tabActive]}
+          onPress={() => setActiveTab('sentNotes')}
+          activeOpacity={0.7}
+        >
+          <Icon 
+            name="send-outline" 
+            size={18} 
+            color={activeTab === 'sentNotes' ? theme.colors.primary : theme.colors.onSurfaceVariant} 
+          />
+          <Text style={[styles.tabText, activeTab === 'sentNotes' && styles.tabTextActive]}>
+            Sent Notes
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Welcome Banner for New Users (only in My Feed tab) */}
+      {activeTab === 'myFeed' && isNewUser && (
         <View style={styles.welcomeBanner}>
           <Text style={styles.welcomeBannerText}>
             🎉 Welcome! You're seeing a limited set of notes. Listen to discover more!
           </Text>
         </View>
       )}
-
-      {/* Sent Notes Section */}
-      <View style={styles.sentNotesSection}>
-        <TouchableOpacity 
-          style={styles.sentNotesCard}
-          onPress={() => onNavigate('sentNotes')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.sentNotesContent}>
-            <View style={styles.sentNotesIcon}>
-              <Icon name="send" size={18} color={theme.colors.primary} />
-            </View>
-            <View style={styles.sentNotesText}>
-              <Text style={styles.sentNotesTitle}>Sent Notes</Text>
-            </View>
-            <Icon name="chevron-forward" size={16} color={theme.colors.onSurfaceVariant} />
-          </View>
-        </TouchableOpacity>
-      </View>
 
       {/* Notes List */}
       <ScrollView 
@@ -678,9 +702,19 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
           </View>
         ) : sortedNotes.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>💭</Text>
-            <Text style={styles.emptyText}>No Whispr notes yet</Text>
-            <Text style={styles.emptySubtext}>Be the first to share your thoughts!</Text>
+            <Text style={styles.emptyIcon}>
+              {activeTab === 'sentNotes' ? '📝' : '💭'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {activeTab === 'sentNotes' 
+                ? 'No notes sent yet' 
+                : 'No Whispr notes yet'}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {activeTab === 'sentNotes'
+                ? 'Share your thoughts to see them here!'
+                : 'Be the first to share your thoughts!'}
+            </Text>
           </View>
         ) : (
           sortedNotes.map(note => {
@@ -718,28 +752,33 @@ export const WhisprNotesScreen: React.FC<WhisprNotesScreenProps> = ({ onNavigate
                   >
                     <Text style={styles.actionButtonText}>💬 Reply</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.listenButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
-                    onPress={() => handleListen(note.id)}
-                    disabled={actionLoading.has(note.id)}
-                  >
-                    {actionLoading.has(note.id) ? (
-                      <ActivityIndicator color={theme.colors.onSurface} size="small" />
-                    ) : (
-                      <Text style={styles.actionButtonText}>👂 Listen</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.rejectButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
-                    onPress={() => handleReject(note.id)}
-                    disabled={actionLoading.has(note.id)}
-                  >
-                    {actionLoading.has(note.id) ? (
-                      <ActivityIndicator color={theme.colors.onSurface} size="small" />
-                    ) : (
-                      <Text style={styles.actionButtonText}>❌ Reject</Text>
-                    )}
-                  </TouchableOpacity>
+                  {/* Only show Listen/Reject buttons in My Feed tab (not for user's own notes) */}
+                  {activeTab === 'myFeed' && (
+                    <>
+                      <TouchableOpacity 
+                        style={[styles.actionButton, styles.listenButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
+                        onPress={() => handleListen(note.id)}
+                        disabled={actionLoading.has(note.id)}
+                      >
+                        {actionLoading.has(note.id) ? (
+                          <ActivityIndicator color={theme.colors.onSurface} size="small" />
+                        ) : (
+                          <Text style={styles.actionButtonText}>👂 Listen</Text>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[styles.actionButton, styles.rejectButton, actionLoading.has(note.id) && styles.actionButtonDisabled]} 
+                        onPress={() => handleReject(note.id)}
+                        disabled={actionLoading.has(note.id)}
+                      >
+                        {actionLoading.has(note.id) ? (
+                          <ActivityIndicator color={theme.colors.onSurface} size="small" />
+                        ) : (
+                          <Text style={styles.actionButtonText}>❌ Reject</Text>
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
 
                 {/* Reply Thread */}
@@ -1027,44 +1066,38 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
-  sentNotesSection: {
+  tabContainer: {
+    flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    paddingTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    backgroundColor: isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.1)',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
-  sentNotesCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    ...theme.shadows.sm,
-  },
-  sentNotesContent: {
+  tab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: theme.colors.surfaceVariant,
+    gap: spacing.xs,
   },
-  sentNotesIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.sm,
-    backgroundColor: theme.colors.primary + '15',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
+  tabActive: {
+    backgroundColor: theme.colors.primaryContainer,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
   },
-  sentNotesText: {
-    flex: 1,
-  },
-  sentNotesTitle: {
+  tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: theme.colors.onSurface,
-  },
-  sentNotesSubtitle: {
-    fontSize: 12,
     color: theme.colors.onSurfaceVariant,
+  },
+  tabTextActive: {
+    color: theme.colors.primary,
   },
   notesContainer: { flex: 1, padding: spacing.md },
   noteCard: {
