@@ -22,7 +22,6 @@ import { supabase } from '@/config/supabase';
 import GradientBackground from '@/components/GradientBackground';
 
 type CountryFilter = 'regional' | 'global';
-type MoodFilter = 'all' | 'chill' | 'excited' | 'calm' | 'deep_thought' | 'melancholy' | 'playful';
 
 interface FilterConfig {
   label: string;
@@ -43,44 +42,6 @@ const COUNTRY_FILTER_CONFIG: Record<CountryFilter, FilterConfig> = {
   },
 };
 
-const MOOD_FILTER_CONFIG: Record<MoodFilter, FilterConfig> = {
-  'all': {
-    label: 'All',
-    icon: '✨',
-    description: 'All moods',
-  },
-  'chill': {
-    label: 'Chill',
-    icon: '😌',
-    description: 'Relaxed',
-  },
-  'excited': {
-    label: 'Excited',
-    icon: '🤩',
-    description: 'Energetic',
-  },
-  'calm': {
-    label: 'Calm',
-    icon: '🧘',
-    description: 'Serene',
-  },
-  'deep_thought': {
-    label: 'Deep',
-    icon: '🤔',
-    description: 'Thoughtful',
-  },
-  'melancholy': {
-    label: 'Melancholy',
-    icon: '😔',
-    description: 'Wistful',
-  },
-  'playful': {
-    label: 'Playful',
-    icon: '😄',
-    description: 'Fun',
-  },
-};
-
 interface LiveWhisprsScreenProps {
   onNavigate: (screen: string) => void;
 }
@@ -91,14 +52,12 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   const styles = createStyles(theme, isDark);
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [countryFilter, setCountryFilter] = useState<CountryFilter>('regional');
-  const [moodFilter, setMoodFilter] = useState<MoodFilter>('all');
   const [filterLoading, setFilterLoading] = useState(false);
   const [filterCounts, setFilterCounts] = useState<{ regional: number | string; global: number | string }>({
     regional: 0,
     global: 0,
   });
   const [whisprs, setWhisprs] = useState<TextWhispr[]>([]);
-  const [filteredWhisprs, setFilteredWhisprs] = useState<TextWhispr[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedWhisprForChat, setSelectedWhisprForChat] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +67,6 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   // Store user country and filter refs for real-time filtering
   const userCountryRef = useRef<string | null>(null);
   const countryFilterRef = useRef(countryFilter);
-  const moodFilterRef = useRef(moodFilter);
 
   const handleRecordWhispr = () => {
     setShowRecordModal(true);
@@ -143,13 +101,6 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       console.log(`🌍 Fetched ${filteredWhisprs.length} whisprs with ${countryFilter} filter`);
       setWhisprs(filteredWhisprs);
       
-      // Apply mood filter (will be handled by useEffect)
-      if (moodFilter === 'all') {
-        setFilteredWhisprs(filteredWhisprs);
-      } else {
-        setFilteredWhisprs(filteredWhisprs.filter(w => w.mood === moodFilter));
-      }
-      
       // Update counts
       const regionalCount = filteredWhisprs.filter(w => {
         // Count regional whisprs (would need country check, simplified here)
@@ -163,12 +114,11 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       console.error('Error loading whisprs:', error);
       setError(error instanceof Error ? error.message : 'Failed to load whisprs');
       setWhisprs([]);
-      setFilteredWhisprs([]);
     } finally {
       setLoading(false);
       setFilterLoading(false);
     }
-  }, [countryFilter, moodFilter, user]);
+  }, [countryFilter, user]);
 
   // Fetch user country on mount
   useEffect(() => {
@@ -196,16 +146,6 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   useEffect(() => {
     countryFilterRef.current = countryFilter;
   }, [countryFilter]);
-
-  useEffect(() => {
-    moodFilterRef.current = moodFilter;
-    // Apply mood filter when mood filter changes
-    if (moodFilter === 'all') {
-      setFilteredWhisprs(whisprs);
-    } else {
-      setFilteredWhisprs(whisprs.filter(w => w.mood === moodFilter));
-    }
-  }, [moodFilter, whisprs]);
 
   // Load whisprs on mount and filter change
   useEffect(() => {
@@ -273,19 +213,20 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
             user_id: newWhispr.user_id,
           };
 
+          // Check if whispr has full chat room before adding
+          const AnonymousChatService = (await import('@/services/anonymousChatService')).default;
+          const isFull = await AnonymousChatService.isWhisprChatFull(textWhispr.id);
+          
+          if (isFull) {
+            console.log(`🚫 Filtered out new whispr (chat room full): ${textWhispr.id}`);
+            return;
+          }
+
           // Add to beginning of list (newest first)
           setWhisprs(prev => {
             const exists = prev.some(w => w.id === textWhispr.id);
             if (exists) return prev;
-            const updated = [textWhispr, ...prev];
-            // Apply mood filter to updated list
-            const currentMoodFilter = moodFilterRef.current;
-            if (currentMoodFilter === 'all') {
-              setFilteredWhisprs(updated);
-            } else {
-              setFilteredWhisprs(updated.filter(w => w.mood === currentMoodFilter));
-            }
-            return updated;
+            return [textWhispr, ...prev];
           });
         }
       )
@@ -303,7 +244,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
           setWhisprs(prev => {
             const index = prev.findIndex(w => w.id === updatedWhispr.id);
             
-            // Remove if expired
+            // Remove if expired or if chat room is full (check async)
             const isExpired = new Date(updatedWhispr.expires_at) <= new Date();
             if (isExpired) {
               if (index >= 0) {
@@ -329,13 +270,6 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
 
             const newList = [...prev];
             newList[index] = textWhispr;
-            // Apply mood filter to updated list
-            const currentMoodFilter = moodFilterRef.current;
-            if (currentMoodFilter === 'all') {
-              setFilteredWhisprs(newList);
-            } else {
-              setFilteredWhisprs(newList.filter(w => w.mood === currentMoodFilter));
-            }
             return newList;
           });
         }
@@ -350,25 +284,48 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
         (payload) => {
           console.log('🗑️ Whispr deleted:', payload.old);
           const deletedId = payload.old.id;
-          setWhisprs(prev => {
-            const filtered = prev.filter(w => w.id !== deletedId);
-            // Apply mood filter to updated list
-            const currentMoodFilter = moodFilterRef.current;
-            if (currentMoodFilter === 'all') {
-              setFilteredWhisprs(filtered);
-            } else {
-              setFilteredWhisprs(filtered.filter(w => w.mood === currentMoodFilter));
-            }
-            return filtered;
-          });
+          setWhisprs(prev => prev.filter(w => w.id !== deletedId));
         }
       )
       .subscribe((status) => {
         console.log('📡 Whisprs subscription status:', status);
       });
 
+      // Subscribe to chat room updates to detect when rooms become full or inactive
+      const chatRoomChannel = supabase
+        .channel('whispr-chat-rooms-updates')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'whispr_chat_rooms'
+          },
+          async (payload) => {
+            const updatedRoom = payload.new as any;
+            console.log('🔄 Chat room updated:', updatedRoom);
+            
+            // If room became inactive, remove the whispr bubble
+            if (updatedRoom.is_active === false) {
+              setWhisprs(prev => prev.filter(w => w.id !== updatedRoom.whispr_id));
+              return;
+            }
+            
+            // Check if room became full (2 participants)
+            const AnonymousChatService = (await import('@/services/anonymousChatService')).default;
+            const isFull = await AnonymousChatService.isWhisprChatFull(updatedRoom.whispr_id);
+            if (isFull) {
+              setWhisprs(prev => prev.filter(w => w.id !== updatedRoom.whispr_id));
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Chat rooms subscription status:', status);
+        });
+
     return () => {
       channel.unsubscribe();
+      chatRoomChannel.unsubscribe();
     };
   }, [user]);
 
@@ -410,7 +367,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
         useNativeDriver: true,
       }),
     ]).start();
-  }, [countryFilter, moodFilter, fadeAnim]);
+  }, [countryFilter, fadeAnim]);
 
   // Cleanup debounce timer on unmount
   React.useEffect(() => {
@@ -515,48 +472,6 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
           })}
         </View>
 
-        {/* Mood Filter - Compact Horizontal Scroll */}
-        <View style={styles.moodFilterContainerCompact}>
-          {(['all', 'chill', 'excited', 'calm', 'deep_thought', 'melancholy', 'playful'] as MoodFilter[]).map((filter) => {
-            const config = MOOD_FILTER_CONFIG[filter];
-            const isSelected = moodFilter === filter;
-            
-            return (
-              <TouchableOpacity
-                key={filter}
-                style={[
-                  styles.moodFilterButtonCompact,
-                  {
-                    backgroundColor: isSelected 
-                      ? theme.colors.primary 
-                      : (isDark ? 'rgba(51, 65, 85, 0.8)' : 'rgba(255, 255, 255, 0.1)'),
-                    borderColor: isSelected 
-                      ? theme.colors.primary 
-                      : theme.colors.border,
-                  }
-                ]}
-                onPress={() => setMoodFilter(filter)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.moodFilterIconCompact}>{config.icon}</Text>
-                {filter === 'all' && (
-                  <Text
-                    style={[
-                      styles.moodFilterTextCompact,
-                      {
-                        color: isSelected 
-                          ? theme.colors.surface 
-                          : theme.colors.text,
-                      }
-                    ]}
-                  >
-                    {config.label}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
       </View>
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
@@ -565,13 +480,13 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
             <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={styles.loadingText}>Loading whispers...</Text>
           </View>
-        ) : (
-          <WhisperWavesCanvas
-            whisprs={filteredWhisprs}
-            onWhisprPress={handleWhisprPress}
-            currentUserId={user?.id}
-          />
-        )}
+         ) : (
+           <WhisperWavesCanvas
+             whisprs={whisprs}
+             onWhisprPress={handleWhisprPress}
+             currentUserId={user?.id}
+           />
+         )}
       </Animated.View>
 
       {/* Floating Create Button */}
@@ -738,53 +653,6 @@ const createStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     opacity: 0.8,
-  },
-  moodFilterContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
-  },
-  moodFilterContainerCompact: {
-    flexDirection: 'row',
-    gap: 4,
-    alignItems: 'center',
-  },
-  moodFilterButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    minWidth: 70,
-    justifyContent: 'center',
-  },
-  moodFilterButtonCompact: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    minWidth: 40,
-    justifyContent: 'center',
-  },
-  moodFilterIcon: {
-    fontSize: 16,
-  },
-  moodFilterIconCompact: {
-    fontSize: 18,
-  },
-  moodFilterText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  moodFilterTextCompact: {
-    fontSize: 10,
-    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

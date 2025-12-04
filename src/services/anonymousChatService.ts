@@ -323,6 +323,90 @@ class AnonymousChatService {
   }
 
   /**
+   * Check if a whispr has an active chat room with 2 participants (full)
+   */
+  async isWhisprChatFull(whisprId: string): Promise<boolean> {
+    try {
+      const { data: chatRoom, error: roomError } = await supabase
+        .from('whispr_chat_rooms')
+        .select('id')
+        .eq('whispr_id', whisprId)
+        .eq('is_active', true)
+        .gt('expires_at', new Date().toISOString())
+        .single();
+
+      if (roomError || !chatRoom) {
+        return false; // No active room = not full
+      }
+
+      // Check participant count
+      const { data: participants, error: participantError } = await supabase
+        .from('whispr_chat_participants')
+        .select('id')
+        .eq('chat_room_id', chatRoom.id)
+        .eq('is_active', true);
+
+      if (participantError) {
+        console.error('❌ Error checking participant count:', participantError);
+        return false;
+      }
+
+      return participants && participants.length >= 2;
+    } catch (error) {
+      console.error('❌ Error checking if whispr chat is full:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Leave chat room (deactivate participant)
+   */
+  async leaveChatRoom(chatRoomId: string, userId: string): Promise<void> {
+    try {
+      console.log('👋 Leaving chat room:', chatRoomId, 'user:', userId);
+
+      // Deactivate participant
+      const { error: participantError } = await supabase
+        .from('whispr_chat_participants')
+        .update({ is_active: false })
+        .eq('chat_room_id', chatRoomId)
+        .eq('user_id', userId);
+
+      if (participantError) {
+        throw new Error(`Failed to leave chat room: ${participantError.message}`);
+      }
+
+      // Check if room should be deactivated (no active participants left)
+      const { data: activeParticipants, error: checkError } = await supabase
+        .from('whispr_chat_participants')
+        .select('id')
+        .eq('chat_room_id', chatRoomId)
+        .eq('is_active', true);
+
+      if (checkError) {
+        console.error('❌ Error checking active participants:', checkError);
+      } else if (!activeParticipants || activeParticipants.length === 0) {
+        // No active participants left, deactivate the room
+        const { error: roomError } = await supabase
+          .from('whispr_chat_rooms')
+          .update({ is_active: false })
+          .eq('id', chatRoomId);
+
+        if (roomError) {
+          console.error('❌ Error deactivating chat room:', roomError);
+        } else {
+          console.log('✅ Chat room deactivated (no active participants)');
+        }
+      }
+
+      console.log('✅ Successfully left chat room');
+    } catch (error) {
+      console.error('❌ Error leaving chat room:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Check if two users have already chatted in a closed room for this whispr
    */
   async haveUsersChattedBefore(whisprId: string, userId1: string, userId2: string): Promise<boolean> {

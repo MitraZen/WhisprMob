@@ -498,6 +498,18 @@ class NotificationManagerClass implements NotificationManager {
 
     try {
       const notes = await BuddiesService.getWhisprNotes(this.userId);
+      
+      // ✅ FIX: Initialize lastNoteIds on first run to prevent old notes from triggering notifications
+      if (this.lastNoteIds.length === 0) {
+        // First time checking - mark all existing notes as "seen" to prevent notifications
+        this.lastNoteIds = notes
+          .filter(note => note.senderId !== this.userId)
+          .slice(-50)
+          .map(note => note.id);
+        console.log(`📝 Initialized lastNoteIds with ${this.lastNoteIds.length} existing notes (preventing old note notifications)`);
+        return; // Don't send notifications for existing notes on first run
+      }
+      
       const newNotes = notes.filter(note => 
         note.senderId !== this.userId && 
         !this.lastNoteIds.includes(note.id)

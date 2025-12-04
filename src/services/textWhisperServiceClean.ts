@@ -1,4 +1,5 @@
 import { supabase } from '@/config/supabase';
+import AnonymousChatService from './anonymousChatService';
 
 export interface TextWhispr {
   id: string;
@@ -201,8 +202,17 @@ class TextWhisperService {
             user_id: w.user_id // Include user_id for counting
           }));
 
-        console.log(`🌍 Regional filter: ${whisprsData.length} total → ${filteredWhisprs.length} from ${userCountry}`);
-        return filteredWhisprs;
+        // Filter out whisprs with full chat rooms (2 participants)
+        const availableWhisprs = await Promise.all(
+          filteredWhisprs.map(async (whispr) => {
+            const isFull = await AnonymousChatService.isWhisprChatFull(whispr.id);
+            return isFull ? null : whispr;
+          })
+        );
+
+        const finalWhisprs = availableWhisprs.filter((w): w is TextWhispr => w !== null);
+        console.log(`🌍 Regional filter: ${whisprsData.length} total → ${filteredWhisprs.length} from ${userCountry} → ${finalWhisprs.length} available (excluded ${filteredWhisprs.length - finalWhisprs.length} full chats)`);
+        return finalWhisprs;
       } else {
         // Global filter: show all whisprs
         const { data: whisprsData, error: whisprsError } = await query.limit(limit);
@@ -229,8 +239,17 @@ class TextWhisperService {
           user_id: w.user_id // Include user_id for counting
         }));
 
-        console.log(`🌍 Global filter: ${whisprs.length} whisprs from all countries`);
-        return whisprs;
+        // Filter out whisprs with full chat rooms (2 participants)
+        const availableWhisprs = await Promise.all(
+          whisprs.map(async (whispr) => {
+            const isFull = await AnonymousChatService.isWhisprChatFull(whispr.id);
+            return isFull ? null : whispr;
+          })
+        );
+
+        const finalWhisprs = availableWhisprs.filter((w): w is TextWhispr => w !== null);
+        console.log(`🌍 Global filter: ${whisprs.length} whisprs from all countries → ${finalWhisprs.length} available (excluded ${whisprs.length - finalWhisprs.length} full chats)`);
+        return finalWhisprs;
       }
     } catch (error) {
       console.error('❌ Error in getWhisprsByCountry:', error);

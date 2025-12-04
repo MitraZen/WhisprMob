@@ -44,6 +44,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
   const [buddyRequests, setBuddyRequests] = useState<BuddyRequest[]>([]);
   const [showProfileView, setShowProfileView] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<ChatParticipant | null>(null);
+  const [isChatDisabled, setIsChatDisabled] = useState(false); // True when other participant left
 
   // Check buddy status for participants when they actually change
   useEffect(() => {
@@ -267,6 +268,10 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
         // Check for new participants by comparing actual participant IDs
         const hasNewParticipants = participantsData.some(p => !knownParticipantIdsRef.current.has(p.id));
         
+        // Check if participant left (fewer active participants than before)
+        const activeParticipants = participantsData.filter(p => p.is_active);
+        const otherParticipantLeft = activeParticipants.length === 1 && activeParticipants[0].user_id === user!.id;
+        
         if (hasNewParticipants) {
           // Find truly new participants BEFORE updating state
           const newParticipants = participantsData.filter(participant => 
@@ -277,6 +282,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
           setParticipants(participantsData);
           setKnownParticipantIds(currentParticipantIds);
           knownParticipantIdsRef.current = currentParticipantIds;
+          setIsChatDisabled(false); // Chat is active when new participant joins
           
           // Show notifications for new participants
           newParticipants.forEach(participant => {
@@ -291,6 +297,16 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
           setParticipants(participantsData);
           setKnownParticipantIds(currentParticipantIds);
           knownParticipantIdsRef.current = currentParticipantIds;
+          setIsChatDisabled(otherParticipantLeft); // Update disabled state
+          
+          // Show notification if other participant left
+          if (otherParticipantLeft && !isChatDisabled) {
+            Alert.alert(
+              'Participant Left',
+              'The other participant has left the chat. You can only exit now.',
+              [{ text: 'OK' }]
+            );
+          }
         }
         
       } catch (error) {
@@ -313,16 +329,26 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
         AnonymousChatService.getChatMessages(roomId)
       ]);
       
+      // Sort messages by created_at ascending (oldest first) so User B sees User A's messages at top
+      const sortedMessages = [...messagesData].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      
       setParticipants(participantsData);
-      setMessages(messagesData);
+      setMessages(sortedMessages);
+      
+      // Check if chat should be disabled (only 1 active participant = other user left)
+      const activeParticipants = participantsData.filter(p => p.is_active);
+      const otherParticipantLeft = activeParticipants.length === 1 && activeParticipants[0].user_id === user!.id;
+      setIsChatDisabled(otherParticipantLeft);
       
       // Set initial counts for polling
-      setLastMessageCount(messagesData.length);
+      setLastMessageCount(sortedMessages.length);
       setLastParticipantCount(participantsData.length);
       
       // Initialize known participants and messages sets
       const participantIds = new Set(participantsData.map(p => p.id));
-      const messageIds = new Set(messagesData.map(m => m.id));
+      const messageIds = new Set(sortedMessages.map(m => m.id));
       
       setKnownParticipantIds(participantIds);
       setLastMessageIds(messageIds);
@@ -465,20 +491,16 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
     return `${count} people`;
   };
 
-  // Close chat room
-  const handleCloseChat = async () => {
+  // Leave chat room
+  const handleLeaveChat = async () => {
     if (!chatRoom || !user) return;
     
     try {
-      await AnonymousChatService.closeChatRoom(chatRoom.id, user.id);
-      Alert.alert(
-        'Chat Closed',
-        'This chat room has been closed. You cannot rejoin this conversation.',
-        [{ text: 'OK', onPress: onClose }]
-      );
+      await AnonymousChatService.leaveChatRoom(chatRoom.id, user.id);
+      onClose(); // Close modal after leaving
     } catch (error) {
-      console.error('Error closing chat:', error);
-      Alert.alert('Error', 'Failed to close chat room');
+      console.error('Error leaving chat:', error);
+      Alert.alert('Error', 'Failed to leave chat room');
     }
   };
 
@@ -740,15 +762,27 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
           </View>
         )}
 
-        {/* Close Chat Button - Only show when 2 people are in the room */}
-        {isChatRoomAtCapacity() && (
+        {/* Disabled Chat Warning - Show when other participant left */}
+        {isChatDisabled && (
+          <View style={[styles.disabledChatWarning, { backgroundColor: theme.colors.error + '20' }]}>
+            <Icon name="alert-circle-outline" size={16} color={theme.colors.error} />
+            <Text style={[styles.disabledChatWarningText, { color: theme.colors.error }]}>
+              The other participant has left. You can only exit the chat.
+            </Text>
+          </View>
+        )}
+
+        {/* Leave Chat Button - Show when chat is disabled or at capacity */}
+        {(isChatDisabled || isChatRoomAtCapacity()) && (
           <View style={styles.closeChatContainer}>
             <TouchableOpacity
               style={[styles.closeChatButton, { backgroundColor: theme.colors.error }]}
-              onPress={handleCloseChat}
+              onPress={handleLeaveChat}
             >
-              <Icon name="close-circle-outline" size={16} color="white" />
-              <Text style={styles.closeChatButtonText}>Close Chat Room</Text>
+              <Icon name="exit-outline" size={16} color="white" />
+              <Text style={styles.closeChatButtonText}>
+                {isChatDisabled ? 'Exit Chat' : 'Leave Chat Room'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -764,8 +798,14 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
               onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             />
 
-            {/* Message Input */}
-            <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface }]}>
+            {/* Message Input - Disabled when chat is disabled */}
+            <View style={[
+              styles.inputContainer, 
+              { 
+                backgroundColor: theme.colors.surface,
+                opacity: isChatDisabled ? 0.5 : 1
+              }
+            ]}>
               <TextInput
                 style={[
                   styles.messageInput,
@@ -777,22 +817,22 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
                 ]}
                 value={messageText}
                 onChangeText={setMessageText}
-                placeholder="Type a message..."
+                placeholder={isChatDisabled ? "Chat disabled - participant left" : "Type a message..."}
                 placeholderTextColor={getPlaceholderTextColor(theme)}
                 multiline
                 maxLength={500}
-                editable={!isSending}
+                editable={!isSending && !isChatDisabled}
               />
               <TouchableOpacity
                 style={[
                   styles.sendButton,
                   { 
                     backgroundColor: messageText.trim() ? theme.colors.primary : theme.colors.border,
-                    opacity: isSending ? 0.5 : 1
+                    opacity: (isSending || isChatDisabled) ? 0.5 : 1
                   }
                 ]}
                 onPress={handleSendMessage}
-                disabled={!messageText.trim() || isSending}
+                disabled={!messageText.trim() || isSending || isChatDisabled}
               >
                 {isSending ? (
                   <ActivityIndicator size="small" color={theme.colors.surface} />
@@ -973,6 +1013,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  disabledChatWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+  },
+  disabledChatWarningText: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 8,
+    flex: 1,
   },
   messagesList: {
     flex: 1,
