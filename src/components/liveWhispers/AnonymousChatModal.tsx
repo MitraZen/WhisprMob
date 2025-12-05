@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
@@ -45,6 +46,8 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
   const [showProfileView, setShowProfileView] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<ChatParticipant | null>(null);
   const [isChatDisabled, setIsChatDisabled] = useState(false); // True when other participant left
+  const hasHadSecondParticipantRef = useRef(false); // Track if we've ever had 2 participants
+  const hasShownLeftAlertRef = useRef(false); // Track if we've already shown the "left" alert
 
   // Check buddy status for participants when they actually change
   useEffect(() => {
@@ -131,11 +134,14 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
       setLastMessageIds(new Set());
       setCurrentParticipant(null);
       setBuddyRequests([]);
+      setIsChatDisabled(false);
       
       // Also reset refs
       knownParticipantIdsRef.current = new Set();
       lastMessageIdsRef.current = new Set();
       lastCheckedParticipantIds.current = '';
+      hasHadSecondParticipantRef.current = false;
+      hasShownLeftAlertRef.current = false;
     }
   }, [visible, whisprId, user]);
 
@@ -270,7 +276,17 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
         
         // Check if participant left (fewer active participants than before)
         const activeParticipants = participantsData.filter(p => p.is_active);
-        const otherParticipantLeft = activeParticipants.length === 1 && activeParticipants[0].user_id === user!.id;
+        const hasTwoParticipants = activeParticipants.length === 2;
+        
+        // Track if we've ever had 2 participants
+        if (hasTwoParticipants) {
+          hasHadSecondParticipantRef.current = true;
+          hasShownLeftAlertRef.current = false; // Reset alert flag when second participant joins
+        }
+        
+        const otherParticipantLeft = activeParticipants.length === 1 && 
+                                      activeParticipants[0].user_id === user!.id &&
+                                      hasHadSecondParticipantRef.current; // Only true if we've had 2 participants before
         
         if (hasNewParticipants) {
           // Find truly new participants BEFORE updating state
@@ -292,6 +308,8 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
               [{ text: 'OK' }]
             );
           });
+          
+      // Note: No need to create initial message - whisprs are now mood-only without text
         } else {
           // Still update state even if no new participants to keep it in sync
           setParticipants(participantsData);
@@ -299,8 +317,9 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
           knownParticipantIdsRef.current = currentParticipantIds;
           setIsChatDisabled(otherParticipantLeft); // Update disabled state
           
-          // Show notification if other participant left
-          if (otherParticipantLeft && !isChatDisabled) {
+          // Show notification if other participant left (only once)
+          if (otherParticipantLeft && !hasShownLeftAlertRef.current) {
+            hasShownLeftAlertRef.current = true; // Mark as shown
             Alert.alert(
               'Participant Left',
               'The other participant has left the chat. You can only exit now.',
@@ -339,7 +358,17 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
       
       // Check if chat should be disabled (only 1 active participant = other user left)
       const activeParticipants = participantsData.filter(p => p.is_active);
-      const otherParticipantLeft = activeParticipants.length === 1 && activeParticipants[0].user_id === user!.id;
+      const hasTwoParticipants = activeParticipants.length === 2;
+      
+      // Track if we've ever had 2 participants
+      if (hasTwoParticipants) {
+        hasHadSecondParticipantRef.current = true;
+        hasShownLeftAlertRef.current = false; // Reset alert flag when second participant joins
+      }
+      
+      const otherParticipantLeft = activeParticipants.length === 1 && 
+                                    activeParticipants[0].user_id === user!.id &&
+                                    hasHadSecondParticipantRef.current; // Only true if we've had 2 participants before
       setIsChatDisabled(otherParticipantLeft);
       
       // Set initial counts for polling
@@ -379,7 +408,7 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
     }, 100);
   };
 
-  const handleNewParticipant = (participant: ChatParticipant) => {
+  const handleNewParticipant = async (participant: ChatParticipant) => {
     // Check if this participant is already known to avoid duplicates
     if (knownParticipantIds.has(participant.id)) {
       return;
@@ -392,6 +421,12 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
       return newSet;
     });
     
+    // Track that we now have 2 participants
+    const currentActiveParticipants = participants.filter(p => p.is_active);
+    if (currentActiveParticipants.length === 1 && participant.is_active) {
+      hasHadSecondParticipantRef.current = true;
+    }
+    
     // Show notification only if not current user
     if (participant.user_id !== user!.id) {
       Alert.alert(
@@ -399,9 +434,11 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
         `${participant.anonymous_name} joined the chat!`,
         [{ text: 'OK' }]
       );
+      
+      // Note: No need to create initial message - whisprs are now mood-only without text
     }
   };
-
+  
   const handleNewBuddyRequest = (request: BuddyRequest) => {
     setBuddyRequests(prev => [...prev, request]);
     
@@ -497,6 +534,11 @@ const AnonymousChatModal: React.FC<AnonymousChatModalProps> = ({
     
     try {
       await AnonymousChatService.leaveChatRoom(chatRoom.id, user.id);
+      
+      // ✅ ISSUE 4 FIX: Immediately notify Live Whisprs screen to remove bubble
+      // Use React Native's DeviceEventEmitter for cross-component communication
+      DeviceEventEmitter.emit('chat-room-closed', { whisprId });
+      
       onClose(); // Close modal after leaving
     } catch (error) {
       console.error('Error leaving chat:', error);

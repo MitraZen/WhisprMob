@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Dimensions, Text } from 'react-native';
+import { View, ScrollView, StyleSheet, Dimensions, Text, RefreshControl } from 'react-native';
 import LiveWhisperBubble from './LiveWhisperBubble';
 import { TextWhispr } from '@/services/textWhisperServiceClean';
 
@@ -7,6 +7,8 @@ interface WhisperWavesCanvasProps {
   whisprs: TextWhispr[];
   onWhisprPress: (whispr: TextWhispr) => void;
   currentUserId?: string; // Current user ID to identify own whispers
+  onRefresh?: () => void; // Pull to refresh handler
+  refreshing?: boolean; // Refresh state
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -33,6 +35,8 @@ const WhisperWavesCanvas: React.FC<WhisperWavesCanvasProps> = ({
   whisprs,
   onWhisprPress,
   currentUserId,
+  onRefresh,
+  refreshing = false,
 }) => {
   // Filter out expired whispers and calculate layout
   const bubbleLayouts = useMemo(() => {
@@ -117,6 +121,17 @@ const WhisperWavesCanvas: React.FC<WhisperWavesCanvasProps> = ({
       removeClippedSubviews={true}
       maxToRenderPerBatch={10}
       windowSize={5}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#007AFF"
+            colors={['#007AFF']}
+            progressBackgroundColor="#FFFFFF"
+          />
+        ) : undefined
+      }
     >
       {bubbleLayouts.map((layout) => {
         const isOwnWhisper = currentUserId && layout.whispr.user_id === currentUserId;

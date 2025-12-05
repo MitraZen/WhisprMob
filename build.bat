@@ -4,9 +4,9 @@ REM Simple Build Script for Whispr
 REM Just run: build.bat
 
 REM Set version info
-set VERSION_NAME=2.27.0
-set VERSION_CODE=130
-set RELEASE_TAG=P14
+set VERSION_NAME=2.28.0
+set VERSION_CODE=131
+set RELEASE_TAG=P15
 
 echo.
 echo ========================================

@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated,
+  DeviceEventEmitter,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/store/ThemeContext';
@@ -59,6 +60,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   });
   const [whisprs, setWhisprs] = useState<TextWhispr[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedWhisprForChat, setSelectedWhisprForChat] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,12 +87,16 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
   };
 
   // Load whisprs from database
-  const loadWhisprs = useCallback(async () => {
+  const loadWhisprs = useCallback(async (isRefresh = false) => {
     if (!user) return;
     
     try {
       setError(null);
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       console.log(`🌍 Loading whisprs with ${countryFilter} filter...`);
       
       const filteredWhisprs = await TextWhisperService.getWhisprsByCountry(
@@ -116,9 +122,15 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
       setWhisprs([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
       setFilterLoading(false);
     }
   }, [countryFilter, user]);
+
+  // Handle pull to refresh
+  const handleRefresh = useCallback(() => {
+    loadWhisprs(true);
+  }, [loadWhisprs]);
 
   // Fetch user country on mount
   useEffect(() => {
@@ -305,8 +317,9 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
             const updatedRoom = payload.new as any;
             console.log('🔄 Chat room updated:', updatedRoom);
             
-            // If room became inactive, remove the whispr bubble
+            // If room became inactive, remove the whispr bubble immediately
             if (updatedRoom.is_active === false) {
+              console.log(`🗑️ Removing whispr bubble (room inactive): ${updatedRoom.whispr_id}`);
               setWhisprs(prev => prev.filter(w => w.id !== updatedRoom.whispr_id));
               return;
             }
@@ -315,6 +328,7 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
             const AnonymousChatService = (await import('@/services/anonymousChatService')).default;
             const isFull = await AnonymousChatService.isWhisprChatFull(updatedRoom.whispr_id);
             if (isFull) {
+              console.log(`🗑️ Removing whispr bubble (room full): ${updatedRoom.whispr_id}`);
               setWhisprs(prev => prev.filter(w => w.id !== updatedRoom.whispr_id));
             }
           }
@@ -322,11 +336,25 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
         .subscribe((status) => {
           console.log('📡 Chat rooms subscription status:', status);
         });
+      
+      // ✅ ISSUE 4 FIX: Listen for custom event when chat is closed using DeviceEventEmitter
+      const handleChatRoomClosed = (eventData: { whisprId?: string }) => {
+        const { whisprId } = eventData || {};
+        if (whisprId) {
+          console.log(`🗑️ Removing whispr bubble (chat closed event): ${whisprId}`);
+          setWhisprs(prev => prev.filter(w => w.id !== whisprId));
+        }
+      };
+      
+      const chatRoomClosedSubscription = DeviceEventEmitter.addListener('chat-room-closed', handleChatRoomClosed);
 
-    return () => {
-      channel.unsubscribe();
-      chatRoomChannel.unsubscribe();
-    };
+      return () => {
+        channel.unsubscribe();
+        chatRoomChannel.unsubscribe();
+        
+        // Clean up DeviceEventEmitter listener
+        chatRoomClosedSubscription.remove();
+      };
   }, [user]);
 
   const handleCloseRecordModal = () => {
@@ -485,6 +513,8 @@ const LiveWhisprsScreen: React.FC<LiveWhisprsScreenProps> = ({ onNavigate }) => 
              whisprs={whisprs}
              onWhisprPress={handleWhisprPress}
              currentUserId={user?.id}
+             onRefresh={handleRefresh}
+             refreshing={refreshing}
            />
          )}
       </Animated.View>
