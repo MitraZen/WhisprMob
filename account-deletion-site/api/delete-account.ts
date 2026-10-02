@@ -47,6 +47,33 @@ export default async function handler(req: any, res: any) {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
   try {
+    // Audio uploads are stored under a per-user directory in this bucket.
+    // Supabase Auth refuses to delete users who still own Storage objects.
+    const audioBucket = admin.storage.from('whisprs');
+    const audioPaths: string[] = [];
+    const pageSize = 100;
+    let offset = 0;
+    while (true) {
+      const { data: files, error: listError } = await audioBucket.list(user.id, { limit: pageSize, offset });
+      if (listError) {
+        console.error('Account audio cleanup listing failed:', listError.message);
+        return res.status(500).json({ error: 'We could not remove account audio files. Please contact support before retrying.' });
+      }
+
+      const page = files ?? [];
+      audioPaths.push(...page.filter(file => file.id !== null).map(file => `${user.id}/${file.name}`));
+      if (page.length < pageSize) break;
+      offset += page.length;
+    }
+
+    for (let index = 0; index < audioPaths.length; index += 100) {
+      const { error: removeError } = await audioBucket.remove(audioPaths.slice(index, index + 100));
+      if (removeError) {
+        console.error('Account audio cleanup failed:', removeError.message);
+        return res.status(500).json({ error: 'We could not remove account audio files. Please contact support before retrying.' });
+      }
+    }
+
     // Remove Whispr-owned data before deleting the Auth identity. These are the
     // core account tables used by the mobile app's existing deletion flow.
     const deletions = [
