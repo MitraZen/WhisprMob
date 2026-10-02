@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f6ff" />
+    <meta name="description" content="Permanently delete your Whispr account and associated data." />
+    <title>Delete your Whispr account</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: light; --ink:#17172b; --muted:#696982; --purple:#7658ec; --purple-dark:#6043d7; --line:#e8e5f3; --danger:#c83c52; }
+      * { box-sizing:border-box; }
+      body { margin:0; min-height:100vh; background:radial-gradient(ellipse at 50% -15%,#e7e2ff 0,transparent 52%),#f7f6fb; color:var(--ink); font-family:"DM Sans",sans-serif; display:flex; flex-direction:column; }
+      header { width:min(100% - 40px, 1040px); margin:0 auto; height:82px; display:flex; align-items:center; }
+      .brand { display:flex; align-items:center; gap:11px; font:800 20px Manrope,sans-serif; letter-spacing:-.5px; text-decoration:none; color:var(--ink); }
+      .brand-mark { width:38px;height:38px;border-radius:13px;background:linear-gradient(145deg,#8c75ff,#6849e5);display:grid;place-items:center;box-shadow:0 6px 16px #7056e433; }
+      .brand-mark svg { width:21px;height:21px; }
+      main { width:min(100% - 32px, 560px); margin:46px auto 64px; flex:1; }
+      .card { background:#fff; border:1px solid #eeecf5; border-radius:22px; padding:clamp(25px,6vw,44px); box-shadow:0 20px 60px #29204c0d; }
+      .eyebrow { margin:0 0 10px; color:var(--purple-dark); font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
+      h1 { margin:0; font:800 clamp(28px,6vw,37px)/1.15 Manrope,sans-serif; letter-spacing:-1.4px; }
+      .intro { color:var(--muted); line-height:1.65; margin:14px 0 27px; }
+      .notice { display:flex; gap:12px; padding:15px; border-radius:14px; background:#fff8f0; color:#604a2d; font-size:14px; line-height:1.5; margin:0 0 27px; }
+      .notice svg { flex:none; margin-top:1px; color:#bd7b28; }
+      label { display:block; margin:19px 0 8px; font-weight:700; font-size:14px; }
+      input { width:100%; height:51px; padding:0 15px; border:1px solid #dcd9e8; border-radius:11px; background:#fff; color:var(--ink); font:500 16px "DM Sans",sans-serif; outline:none; transition:border .15s,box-shadow .15s; }
+      input:focus { border-color:var(--purple); box-shadow:0 0 0 3px #7658ec20; }
+      input::placeholder { color:#9a99aa; }
+      .hint { margin:7px 0 0; color:var(--muted); font-size:13px; }
+      .checkline { display:flex; gap:10px; align-items:flex-start; margin:19px 0 23px; color:#4f4e62; font-size:14px; line-height:1.5; }
+      .checkline input { appearance:none; flex:none; margin:1px 0 0; width:18px;height:18px;border-radius:5px;padding:0; }
+      .checkline input:checked { background:var(--purple);border-color:var(--purple); }
+      .checkline input:checked::after { content:"✓"; color:#fff; display:block; text-align:center; line-height:16px; font-size:13px; font-weight:700; }
+      button { width:100%; height:52px; border:0; border-radius:12px; background:var(--danger); color:#fff; font:700 15px "DM Sans",sans-serif; cursor:pointer; transition:background .15s,transform .15s; }
+      button:hover:not(:disabled) { background:#b02f45; transform:translateY(-1px); }
+      button:disabled { opacity:.55; cursor:wait; }
+      .secondary { margin-top:13px; color:var(--muted); font-size:13px; text-align:center; }
+      .text-button { display:block; width:auto; height:auto; margin:16px auto 0; padding:6px 10px; background:transparent; color:var(--purple-dark); font-weight:600; }
+      .text-button:hover:not(:disabled) { background:#f4f1ff; transform:none; }
+      .status { display:none; margin:16px 0 0; padding:13px 14px; border-radius:11px; font-size:14px; line-height:1.5; }
+      .status.show { display:block; }
+      .status.info { color:#433580;background:#f1efff; }
+      .status.error { color:#9b2939;background:#fff0f1; }
+      .status.success { color:#16633f;background:#eaf8f0; }
+      .verified { display:none; margin:0 0 16px; padding:13px 14px; border-radius:11px; color:#16633f; background:#eaf8f0; font-size:14px; line-height:1.5; }
+      .verified.show { display:block; }
+      .step { display:none; }
+      .step.show { display:block; }
+      footer { padding:20px; text-align:center; color:#89889c; font-size:12px; }
+      footer a { color:#6552b7; text-decoration:none; }
+      @media(max-width:480px) { header{height:70px} main{margin-top:23px}.card{border-radius:18px} }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="https://gowhispr.online" aria-label="Whispr home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 18.5 6.3 15A7.5 7.5 0 1 1 9 17.5L5 18.5Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span>Whispr</span>
+      </a>
+    </header>
+    <main>
+      <section class="card" aria-labelledby="title">
+        <p class="eyebrow">Account settings</p>
+        <h1 id="title">Delete your account</h1>
+        <p class="intro">Permanently remove your Whispr account. Sign in again to confirm you own the account before deletion.</p>
+        <div class="notice" role="note">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 2.9 19a1.4 1.4 0 0 0 1.2 2.1h15.8a1.4 1.4 0 0 0 1.2-2.1L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M12 9v5m0 3h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Deletion is permanent. Your account and associated Whispr data will be removed immediately after you sign in and confirm below.</span>
+        </div>
+
+        <form id="delete-form" novalidate>
+          <div id="email-step" class="step show">
+            <label for="email">Email used for your Whispr account</label>
+            <input id="email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required />
+            <label for="password">Account password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required />
+            <p class="hint">Your password is sent directly to Supabase Auth to sign you in. It is never sent to the deletion service.</p>
+            <button id="sign-in" type="submit">Sign in to continue</button>
+            <button id="email-link-toggle" class="text-button" type="button">I use Google or need an email sign-in link</button>
+            <div id="email-link-step" class="step">
+              <label for="delete-word">Type DELETE to request the sign-in link</label>
+              <input id="delete-word" name="delete-word" type="text" autocomplete="off" autocapitalize="characters" placeholder="DELETE" />
+              <p class="hint">We’ll email a secure sign-in link to the address above.</p>
+              <label class="checkline" for="acknowledge"><input id="acknowledge" type="checkbox" /><span>I understand that confirming account deletion permanently removes my account and data.</span></label>
+              <button id="send-link" type="button">Send sign-in link</button>
+            </div>
+          </div>
+
+          <div id="confirm-step" class="step">
+            <div id="verified-message" class="verified"></div>
+            <label for="confirm-word">Type DELETE to permanently remove your account</label>
+            <input id="confirm-word" name="confirm-word" type="text" autocomplete="off" autocapitalize="characters" placeholder="DELETE" required />
+            <label class="checkline" for="confirm-acknowledge"><input id="confirm-acknowledge" type="checkbox" required /><span>I understand this deletion is permanent and takes effect immediately.</span></label>
+            <button id="delete-button" type="button">Confirm permanent deletion</button>
+            <p class="secondary">Signed in as <strong id="verified-email"></strong></p>
+          </div>
+        </form>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+    <footer>Need help? Contact <a href="mailto:support@gowhispr.online">support@gowhispr.online</a></footer>
+
+    <script type="module">
+      import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
+
+      const supabaseUrl = 'https://axkktejoldizpveydidx.supabase.co';
+      const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4a2t0ZWpvbGRpenB2ZXlkaWR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNDE2ODgsImV4cCI6MjA3NDkxNzY4OH0.axo3f_qTDzvk2WYN8Z53B1F4kTeOgP07G2TiOgkQDV4';
+      const supabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true, flowType: 'pkce' } });
+      const form = document.querySelector('#delete-form');
+      const emailInput = document.querySelector('#email');
+      const deleteWord = document.querySelector('#delete-word');
+      const statusBox = document.querySelector('#status');
+      const emailStep = document.querySelector('#email-step');
+      const confirmStep = document.querySelector('#confirm-step');
+      const verifiedMessage = document.querySelector('#verified-message');
+      const verifiedEmail = document.querySelector('#verified-email');
+      const sendButton = document.querySelector('#send-link');
+      const deleteButton = document.querySelector('#delete-button');
+      const pendingEmailKey = 'whispr-delete-email';
+      const passwordInput = document.querySelector('#password');
+      const signInButton = document.querySelector('#sign-in');
+      const emailLinkToggle = document.querySelector('#email-link-toggle');
+      const emailLinkStep = document.querySelector('#email-link-step');
+
+      function setStatus(message, kind = 'info') {
+        statusBox.textContent = message;
+        statusBox.className = `status show ${kind}`;
+      }
+
+      function showConfirm(user) {
+        emailStep.classList.remove('show');
+        confirmStep.classList.add('show');
+        verifiedEmail.textContent = user.email || '';
+        verifiedMessage.textContent = `Signed in as ${user.email}. Review the warning, then confirm below to delete immediately.`;
+        verifiedMessage.classList.add('show');
+        statusBox.className = 'status';
+        const cleanUrl = `${window.location.origin}/delete-account`;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+
+      async function restoreSession() {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) return;
+        const user = data.session?.user;
+        // Existing browser sessions alone are not fresh proof of account control.
+        // Only accept a session returned from the email link callback here.
+        if (new URLSearchParams(window.location.search).get('verify') === '1' && user?.email) {
+          showConfirm(user);
+          return;
+        }
+        const pendingEmail = sessionStorage.getItem(pendingEmailKey);
+        if (pendingEmail) emailInput.value = pendingEmail;
+      }
+
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        statusBox.className = 'status';
+        const email = emailInput.value.trim().toLowerCase();
+        if (!email || !emailInput.checkValidity()) return setStatus('Enter the email address on your Whispr account.', 'error');
+        if (!passwordInput.value) return setStatus('Enter your account password, or choose the email sign-in link option.', 'error');
+
+        signInButton.disabled = true;
+        signInButton.textContent = 'Signing in…';
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password: passwordInput.value });
+          if (error) throw error;
+          passwordInput.value = '';
+          if (data.session?.user) showConfirm(data.session.user);
+          else setStatus('Sign-in succeeded, but no session was returned. Please try again.', 'error');
+        } catch {
+          setStatus('We could not sign in with those details. Check your email and password, or use the email sign-in link option.', 'error');
+        } finally {
+          passwordInput.value = '';
+          signInButton.disabled = false;
+          signInButton.textContent = 'Sign in to continue';
+        }
+      });
+
+      emailLinkToggle.addEventListener('click', () => {
+        emailLinkStep.classList.toggle('show');
+        emailLinkToggle.textContent = emailLinkStep.classList.contains('show') ? 'Hide email sign-in link option' : 'I use Google or need an email sign-in link';
+        if (emailLinkStep.classList.contains('show')) deleteWord.focus();
+      });
+
+      sendButton.addEventListener('click', async () => {
+        statusBox.className = 'status';
+        const email = emailInput.value.trim().toLowerCase();
+        if (!email || !emailInput.checkValidity()) return setStatus('Enter the email address on your Whispr account.', 'error');
+        if (deleteWord.value.trim() !== 'DELETE') return setStatus('Type DELETE exactly as shown to request the sign-in link.', 'error');
+        if (!document.querySelector('#acknowledge').checked) return setStatus('Please confirm that you understand the deletion is permanent.', 'error');
+        sendButton.disabled = true;
+        sendButton.textContent = 'Sending sign-in link…';
+        sessionStorage.setItem(pendingEmailKey, email);
+        try {
+          const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}/delete-account?verify=1` } });
+          if (error) throw error;
+          setStatus('If this email belongs to a Whispr account, a secure sign-in link has been sent. Open it, then confirm the deletion on this page.', 'info');
+        } catch {
+          setStatus('We could not send a sign-in link right now. Check the email address and try again shortly.', 'error');
+        } finally {
+          sendButton.disabled = false;
+          sendButton.textContent = 'Send sign-in link';
+        }
+      });
+
+      deleteButton.addEventListener('click', async () => {
+        statusBox.className = 'status';
+        if (document.querySelector('#confirm-word').value.trim() !== 'DELETE') return setStatus('Type DELETE exactly as shown to confirm permanent deletion.', 'error');
+        if (!document.querySelector('#confirm-acknowledge').checked) return setStatus('Please confirm that you understand the deletion is permanent.', 'error');
+
+        deleteButton.disabled = true;
+        deleteButton.textContent = 'Deleting account…';
+        try {
+          const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError || !sessionData.session?.access_token) throw new Error('Your verification session expired. Start again to receive a new email link.');
+          const response = await fetch('/api/delete-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionData.session.access_token}` },
+            body: JSON.stringify({ confirmation: 'DELETE' }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Account deletion failed. Please try again.');
+
+          await supabase.auth.signOut({ scope: 'local' });
+          sessionStorage.removeItem(pendingEmailKey);
+          form.innerHTML = '<div class="status show success"><strong>Your account has been deleted.</strong><br>Your Whispr account and associated account data have been permanently removed.</div>';
+          statusBox.className = 'status';
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : 'Account deletion failed. Please try again.', 'error');
+          deleteButton.disabled = false;
+          deleteButton.textContent = 'Confirm permanent deletion';
+        }
+      });
+
+      supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session?.user?.email) showConfirm(session.user);
+      });
+      await restoreSession();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "whispr-account-deletion-site",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "2.75.0"
+  }
+}

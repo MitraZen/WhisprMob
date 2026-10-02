@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/delete-account", "destination": "/index.html" },
+    { "source": "/delete-account/", "destination": "/index.html" }
+  ]
+}
