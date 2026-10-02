@@ -74,22 +74,70 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // Remove Whispr-owned data before deleting the Auth identity. These are the
-    // core account tables used by the mobile app's existing deletion flow.
-    const deletions = [
-      admin.from('buddy_messages').delete().eq('sender_id', user.id),
-      admin.from('buddies').delete().eq('user_id', user.id),
-      admin.from('buddies').delete().eq('buddy_user_id', user.id),
-      admin.from('blocked_users').delete().eq('blocker_id', user.id),
-      admin.from('blocked_users').delete().eq('blocked_user_id', user.id),
-      admin.from('whispr_notes').delete().eq('sender_id', user.id),
-      admin.from('user_profiles').delete().eq('id', user.id),
-    ];
+    // Find every relationship row first. buddy_messages references buddies.id,
+    // so both parties' messages for these relationships must be removed before
+    // the buddy rows can be deleted.
+    const { data: ownedBuddies, error: ownedBuddiesError } = await admin
+      .from('buddies')
+      .select('id')
+      .eq('user_id', user.id);
+    if (ownedBuddiesError) {
+      console.error('Account data cleanup failed: list owned buddies', ownedBuddiesError.code, ownedBuddiesError.message);
+      return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+    }
 
-    const results = await Promise.all(deletions);
-    const failed = results.find(result => result.error);
-    if (failed?.error) {
-      console.error('Account data cleanup failed:', failed.error.code, failed.error.message);
+    const { data: linkedBuddies, error: linkedBuddiesError } = await admin
+      .from('buddies')
+      .select('id')
+      .eq('buddy_user_id', user.id);
+    if (linkedBuddiesError) {
+      console.error('Account data cleanup failed: list linked buddies', linkedBuddiesError.code, linkedBuddiesError.message);
+      return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+    }
+
+    const buddyIds = [...new Set([...(ownedBuddies ?? []), ...(linkedBuddies ?? [])].map(row => row.id))];
+
+    const { error: sentMessagesError } = await admin.from('buddy_messages').delete().eq('sender_id', user.id);
+    if (sentMessagesError) {
+      console.error('Account data cleanup failed: delete sent messages', sentMessagesError.code, sentMessagesError.message);
+      return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+    }
+
+    if (buddyIds.length > 0) {
+      const { error: conversationMessagesError } = await admin.from('buddy_messages').delete().in('buddy_id', buddyIds);
+      if (conversationMessagesError) {
+        console.error('Account data cleanup failed: delete conversation messages', conversationMessagesError.code, conversationMessagesError.message);
+        return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+      }
+
+      const { error: buddiesError } = await admin.from('buddies').delete().in('id', buddyIds);
+      if (buddiesError) {
+        console.error('Account data cleanup failed: delete buddies', buddiesError.code, buddiesError.message);
+        return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+      }
+    }
+
+    const { error: blockedByUserError } = await admin.from('blocked_users').delete().eq('blocker_id', user.id);
+    if (blockedByUserError) {
+      console.error('Account data cleanup failed: delete blocks created by user', blockedByUserError.code, blockedByUserError.message);
+      return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+    }
+
+    const { error: blockedUserError } = await admin.from('blocked_users').delete().eq('blocked_user_id', user.id);
+    if (blockedUserError) {
+      console.error('Account data cleanup failed: delete blocks of user', blockedUserError.code, blockedUserError.message);
+      return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+    }
+
+    const { error: notesError } = await admin.from('whispr_notes').delete().eq('sender_id', user.id);
+    if (notesError) {
+      console.error('Account data cleanup failed: delete notes', notesError.code, notesError.message);
+      return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
+    }
+
+    const { error: profileError } = await admin.from('user_profiles').delete().eq('id', user.id);
+    if (profileError) {
+      console.error('Account data cleanup failed: delete profile', profileError.code, profileError.message);
       return res.status(500).json({ error: 'We could not remove all account data. Please contact support before retrying.' });
     }
 
