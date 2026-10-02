@@ -150,6 +150,9 @@
           showConfirm(user);
           return;
         }
+        // Clear a session left over from an earlier visit so a direct page open
+        // always requires the user to authenticate again before deletion.
+        if (user) await supabase.auth.signOut({ scope: 'local' });
         const pendingEmail = sessionStorage.getItem(pendingEmailKey);
         if (pendingEmail) emailInput.value = pendingEmail;
       }
@@ -234,9 +237,6 @@
         }
       });
 
-      supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' && session?.user?.email) showConfirm(session.user);
-      });
       await restoreSession();
     </script>
   </body>
