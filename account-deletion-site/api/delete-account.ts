@@ -4,6 +4,7 @@ const allowedOrigins = new Set([
   'https://gowhispr.online',
   'https://www.gowhispr.online',
   'https://whispr-rust.vercel.app',
+  'https://whisprmob-account-deletion-site.vercel.app',
 ]);
 
 export default async function handler(req: any, res: any) {
